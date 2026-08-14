@@ -6,6 +6,8 @@
 
 `SourceImagesForAIVideo/` 是另一类资产：它保存生成 AI 视频时使用的狗狗身份、姿态和视角参考图，不会进入应用包。具体目录和选图规则见 [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md)。
 
+`ImageTurnMVP/normalized/` 保存 9 张 960×540 透明 PNG，按主体高度、边界框中心和脚底基线对齐。`Scripts/build-image-turn-mvp.sh` 不调用任何 AI 视频模型：它会合成一次性演示 `look-around-images.mov`，并为运行时多角度转头导出 `Clips/image-views/` 下的 9 个单视角循环。目录名保留 `MVP` 仅为兼容现有构建路径，菜单中的功能已经作为正式功能提供。
+
 ## 原始视频映射
 
 | 旧文件名 | 当前路径 | 视角与内容 | 状态 |
@@ -31,11 +33,12 @@
 
 ## 导出视频
 
-`Sources/Furball2D/Assets/Clips/left-profile/` 包含应用实际播放的 17 段 HEVC with Alpha 视频：
+`Sources/Furball2D/Assets/Clips/left-profile/` 包含应用实际播放的 18 段 HEVC with Alpha 视频：
 
 | 文件 | 类型 | 来源 |
 |---|---|---|
 | `stand-idle.mov` | 无缝待机循环 | `stand-idle.mp4` |
+| `look-around-images.mov` | 纯图片多角度转身 | `Assets/ImageTurnMVP/normalized/` 的 9 张 PNG |
 | `stand-to-sit.mov` | 单次过渡 | `stand-to-sit.mp4` |
 | `sit-idle.mov` | 无缝待机循环 | `sit-to-lie.mp4` 的稳定开头 |
 | `sit-to-lie.mov` | 单次过渡并校正坐姿/趴卧端口 | `sit-to-lie.mp4` |
@@ -46,6 +49,10 @@
 | `walk-start/loop/stop.mov` | 走路起步、相位闭合循环、停步 | `stand-to-walk-to-stand.mp4` |
 | `slow-run-start/loop/stop.mov` | 慢跑起步、相位闭合循环、停步 | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | 快跑起步、相位闭合循环、停步 | `stand-to-fast-run-to-stand.mp4` |
+
+`Sources/Furball2D/Assets/Clips/image-views/` 另含从 `left-profile.mov` 到 `right-profile.mov` 的 9 个角度，其中 `front-near-profile-*` 和 `front-near-center-*` 是新增中间视角。每个文件都是由对应透明 PNG 导出的 1 秒、24 fps 单视角循环；运行时只逐级切换相邻视角，并在进入视频动作前逐级抵达匹配朝向的左或右侧面端口。右向待机、过渡、睡眠和步态由左侧面动作视频在运行时镜像得到。
+
+首次从站立进入走路、慢跑或快跑时，运行时分别等待约 0.32、0.16 和 0.32 秒再开始桌面位移，并使用平滑加速接入目标速度。这些时间来自起步片段接触表中的第一处明确步态，而不是从菜单点击时刻立即平移。
 
 这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，并对 start / loop / stop 的首末帧分别归一化主体高度、Alpha 中心和脚底基线；循环段使用相同落脚相位且不倒放。校正通过 1600×900 透明工作画布平滑完成，最后裁回标准画布，不会使用固定缩放值硬套整条原片。切点、端口参数、循环策略和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
 
@@ -65,6 +72,8 @@ Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 All original videos are organized by `view/action`. Directory and file names use lowercase English and kebab-case. Transparent runtime exports retain the same view hierarchy so future front, right-profile, or rear actions cannot be mixed accidentally.
 
 `SourceImagesForAIVideo/` is a separate asset class. It contains dog identity, posture, and view references used to generate AI videos and is not included in the app bundle. See [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md) for its layout and image-selection rules.
+
+`ImageTurnMVP/normalized/` contains nine transparent 960×540 PNGs aligned by subject height, bounding-box center, and ground baseline. Without invoking any AI video model, `Scripts/build-image-turn-mvp.sh` composes the one-shot `look-around-images.mov` demo and exports nine single-view loops under `Clips/image-views/` for runtime multi-angle turning. The `MVP` directory name remains only for build-path compatibility; the menu now presents this as a regular feature.
 
 ## Original video mapping
 
@@ -91,11 +100,12 @@ The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4
 
 ## Exported videos
 
-`Sources/Furball2D/Assets/Clips/left-profile/` contains the 17 HEVC-with-alpha clips played by the app:
+`Sources/Furball2D/Assets/Clips/left-profile/` contains the 18 HEVC-with-alpha clips played by the app:
 
 | File | Type | Source |
 |---|---|---|
 | `stand-idle.mov` | Seamless idle loop | `stand-idle.mp4` |
+| `look-around-images.mov` | Image-only multi-angle turn | Nine PNGs under `Assets/ImageTurnMVP/normalized/` |
 | `stand-to-sit.mov` | One-shot transition | `stand-to-sit.mp4` |
 | `sit-idle.mov` | Seamless idle loop | Stable beginning of `sit-to-lie.mp4` |
 | `sit-to-lie.mov` | One-shot transition with sit/lie port correction | `sit-to-lie.mp4` |
@@ -106,6 +116,10 @@ The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4
 | `walk-start/loop/stop.mov` | Walk start, phase-closed loop, and stop | `stand-to-walk-to-stand.mp4` |
 | `slow-run-start/loop/stop.mov` | Jog start, phase-closed loop, and stop | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | Run start, phase-closed loop, and stop | `stand-to-fast-run-to-stand.mp4` |
+
+`Sources/Furball2D/Assets/Clips/image-views/` additionally contains nine angles from `left-profile.mov` through `right-profile.mov`; the `front-near-profile-*` and `front-near-center-*` files are the added intermediate views. Each is a one-second, 24 fps loop exported from its matching transparent PNG. At runtime the app changes only to an adjacent view and reaches the left- or right-profile port matching the next video action. Right-facing idle, transition, sleep, and gait footage is produced by mirroring the left-profile clips at runtime.
+
+On a fresh transition from standing to walking, jogging, or running, runtime translation waits approximately 0.32, 0.16, or 0.32 seconds respectively, then ramps smoothly to the target speed. These offsets come from the first clear gait motion in each start-clip contact sheet rather than translating immediately when the menu action occurs.
 
 `Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Cut points, port parameters, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/manifest.json`.
 

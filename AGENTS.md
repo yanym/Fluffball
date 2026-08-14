@@ -19,6 +19,19 @@
 
 同一段动作通常使用 2–4 张参考图。除非镜头明确要求转身，不要混用相反侧视角。输出必须继承参考图中的同一只狗、固定视角、固定主体大小与地面基线；任何换脸、毛色变化、尾巴长度改变或左右花纹翻转都视为生成失败。
 
+## 1.2 只用图片制作动作
+
+当用户明确不要 AI 生成视频时，可以用图片生成补齐静态视角，再离线组成短动作。当前实现位于 `Assets/ImageTurnMVP/normalized/`，由 `Scripts/build-image-turn-mvp.sh` 生成 `look-around-images.mov`。
+
+1. 先确定等距的角度关键帧，例如左侧面、左前 3/4、正面、右前 3/4、右侧面。生成时固定同一只狗、站姿、闭嘴表情、机位、光照和纯色背景。
+2. 抠像后统一到 960×540；同一站姿的可见高度误差应小于 2%，边界框中心误差尽量小于 2 px，脚底 y 误差不超过 1–2 px。
+3. 第一张和最后一张必须与运行时待机端口一致。当前实现的左侧面直接取自 `stand-idle.mov`，用于平稳进出图片动作；右侧面端口必须能与镜像后的 `stand-idle.mov` 对齐。
+4. 大角度静态图只使用约 0.06–0.10 秒的短淡化；姿态非常接近时最多约 0.14 秒。更长淡化会产生双头、双腿和两条尾巴；静态图数量不足时，不得用长淡化冒充连续转身。
+5. 图片序列适合转头、换朝向、眨眼和轻微姿态变化，不适合走路或跑步。移动仍需要真实步态循环，否则脚掌会在桌面上滑行。
+6. 交付前同时检查每张原始 PNG、透明关键帧、接触表和应用实机效果。若仍需要电影级连续性，应增加中间角度图，或使用可控骨骼/网格动画；不要声称静态图片序列等同于真实视频运动。当前实现使用 9 张图片，约每 22.5° 一个视角。
+7. 运行时响应鼠标方向时，每次只切换一个相邻视角，并设置约 0.15–0.22 秒的首次方向稳定时间和约 0.09–0.12 秒的相邻切换冷却，避免鼠标在阈值附近造成高频抖动。进入视频动作前，按相邻顺序抵达与动作朝向匹配的 `left-profile` 或 `right-profile` 端口；右向动作可镜像左侧面视频，但必须实机检查不对称花纹、项圈文字和光向是否会因镜像而显得错误。移动期间不得同时切换静态视角。
+8. 鼠标跟随和自由漫游统一使用二维目标向量；新增的连续移动模式也必须复用同一套起步延迟、平滑加速、步态滞回与横纵边界。接近纯纵向移动时保留最近的左右朝向，避免高频翻转。旧的短时自动巡游仍是独立低速逻辑，若继续扩展它，应迁移到同一移动引擎。
+
 ## 2. 接收新素材后的第一步
 
 保留原始视频，不要立刻覆盖 `Sources/Furball2D/Assets/Clips`。原片先按 `Assets/SourceVideos/<view>/<action>.mp4` 归档，再完成以下检查：
@@ -188,6 +201,8 @@ loop:     0, 1, 2, ...
 秒后再切换，并保留原有阈值迟滞；停止和重新起步可以立即响应。这个短暂确认时间能
 避免鼠标速度在阈值附近波动时反复 Crossfade。
 
+首次从站立进入移动时，不得在 `start` 片段第一帧就立即平移窗口。先用接触表或逐帧差分找出第一处明确的抬爪、重心转移或蹬地，再把这个时间记录为 `translationDelay`；延迟结束后使用约 0.18–0.36 秒的 smoothstep 速度渐入。当前走路、慢跑、快跑延迟分别约为 0.32、0.16、0.32 秒。若重新切分起步素材，必须重新测量这些值。
+
 通常将 Crossfade 控制在 0.10–0.16 秒。超过约 0.20–0.25 秒时，写实宠物很容易出现双眼、双头、双爪和两条尾巴。若短淡化仍然明显，返回离线素材修端口，不要继续加长。
 
 ## 8. 必须完成的逐帧 QA
@@ -310,6 +325,19 @@ This file is mandatory guidance for any Agent working on Fluffball/Furball2D. Wh
 If the task includes generating a new AI pet-action video, first read `Assets/SourceImagesForAIVideo/README.md`. Prefer references under `generation-ready/<pose>/<view>.png` that match the target posture and view, and use the front view to lock face shape and markings. `originals/` exists only for identity verification and provenance and must not be overwritten by generated results.
 
 A typical action uses two to four references. Do not mix opposite profile views unless the shot explicitly turns around. The output must preserve the same dog, fixed view, stable subject size, and stable ground baseline. Face replacement, coat changes, tail-length changes, or flipped left/right markings are generation failures.
+
+## 1.2 Building actions from images only
+
+When the user explicitly rejects AI-generated video, generate only the missing still views and assemble a short offline action. The current implementation stores normalized keyframes under `Assets/ImageTurnMVP/normalized/`; `Scripts/build-image-turn-mvp.sh` compiles them into `look-around-images.mov`.
+
+1. Choose evenly spaced view keyframes such as left profile, front-left three-quarter, front, front-right three-quarter, and right profile. Keep the same dog, standing pose, closed-mouth expression, camera, lighting, and solid background in every generated still.
+2. Key each image and normalize it to 960×540. For one standing pose, keep visible-height error below 2%, bounding-box center error near 2 px or less, and ground-y error within 1–2 px.
+3. Match the first and last still to the runtime idle ports. The current implementation extracts its left-profile endpoint from `stand-idle.mov`; the right-profile endpoint must align with the mirrored `stand-idle.mov`.
+4. Keep large-angle still transitions around 0.06–0.10 seconds, extending only very similar poses to roughly 0.14 seconds. Longer fades create duplicate heads, legs, and tails. Never disguise too few keyframes with a long dissolve.
+5. Image sequences suit head turns, view changes, blinks, and small pose changes. They do not replace walk or run footage; desktop translation still needs a real gait loop to avoid sliding paws.
+6. Review source PNGs, keyed keyframes, a contact sheet, and the packaged app. For film-like continuity, add more intermediate views or use controllable rig/mesh animation; do not present a still-image sequence as equivalent to real continuous motion. The current implementation uses nine images at roughly 22.5-degree intervals.
+7. When responding to cursor direction at runtime, change only one adjacent view at a time and require roughly 0.15–0.22 seconds of initial directional stability plus an adjacent-step cooldown around 0.09–0.12 seconds, preventing rapid jitter near a threshold. Before a video action, step through adjacent stills to the `left-profile` or `right-profile` port matching the selected action facing. A right-facing action may mirror left-profile footage, but inspect asymmetric markings, collar text, and lighting in the packaged app because mirroring may make them incorrect. Never change static facing views during locomotion.
+8. Cursor following and free roaming share one two-dimensional target-vector movement implementation. Any new continuous movement mode must reuse its gait hysteresis, start delay, acceleration ramp, and horizontal/vertical bounds. Preserve the last horizontal facing during near-vertical travel so the renderer does not flip rapidly. The legacy short autonomous patrol still uses a separate low-speed path; migrate it to the shared engine before extending it.
 
 ## 2. First steps after receiving new footage
 
@@ -469,6 +497,8 @@ Find a roughly 0.5–1.0-second lowest-motion window containing only subtle brea
 7. Keep clip-end callbacks and fade completion as separate lifecycles.
 
 Do not switch walk, jog, and run from a single speed sample. Require a requested speed tier to remain stable for roughly 0.15–0.25 seconds and retain threshold hysteresis. Stop and fresh start may respond immediately. This short confirmation period prevents repeated crossfades when cursor speed oscillates near a threshold.
+
+On a fresh transition from standing into locomotion, never translate the window from the first frame of the `start` clip. Use a contact sheet or frame-difference analysis to locate the first clear paw lift, weight shift, or push-off and record that time as `translationDelay`; after the delay, ramp velocity in with a roughly 0.18–0.36-second smoothstep. The current walk, jog, and run delays are approximately 0.32, 0.16, and 0.32 seconds. Re-measure them whenever a start clip is recut.
 
 Keep most crossfades within 0.10–0.16 seconds. Above about 0.20–0.25 seconds, realistic footage commonly shows double eyes, heads, paws, or tails. If a short fade remains obvious, repair the offline ports instead of lengthening the dissolve.
 

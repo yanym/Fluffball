@@ -43,6 +43,27 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var imageTurnMenu: String {
+        switch self {
+        case .simplifiedChinese: "转过来看看我"
+        case .english: "Look at Me"
+        }
+    }
+
+    var imageTurnGreeting: String {
+        switch self {
+        case .simplifiedChinese: "在看你啦～ 👀"
+        case .english: "I’m looking at you! 👀"
+        }
+    }
+
+    var imageTurnBusy: String {
+        switch self {
+        case .simplifiedChinese: "等我做完这个动作哦～"
+        case .english: "One moment—finishing this move!"
+        }
+    }
+
     var sleepMenu: String {
         switch self {
         case .simplifiedChinese: "现在去睡觉"
@@ -68,22 +89,50 @@ enum AppLanguage: String, CaseIterable, Sendable {
 
     var autoBehaviorMenu: String {
         switch self {
-        case .simplifiedChinese: "自动活动"
-        case .english: "Autonomous Behavior"
+        case .simplifiedChinese: "自动作息（睡觉 / 巡游）"
+        case .english: "Daily Routine (Sleep / Patrol)"
+        }
+    }
+
+    var freeRoamMenu: String {
+        switch self {
+        case .simplifiedChinese: "自由漫游（全桌面）"
+        case .english: "Free Roam (Across Desktop)"
         }
     }
 
     var followCursorMenu: String {
         switch self {
-        case .simplifiedChinese: "跟随鼠标（按速度走 / 跑）"
-        case .english: "Follow Cursor (Walk / Run)"
+        case .simplifiedChinese: "追随鼠标（全方向走 / 跑）"
+        case .english: "Follow Cursor (Move in Any Direction)"
+        }
+    }
+
+    var imageFacingMenu: String {
+        switch self {
+        case .simplifiedChinese: "多角度转头"
+        case .english: "Multi-Angle Head Turning"
         }
     }
 
     var crossfadeMenu: String {
         switch self {
-        case .simplifiedChinese: "柔和动作过渡（MVP）"
-        case .english: "Smooth Action Transitions (MVP)"
+        case .simplifiedChinese: "柔和动作过渡"
+        case .english: "Smooth Action Transitions"
+        }
+    }
+
+    var freeRoamStarted: String {
+        switch self {
+        case .simplifiedChinese: "我去桌面上逛一圈啦！🐾"
+        case .english: "I’m off to explore the desktop! 🐾"
+        }
+    }
+
+    var freeRoamStopped: String {
+        switch self {
+        case .simplifiedChinese: "逛完啦，我回来陪你～"
+        case .english: "All done exploring—I’m back!"
         }
     }
 

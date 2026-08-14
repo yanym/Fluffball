@@ -301,18 +301,32 @@ private final class SpeechBubbleView: NSView {
     private var tailPosition: CGFloat = 0.5
 
     var preferredSize: NSSize {
-        let minTextW: CGFloat = 136 * displayScale
-        let maxTextW: CGFloat = 230 * displayScale
-        let contentW = min(maxTextW, max(minTextW, measuredMessageWidth + 4 * displayScale))
-        let messageH = measuredMessageHeight(for: contentW)
+        // Measure against the message label's real usable width. The old sizing
+        // measured against a wider virtual area and omitted the outer glow/tail
+        // insets, so a line could wrap only after layout and lose its descenders
+        // or final line at the panel edge.
+        let minMessageWidth: CGFloat = 136 * displayScale
+        let maxMessageWidth: CGFloat = 230 * displayScale
+        let messageWidth = min(
+            maxMessageWidth,
+            max(minMessageWidth, measuredMessageWidth + 4 * displayScale)
+        )
+        let messageHeight = measuredMessageHeight(for: messageWidth)
 
-        let horizontalPadding = 36 * displayScale
-        let topBarHeight = 22 * displayScale
-        let verticalSpacing = 7 * displayScale
-        let bottomPadding = 32 * displayScale
+        let outerMargins = 22 * displayScale
+        let tailAllowance = 13 * displayScale
+        let messageHorizontalPadding = 32 * displayScale
+        let contentVerticalReserve = 44 * displayScale
+        let textBreathingRoom = 4 * displayScale
 
-        let totalW = contentW + horizontalPadding
-        let totalH = max(86 * displayScale, topBarHeight + verticalSpacing + messageH + bottomPadding)
+        // Reserve the tail in both axes. This keeps the panel size stable when
+        // it moves from above the dog to either side and guarantees that the
+        // message frame is never narrower than the width used for measurement.
+        let totalW = messageWidth + outerMargins + tailAllowance + messageHorizontalPadding
+        let totalH = max(
+            102 * displayScale,
+            messageHeight + outerMargins + tailAllowance + contentVerticalReserve + textBreathingRoom
+        )
         return NSSize(width: totalW, height: totalH)
     }
 
@@ -335,7 +349,7 @@ private final class SpeechBubbleView: NSView {
 
         // 对话正文
         messageLabel.alignment = .left
-        messageLabel.maximumNumberOfLines = 2
+        messageLabel.maximumNumberOfLines = 3
         messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.drawsBackground = false
         addSubview(messageLabel)

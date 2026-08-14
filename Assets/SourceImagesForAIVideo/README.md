@@ -22,6 +22,8 @@ SourceImagesForAIVideo/
 
 `generation-ready/` 目前统一为 1440×1080、绿色背景，并补齐了更完整的姿态与左右视角集合。生成新视频时优先使用这一层；`originals/` 用于核对狗狗真实身份细节和追溯来源，不应覆盖或删除。
 
+`stand/*-imagegen.png` 是 2026-08-14 为纯图片转身 MVP 生成的绿色背景静态补帧：中性正面、左右前 3/4、中性右侧面，以及四张 `front-near-*` 中间角度图。后缀用于区分原有用户参考图；这些图的抠像、尺度与脚底对齐版本位于 `Assets/ImageTurnMVP/normalized/`。四张中间图由内置 imagegen 根据相邻关键帧生成，随后统一裁成 1440×1080；运行时版本统一为 960×540、主体高 450 px、中心 x≈500、脚底 y=504。
+
 部分 PNG 包含 C2PA Content Credentials，用于记录图片的生成与处理来源。仓库保留这些真实性元数据；检查未发现 GPS、相机设备或个人作者字段。
 
 ## 命名规则
@@ -67,7 +69,7 @@ SourceImagesForAIVideo/
 | `std/sit_left.png` | `generation-ready/sit/left-profile.png` |
 | `std/lie_right.png` | `generation-ready/lie/right-profile.png` |
 
-完整集合共有 14 张 `originals` 和 16 张 `generation-ready` 图片。`generation-ready/lie/left-profile.png` 与 `right-profile.png` 在原始层没有同名对应图，因此作为独立的生成就绪参考保留。
+完整集合共有 14 张 `originals` 和 24 张 `generation-ready` 图片。`generation-ready/lie/left-profile.png` 与 `right-profile.png` 在原始层没有同名对应图，因此作为独立的生成就绪参考保留。
 
 ---
 
@@ -92,6 +94,8 @@ SourceImagesForAIVideo/
 ```
 
 Images under `generation-ready/` are standardized to 1440×1080 on a green background and provide a more complete posture and left/right view set. Prefer this collection for new generations. Use `originals/` to verify the dog's real identity details and trace provenance; do not overwrite or delete it.
+
+Files matching `stand/*-imagegen.png` are green-screen still keyframes generated on 2026-08-14 for the image-only turn MVP: neutral front, both front three-quarter views, a neutral right profile, and four `front-near-*` intermediate angles. The suffix distinguishes them from the user's earlier references. The four intermediate stills were created with the built-in imagegen tool from adjacent keyframes and then standardized to 1440×1080. Their runtime versions under `Assets/ImageTurnMVP/normalized/` are 960×540 with a 450 px subject height, center x≈500, and ground y=504.
 
 Some PNG files contain C2PA Content Credentials that record generation and processing provenance. The repository preserves this authenticity metadata. Inspection found no GPS, camera-device, or personal-author fields.
 
@@ -138,4 +142,4 @@ Legacy `<pose>_<view>.png` files were reorganized as `<collection>/<pose>/<view>
 | `std/sit_left.png` | `generation-ready/sit/left-profile.png` |
 | `std/lie_right.png` | `generation-ready/lie/right-profile.png` |
 
-The complete collection contains 14 `originals` and 16 `generation-ready` images. `generation-ready/lie/left-profile.png` and `right-profile.png` have no same-named original counterpart, so they remain independent generation-ready references.
+The complete collection contains 14 `originals` and 24 `generation-ready` images. `generation-ready/lie/left-profile.png` and `right-profile.png` have no same-named original counterpart, so they remain independent generation-ready references.

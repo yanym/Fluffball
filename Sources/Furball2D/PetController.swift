@@ -6,12 +6,25 @@ final class PetController: NSObject, NSMenuDelegate {
     private static let basePetSize = NSSize(width: 520, height: 292.5)
     private static let minimumScale: CGFloat = 0.6
     private static let maximumScale: CGFloat = 1.4
+    private static let minimumVisibleHorizontalRatio: CGFloat = 0.94
+    private static let minimumVisibleVerticalRatio: CGFloat = 0.94
 
     private enum PreferenceKey {
         static let petScale = "petScale"
         static let fullPassThrough = "fullPassThrough"
         static let autoBehavior = "autoBehavior"
         static let followCursor = "followCursor"
+        static let freeRoam = "freeRoam"
+        static let imageFacing = "imageFacing"
+    }
+
+    private enum HorizontalFacing {
+        case left
+        case right
+
+        var direction: CGFloat { self == .right ? 1 : -1 }
+        var isMirrored: Bool { self == .right }
+        var profileView: PetFacingView { self == .right ? .rightProfile : .leftProfile }
     }
 
     private enum LocomotionMode: Equatable {
@@ -37,6 +50,24 @@ final class PetController: NSObject, NSMenuDelegate {
             case .fastRun: PetClips.fastRun
             }
         }
+
+        var startTranslationDelay: TimeInterval {
+            switch self {
+            case .none: 0
+            case .walk: 0.32
+            case .slowRun: 0.16
+            case .fastRun: 0.32
+            }
+        }
+
+        var startTranslationRampDuration: TimeInterval {
+            switch self {
+            case .none: 0
+            case .walk: 0.36
+            case .slowRun: 0.26
+            case .fastRun: 0.18
+            }
+        }
     }
 
     private let panel: PetPanel
@@ -58,21 +89,38 @@ final class PetController: NSObject, NSMenuDelegate {
     private var speechHideTimer: Timer?
     private var speechFollowTimer: Timer?
     private var cursorFollowTimer: Timer?
+    private var freeRoamTimer: Timer?
+    private var facingTimer: Timer?
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
     private var patrolDirection: CGFloat = -1
     private var patrolDeadline: TimeInterval = 0
     private var currentlyInteractive = false
     private var locomotionMode: LocomotionMode = .none
-    private var locomotionVelocity: CGFloat = 0
+    private var locomotionVelocity = NSPoint.zero
     private var locomotionGeneration = 0
     private var locomotionDirection: CGFloat = -1
+    private var actionFacing: HorizontalFacing = .left
     private var lastLocomotionChangeTime: TimeInterval = 0
     private var pendingLocomotionMode: LocomotionMode?
     private var pendingLocomotionSince: TimeInterval = 0
+    private var locomotionTranslationStartTime: TimeInterval = 0
     private var lastCursorLocation = NSPoint.zero
     private var lastCursorSampleTime: TimeInterval = 0
     private var smoothedCursorSpeed: CGFloat = 0
+    private var facingView: PetFacingView = .leftProfile
+    private var pendingFacingView: PetFacingView?
+    private var pendingFacingSince: TimeInterval = 0
+    private var lastFacingChangeTime: TimeInterval = 0
+    private var isUsingImageFacing = false
+    private var facingTransitionGeneration = 0
+    private var isReturningToActionProfile = false
+    private var cursorMotionReadyTime: TimeInterval = 0
+    private var freeRoamTarget: NSPoint?
+    private var freeRoamPauseUntil: TimeInterval = 0
+    private var lastFreeRoamSampleTime: TimeInterval = 0
+    private var autonomousVideoFacingUntil: TimeInterval = 0
+    private var restFacingPreparedEpoch: Int?
     private let behaviorTimeScale: Double = ProcessInfo.processInfo.environment["FURBALL_FAST_BEHAVIOR"] == "1" ? 0.08 : 1
 
     private var petScale: CGFloat {
@@ -91,6 +139,14 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(followCursor, forKey: PreferenceKey.followCursor) }
     }
 
+    private var freeRoamEnabled: Bool {
+        didSet { UserDefaults.standard.set(freeRoamEnabled, forKey: PreferenceKey.freeRoam) }
+    }
+
+    private var imageFacingEnabled: Bool {
+        didSet { UserDefaults.standard.set(imageFacingEnabled, forKey: PreferenceKey.imageFacing) }
+    }
+
     private var appLanguage: AppLanguage {
         didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: AppLanguage.preferenceKey) }
     }
@@ -104,7 +160,11 @@ final class PetController: NSObject, NSMenuDelegate {
         autoBehavior = defaults.object(forKey: PreferenceKey.autoBehavior) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.autoBehavior)
-        followCursor = defaults.bool(forKey: PreferenceKey.followCursor)
+        freeRoamEnabled = defaults.bool(forKey: PreferenceKey.freeRoam)
+        followCursor = freeRoamEnabled ? false : defaults.bool(forKey: PreferenceKey.followCursor)
+        imageFacingEnabled = defaults.object(forKey: PreferenceKey.imageFacing) == nil
+            ? true
+            : defaults.bool(forKey: PreferenceKey.imageFacing)
         appLanguage = AppLanguage.stored
 
         let size = NSSize(width: Self.basePetSize.width * initialScale, height: Self.basePetSize.height * initialScale)
@@ -135,7 +195,10 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.updateClickThrough()
             }
         }
-        if followCursor {
+        startFacingTracking()
+        if freeRoamEnabled {
+            beginFreeRoaming()
+        } else if followCursor {
             beginCursorFollowing()
         } else {
             scheduleWake(epoch: behaviorEpoch)
@@ -166,6 +229,7 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: appLanguage.interactMenu, action: #selector(interactFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.speakMenu, action: #selector(speakFromMenu), keyEquivalent: "")
+        menu.addItem(withTitle: appLanguage.imageTurnMenu, action: #selector(imageTurnFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.sleepMenu, action: #selector(sleepFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.visibilityMenu(isVisible: panel.isVisible), action: #selector(toggleVisibility), keyEquivalent: "")
         menu.addItem(.separator())
@@ -174,8 +238,12 @@ final class PetController: NSObject, NSMenuDelegate {
         passItem.state = fullPassThrough ? .on : .off
         let autoItem = menu.addItem(withTitle: appLanguage.autoBehaviorMenu, action: #selector(toggleAutoBehavior), keyEquivalent: "")
         autoItem.state = autoBehavior ? .on : .off
+        let roamItem = menu.addItem(withTitle: appLanguage.freeRoamMenu, action: #selector(toggleFreeRoaming), keyEquivalent: "")
+        roamItem.state = freeRoamEnabled ? .on : .off
         let followItem = menu.addItem(withTitle: appLanguage.followCursorMenu, action: #selector(toggleCursorFollowing), keyEquivalent: "")
         followItem.state = followCursor ? .on : .off
+        let facingItem = menu.addItem(withTitle: appLanguage.imageFacingMenu, action: #selector(toggleImageFacing), keyEquivalent: "")
+        facingItem.state = imageFacingEnabled ? .on : .off
         let fadeItem = menu.addItem(withTitle: appLanguage.crossfadeMenu, action: #selector(toggleCrossfade), keyEquivalent: "")
         fadeItem.state = renderer.crossfadeEnabled ? .on : .off
         let levelItem = menu.addItem(withTitle: appLanguage.alwaysOnTopMenu, action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
@@ -276,7 +344,7 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         if totalDragDistance < 6 {
             speakRandomly()
-            if !followCursor { advanceBehavior() }
+            if !followCursor, !freeRoamEnabled { advanceBehavior() }
         }
         registerUserActivity()
     }
@@ -285,10 +353,40 @@ final class PetController: NSObject, NSMenuDelegate {
         let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? panel.screen ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return proposed }
         let size = panelSize ?? panel.frame.size
+        let horizontalLimits = horizontalMovementLimits(in: frame, panelWidth: size.width)
+        let verticalLimits = verticalMovementLimits(in: frame, panelHeight: size.height)
         return NSPoint(
-            x: min(frame.maxX - size.width * 0.25, max(frame.minX - size.width * 0.75, proposed.x)),
-            y: min(frame.maxY - size.height * 0.25, max(frame.minY, proposed.y))
+            x: min(horizontalLimits.maximum, max(horizontalLimits.minimum, proposed.x)),
+            y: min(verticalLimits.maximum, max(verticalLimits.minimum, proposed.y))
         )
+    }
+
+    private func horizontalMovementLimits(
+        in visibleFrame: NSRect,
+        panelWidth: CGFloat? = nil
+    ) -> (minimum: CGFloat, maximum: CGFloat) {
+        let width = panelWidth ?? panel.frame.width
+        let overflow = width * (1 - Self.minimumVisibleHorizontalRatio)
+        let minimum = visibleFrame.minX - overflow
+        let maximum = visibleFrame.maxX - width + overflow
+        if minimum <= maximum { return (minimum, maximum) }
+
+        let centered = visibleFrame.midX - width / 2
+        return (centered, centered)
+    }
+
+    private func verticalMovementLimits(
+        in visibleFrame: NSRect,
+        panelHeight: CGFloat? = nil
+    ) -> (minimum: CGFloat, maximum: CGFloat) {
+        let height = panelHeight ?? panel.frame.height
+        let overflow = height * (1 - Self.minimumVisibleVerticalRatio)
+        let minimum = visibleFrame.minY - overflow
+        let maximum = visibleFrame.maxY - height + overflow
+        if minimum <= maximum { return (minimum, maximum) }
+
+        let centered = visibleFrame.midY - height / 2
+        return (centered, centered)
     }
 
     private func showContextMenu(_ event: NSEvent) {
@@ -457,6 +555,146 @@ final class PetController: NSObject, NSMenuDelegate {
         setPanelIgnoresMouseEvents(!currentlyInteractive)
     }
 
+    private func startFacingTracking() {
+        facingTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.updateFacingTowardCursor()
+            }
+        }
+        facingTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private var canUseImageFacing: Bool {
+        imageFacingEnabled
+            && !followCursor
+            && !freeRoamEnabled
+            && posture == .stand
+            && !isTransitioning
+            && !isDragging
+            && locomotionMode == .none
+            && patrolTimer == nil
+            && ProcessInfo.processInfo.systemUptime >= autonomousVideoFacingUntil
+            && panel.isVisible
+    }
+
+    private func desiredFacingView(for cursor: NSPoint = NSEvent.mouseLocation) -> PetFacingView {
+        let normalizedX = (cursor.x - panel.frame.midX) / max(1, panel.frame.width)
+        switch normalizedX {
+        case ..<(-0.46): return .leftProfile
+        case ..<(-0.34): return .frontNearProfileLeft
+        case ..<(-0.20): return .frontThreeQuarterLeft
+        case ..<(-0.07): return .frontNearCenterLeft
+        case ...0.07: return .front
+        case ...0.20: return .frontNearCenterRight
+        case ...0.34: return .frontThreeQuarterRight
+        case ...0.46: return .frontNearProfileRight
+        default: return .rightProfile
+        }
+    }
+
+    private func updateFacingTowardCursor() {
+        guard canUseImageFacing else {
+            pendingFacingView = nil
+            return
+        }
+
+        if !isUsingImageFacing {
+            playFacingView(facingView, fadeDuration: 0.07)
+            return
+        }
+
+        let desiredView = desiredFacingView()
+        guard desiredView != facingView else {
+            pendingFacingView = nil
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        if pendingFacingView != desiredView {
+            pendingFacingView = desiredView
+            pendingFacingSince = now
+            return
+        }
+
+        // The requested bucket must remain stable before one adjacent step is
+        // accepted. Large cursor jumps therefore traverse every intermediate
+        // view instead of snapping from one profile directly to the other. Once
+        // accepted, keep that target pending so the remaining adjacent steps can
+        // follow the shorter switch cooldown without repeating the full dwell.
+        guard now - pendingFacingSince >= 0.18,
+              now - lastFacingChangeTime >= 0.09 else { return }
+        playFacingView(facingView.stepped(toward: desiredView), fadeDuration: 0.07)
+    }
+
+    private func playFacingView(_ view: PetFacingView, fadeDuration: TimeInterval) {
+        renderer.setMirrored(false)
+        do {
+            try renderer.play(PetClips.imageFacing(view), fadeDuration: fadeDuration)
+            facingView = view
+            if view.rawValue < PetFacingView.front.rawValue {
+                actionFacing = .left
+            } else if view.rawValue > PetFacingView.front.rawValue {
+                actionFacing = .right
+            }
+            isUsingImageFacing = true
+            lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
+            repositionSpeechBubble(resetSilhouette: true)
+        } catch {
+            isUsingImageFacing = false
+            present(error)
+        }
+    }
+
+    private func returnImageFacingToActionProfile(completion: @escaping () -> Void) {
+        let targetView = actionFacing.profileView
+        guard isUsingImageFacing, facingView != targetView else {
+            completion()
+            return
+        }
+
+        facingTransitionGeneration += 1
+        let generation = facingTransitionGeneration
+        isReturningToActionProfile = true
+        isTransitioning = true
+        pendingFacingView = nil
+        speechBubble.updateAppearance(mood: speechMood)
+
+        func advance() {
+            guard generation == facingTransitionGeneration else { return }
+            let nextView = facingView.stepped(toward: targetView)
+            do {
+                try renderer.play(PetClips.imageFacing(nextView), fadeDuration: 0.07)
+                facingView = nextView
+                isUsingImageFacing = true
+                lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
+            } catch {
+                isReturningToActionProfile = false
+                isTransitioning = false
+                present(error)
+                completion()
+                return
+            }
+
+            Timer.scheduledTimer(withTimeInterval: 0.11, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.facingTransitionGeneration else { return }
+                    if self.facingView == targetView {
+                        self.isReturningToActionProfile = false
+                        self.isTransitioning = false
+                        self.speechBubble.updateAppearance(mood: self.speechMood)
+                        completion()
+                    } else {
+                        advance()
+                    }
+                }
+            }
+        }
+
+        advance()
+    }
+
     private func advanceBehavior() {
         guard !isTransitioning else { return }
         switch posture {
@@ -472,8 +710,21 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func playTransition(_ clip: PetClip, completion: (() -> Void)? = nil) {
+        if posture == .stand, isUsingImageFacing, facingView != actionFacing.profileView {
+            returnImageFacingToActionProfile { [weak self] in
+                self?.playTransition(clip, completion: completion)
+            }
+            return
+        }
+
         stopPatrol()
+        locomotionGeneration += 1
+        locomotionMode = .none
+        locomotionVelocity = .zero
+        pendingLocomotionMode = nil
+        isUsingImageFacing = false
         isTransitioning = true
+        renderer.setMirrored(actionFacing.isMirrored)
         speechBubble.updateAppearance(mood: speechMood)
         do {
             try renderer.play(clip) { [weak self] in
@@ -488,11 +739,25 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func playIdle(_ newPosture: PetPosture, resetMirroring: Bool = true) {
+    private func playIdle(_ newPosture: PetPosture) {
         posture = newPosture
         isTransitioning = false
-        if resetMirroring { renderer.setMirrored(false) }
+        renderer.setMirrored(actionFacing.isMirrored)
         speechBubble.updateAppearance(mood: speechMood)
+
+        if newPosture == .stand,
+           imageFacingEnabled,
+           !followCursor,
+           !freeRoamEnabled,
+           patrolTimer == nil,
+           locomotionMode == .none,
+           ProcessInfo.processInfo.systemUptime >= autonomousVideoFacingUntil {
+            facingView = actionFacing.profileView
+            playFacingView(facingView, fadeDuration: 0.07)
+            return
+        }
+
+        isUsingImageFacing = false
         do {
             try renderer.play(PetClips.idle(for: newPosture))
         } catch {
@@ -505,7 +770,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
-        guard autoBehavior, !followCursor else { return }
+        guard autoBehavior, !followCursor, !freeRoamEnabled else { return }
         schedule(after: 12, epoch: epoch) { [weak self] in
             self?.settleDown(epoch: epoch)
         }
@@ -528,7 +793,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func settleDown(epoch: Int) {
-        guard behaviorEpoch == epoch, !isDragging else { return }
+        guard behaviorEpoch == epoch, !isDragging, !freeRoamEnabled else { return }
         if isTransitioning {
             schedule(after: 1, epoch: epoch) { [weak self] in self?.settleDown(epoch: epoch) }
             return
@@ -536,6 +801,15 @@ final class PetController: NSObject, NSMenuDelegate {
         stopPatrol()
         switch posture {
         case .stand:
+            if restFacingPreparedEpoch != epoch {
+                restFacingPreparedEpoch = epoch
+                actionFacing = Bool.random() ? .left : .right
+                returnImageFacingToActionProfile { [weak self] in
+                    self?.showAutonomousStandFacing(epoch: epoch)
+                }
+                return
+            }
+            restFacingPreparedEpoch = nil
             playTransition(PetClips.sitDown) { [weak self] in
                 self?.schedule(after: 0.7, epoch: epoch) { [weak self] in self?.settleDown(epoch: epoch) }
             }
@@ -549,6 +823,21 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         case .sleep:
             scheduleWake(epoch: epoch)
+        }
+    }
+
+    private func showAutonomousStandFacing(epoch: Int) {
+        guard behaviorEpoch == epoch, posture == .stand, !freeRoamEnabled else { return }
+        autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.35
+        isUsingImageFacing = false
+        renderer.setMirrored(actionFacing.isMirrored)
+        do {
+            try renderer.play(PetClips.standIdle, fadeDuration: 0.09)
+        } catch {
+            present(error)
+        }
+        schedule(after: 1.15, epoch: epoch) { [weak self] in
+            self?.settleDown(epoch: epoch)
         }
     }
 
@@ -570,7 +859,19 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func startPatrol(epoch: Int) {
         guard behaviorEpoch == epoch, posture == .stand else { return }
+        let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        patrolDirection = panel.frame.midX < screen.midX ? 1 : -1
+        actionFacing = patrolDirection > 0 ? .right : .left
+        if isUsingImageFacing, facingView != actionFacing.profileView {
+            returnImageFacingToActionProfile { [weak self] in
+                self?.startPatrol(epoch: epoch)
+            }
+            return
+        }
+
         if PetClips.walkIdle.isAvailable {
+            isUsingImageFacing = false
+            renderer.setMirrored(actionFacing.isMirrored)
             do {
                 try renderer.play(PetClips.walkIdle)
             } catch {
@@ -579,9 +880,6 @@ final class PetController: NSObject, NSMenuDelegate {
                 return
             }
 
-            let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-            patrolDirection = panel.frame.midX < screen.midX ? 1 : -1
-            renderer.setMirrored(patrolDirection > 0)
             patrolDeadline = ProcessInfo.processInfo.systemUptime + Double.random(in: 10...18)
             speechBubble.updateAppearance(mood: .active)
             patrolTimer?.invalidate()
@@ -604,6 +902,7 @@ final class PetController: NSObject, NSMenuDelegate {
               ProcessInfo.processInfo.systemUptime < patrolDeadline else {
             patrolTimer?.invalidate()
             patrolTimer = nil
+            autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
             playIdle(.stand)
             schedule(after: 1.2, epoch: epoch) { [weak self] in self?.settleDown(epoch: epoch) }
             return
@@ -612,11 +911,13 @@ final class PetController: NSObject, NSMenuDelegate {
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         var origin = panel.frame.origin
         origin.x += patrolDirection * (58.0 / 60.0)
-        let leftLimit = visibleFrame.minX - panel.frame.width * 0.30
-        let rightLimit = visibleFrame.maxX - panel.frame.width * 0.70
+        let horizontalLimits = horizontalMovementLimits(in: visibleFrame)
+        let leftLimit = horizontalLimits.minimum
+        let rightLimit = horizontalLimits.maximum
         if origin.x <= leftLimit || origin.x >= rightLimit {
             patrolDirection *= -1
-            renderer.setMirrored(patrolDirection > 0)
+            actionFacing = patrolDirection > 0 ? .right : .left
+            renderer.setMirrored(actionFacing.isMirrored)
             origin.x = min(rightLimit, max(leftLimit, origin.x))
         }
         panel.setFrameOrigin(origin)
@@ -627,8 +928,8 @@ final class PetController: NSObject, NSMenuDelegate {
         let wasPatrolling = patrolTimer != nil
         patrolTimer?.invalidate()
         patrolTimer = nil
-        renderer.setMirrored(false)
         if wasPatrolling, posture == .stand, !isTransitioning {
+            autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
             playIdle(.stand)
         }
     }
@@ -638,8 +939,29 @@ final class PetController: NSObject, NSMenuDelegate {
         behaviorTimer?.invalidate()
         stopPatrol()
         cursorFollowTimer?.invalidate()
+
+        let horizontalDelta = NSEvent.mouseLocation.x - panel.frame.midX
+        if abs(horizontalDelta) > 20 * petScale {
+            actionFacing = horizontalDelta > 0 ? .right : .left
+            locomotionDirection = actionFacing.direction
+        }
+
+        if posture == .stand, isUsingImageFacing, facingView != actionFacing.profileView {
+            returnImageFacingToActionProfile { [weak self] in
+                self?.activateCursorFollowing()
+            }
+            return
+        }
+
+        activateCursorFollowing()
+    }
+
+    private func activateCursorFollowing() {
+        guard followCursor else { return }
+        isUsingImageFacing = false
         lastCursorLocation = NSEvent.mouseLocation
         lastCursorSampleTime = ProcessInfo.processInfo.systemUptime
+        cursorMotionReadyTime = lastCursorSampleTime + 0.10
         smoothedCursorSpeed = 0
 
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
@@ -649,32 +971,41 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         cursorFollowTimer = timer
         RunLoop.main.add(timer, forMode: .common)
-        continueToStandForCursorFollowing()
+        continueToStandForMovement()
     }
 
     private func stopCursorFollowing() {
         cursorFollowTimer?.invalidate()
         cursorFollowTimer = nil
         smoothedCursorSpeed = 0
+        if isReturningToActionProfile {
+            facingTransitionGeneration += 1
+            isReturningToActionProfile = false
+            isTransitioning = false
+        }
+        let wasStopped = locomotionMode == .none
         setLocomotionMode(.none, direction: locomotionDirection)
+        if wasStopped, posture == .stand, !isTransitioning {
+            playIdle(.stand)
+        }
     }
 
-    private func continueToStandForCursorFollowing() {
-        guard followCursor, !isTransitioning else { return }
+    private func continueToStandForMovement() {
+        guard (followCursor || freeRoamEnabled), !isTransitioning else { return }
         switch posture {
         case .stand:
             return
         case .sit:
             playTransition(PetClips.sitToLie) { [weak self] in
-                self?.continueToStandForCursorFollowing()
+                self?.continueToStandForMovement()
             }
         case .lie:
             playTransition(PetClips.lieToSleep) { [weak self] in
-                self?.continueToStandForCursorFollowing()
+                self?.continueToStandForMovement()
             }
         case .sleep:
             playTransition(PetClips.sleepToStand) { [weak self] in
-                self?.continueToStandForCursorFollowing()
+                self?.continueToStandForMovement()
             }
         }
     }
@@ -682,11 +1013,16 @@ final class PetController: NSObject, NSMenuDelegate {
     private func updateCursorFollowing() {
         guard followCursor, panel.isVisible, !isDragging else { return }
         guard posture == .stand, !isTransitioning else {
-            if !isTransitioning { continueToStandForCursorFollowing() }
+            if !isTransitioning { continueToStandForMovement() }
             return
         }
 
         let now = ProcessInfo.processInfo.systemUptime
+        guard now >= cursorMotionReadyTime else {
+            lastCursorLocation = NSEvent.mouseLocation
+            lastCursorSampleTime = now
+            return
+        }
         let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - lastCursorSampleTime))
         let cursor = NSEvent.mouseLocation
         let cursorDelta = hypot(cursor.x - lastCursorLocation.x, cursor.y - lastCursorLocation.y)
@@ -695,14 +1031,152 @@ final class PetController: NSObject, NSMenuDelegate {
         lastCursorLocation = cursor
         lastCursorSampleTime = now
 
-        let horizontalDelta = cursor.x - panel.frame.midX
-        let distance = abs(horizontalDelta)
         let deadZone = 76 * petScale
+        let distance = hypot(cursor.x - panel.frame.midX, cursor.y - panel.frame.midY)
         let demand = max(smoothedCursorSpeed, max(0, distance - deadZone) * 1.1)
+        updateMovement(
+            toward: cursor,
+            demand: demand,
+            deadZone: deadZone,
+            now: now,
+            deltaTime: deltaTime
+        )
+    }
+
+    private func beginFreeRoaming() {
+        behaviorEpoch += 1
+        behaviorTimer?.invalidate()
+        stopPatrol()
+        freeRoamTimer?.invalidate()
+        freeRoamTarget = makeRandomRoamTarget()
+        freeRoamPauseUntil = 0
+
+        if let target = freeRoamTarget {
+            let horizontalDelta = target.x - panel.frame.midX
+            if abs(horizontalDelta) > 20 * petScale {
+                actionFacing = horizontalDelta > 0 ? .right : .left
+                locomotionDirection = actionFacing.direction
+            }
+        }
+
+        if posture == .stand, isUsingImageFacing, facingView != actionFacing.profileView {
+            returnImageFacingToActionProfile { [weak self] in
+                self?.activateFreeRoaming()
+            }
+            return
+        }
+
+        activateFreeRoaming()
+    }
+
+    private func activateFreeRoaming() {
+        guard freeRoamEnabled else { return }
+        isUsingImageFacing = false
+        lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.updateFreeRoaming()
+            }
+        }
+        freeRoamTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        continueToStandForMovement()
+    }
+
+    private func stopFreeRoaming() {
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        freeRoamTarget = nil
+        freeRoamPauseUntil = 0
+        if isReturningToActionProfile {
+            facingTransitionGeneration += 1
+            isReturningToActionProfile = false
+            isTransitioning = false
+        }
+        let wasStopped = locomotionMode == .none
+        setLocomotionMode(.none, direction: locomotionDirection)
+        if wasStopped, posture == .stand, !isTransitioning {
+            playIdle(.stand)
+        }
+    }
+
+    private func updateFreeRoaming() {
+        guard freeRoamEnabled, panel.isVisible, !isDragging else { return }
+        guard posture == .stand, !isTransitioning else {
+            if !isTransitioning { continueToStandForMovement() }
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - lastFreeRoamSampleTime))
+        lastFreeRoamSampleTime = now
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+
+        if now < freeRoamPauseUntil {
+            updateMovement(toward: center, demand: 0, deadZone: 8, now: now, deltaTime: deltaTime)
+            return
+        }
+
+        if freeRoamTarget == nil {
+            freeRoamTarget = makeRandomRoamTarget()
+        }
+        guard let target = freeRoamTarget else { return }
+
+        let distance = hypot(target.x - center.x, target.y - center.y)
+        let deadZone = 54 * petScale
+        if distance <= deadZone {
+            freeRoamTarget = nil
+            freeRoamPauseUntil = now + Double.random(in: 3.8...6.4)
+            updateMovement(toward: center, demand: 0, deadZone: 8, now: now, deltaTime: deltaTime)
+            return
+        }
+
+        let demand = max(120, distance * 0.9)
+        updateMovement(
+            toward: target,
+            demand: demand,
+            deadZone: deadZone,
+            now: now,
+            deltaTime: deltaTime
+        )
+    }
+
+    private func makeRandomRoamTarget() -> NSPoint? {
+        let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        guard let visibleFrame else { return nil }
+        let horizontalLimits = horizontalMovementLimits(in: visibleFrame)
+        let verticalLimits = verticalMovementLimits(in: visibleFrame)
+        let currentCenter = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+
+        var candidate = currentCenter
+        for _ in 0..<8 {
+            let origin = NSPoint(
+                x: CGFloat.random(in: horizontalLimits.minimum...horizontalLimits.maximum),
+                y: CGFloat.random(in: verticalLimits.minimum...verticalLimits.maximum)
+            )
+            candidate = NSPoint(x: origin.x + panel.frame.width / 2, y: origin.y + panel.frame.height / 2)
+            if hypot(candidate.x - currentCenter.x, candidate.y - currentCenter.y) > 210 * petScale {
+                break
+            }
+        }
+        return candidate
+    }
+
+    private func updateMovement(
+        toward target: NSPoint,
+        demand: CGFloat,
+        deadZone: CGFloat,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let deltaX = target.x - panel.frame.midX
+        let deltaY = target.y - panel.frame.midY
+        let distance = hypot(deltaX, deltaY)
         let desiredMode = desiredLocomotionMode(distance: distance, demand: demand, deadZone: deadZone)
 
-        if distance > deadZone + 18 {
-            locomotionDirection = horizontalDelta >= 0 ? 1 : -1
+        if distance > deadZone + 18, abs(deltaX) > 18 * petScale {
+            locomotionDirection = deltaX >= 0 ? 1 : -1
+            actionFacing = locomotionDirection > 0 ? .right : .left
         }
 
         let canChangeMode = now - lastLocomotionChangeTime >= 0.70
@@ -721,29 +1195,53 @@ final class PetController: NSObject, NSMenuDelegate {
             setLocomotionMode(desiredMode, direction: locomotionDirection)
         }
         if locomotionMode != .none {
-            renderer.setMirrored(locomotionDirection > 0)
+            renderer.setMirrored(actionFacing.isMirrored)
+        }
+
+        let translationProgress: CGFloat
+        if locomotionMode == .none {
+            translationProgress = 1
+        } else if now < locomotionTranslationStartTime {
+            locomotionVelocity = .zero
+            return
+        } else {
+            let rampDuration = max(0.01, locomotionMode.startTranslationRampDuration)
+            let linearProgress = min(1, max(0, (now - locomotionTranslationStartTime) / rampDuration))
+            translationProgress = CGFloat(linearProgress * linearProgress * (3 - 2 * linearProgress))
         }
 
         let scaleSpeed = min(1.16, max(0.82, sqrt(petScale)))
-        let targetVelocity = locomotionDirection * locomotionMode.pointsPerSecond * scaleSpeed
+        let targetSpeed = locomotionMode.pointsPerSecond * scaleSpeed * translationProgress
+        let targetVelocity: NSPoint
+        if locomotionMode == .none || distance < 1 {
+            targetVelocity = .zero
+        } else {
+            targetVelocity = NSPoint(
+                x: deltaX / distance * targetSpeed,
+                y: deltaY / distance * targetSpeed
+            )
+        }
         let velocityResponse = locomotionMode == .none ? 6.5 : 4.2
-        locomotionVelocity += (targetVelocity - locomotionVelocity) * min(1, deltaTime * velocityResponse)
+        let response = min(1, deltaTime * velocityResponse)
+        locomotionVelocity.x += (targetVelocity.x - locomotionVelocity.x) * response
+        locomotionVelocity.y += (targetVelocity.y - locomotionVelocity.y) * response
 
-        guard abs(locomotionVelocity) > 0.25 else {
-            locomotionVelocity = 0
+        guard hypot(locomotionVelocity.x, locomotionVelocity.y) > 0.25 else {
+            locomotionVelocity = .zero
             return
         }
 
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let leftLimit = visibleFrame.minX - panel.frame.width * 0.30
-        let rightLimit = visibleFrame.maxX - panel.frame.width * 0.70
+        let horizontalLimits = horizontalMovementLimits(in: visibleFrame)
+        let verticalLimits = verticalMovementLimits(in: visibleFrame)
         var origin = panel.frame.origin
-        origin.x = min(rightLimit, max(leftLimit, origin.x + locomotionVelocity * deltaTime))
+        let proposedX = origin.x + locomotionVelocity.x * deltaTime
+        let proposedY = origin.y + locomotionVelocity.y * deltaTime
+        origin.x = min(horizontalLimits.maximum, max(horizontalLimits.minimum, proposedX))
+        origin.y = min(verticalLimits.maximum, max(verticalLimits.minimum, proposedY))
 
-        if (origin.x == leftLimit && locomotionVelocity < 0)
-            || (origin.x == rightLimit && locomotionVelocity > 0) {
-            locomotionVelocity = 0
-        }
+        if origin.x != proposedX { locomotionVelocity.x = 0 }
+        if origin.y != proposedY { locomotionVelocity.y = 0 }
         panel.setFrameOrigin(origin)
         repositionSpeechBubble(refreshSilhouette: false)
     }
@@ -778,29 +1276,39 @@ final class PetController: NSObject, NSMenuDelegate {
         guard newMode != locomotionMode else { return }
         let previousMode = locomotionMode
         locomotionMode = newMode
+        if newMode != .none { isUsingImageFacing = false }
         locomotionDirection = direction
         locomotionGeneration += 1
         pendingLocomotionMode = nil
         let generation = locomotionGeneration
-        lastLocomotionChangeTime = ProcessInfo.processInfo.systemUptime
+        let now = ProcessInfo.processInfo.systemUptime
+        lastLocomotionChangeTime = now
+        if previousMode == .none, newMode != .none {
+            locomotionVelocity = .zero
+            locomotionTranslationStartTime = now + newMode.startTranslationDelay
+        } else if newMode == .none {
+            locomotionTranslationStartTime = 0
+        }
         speechBubble.updateAppearance(mood: speechMood)
 
         do {
             if newMode == .none {
                 guard let stopClip = previousMode.clips?.stop else {
-                    playIdle(.stand, resetMirroring: !followCursor)
+                    playIdle(.stand)
                     return
                 }
                 try renderer.play(stopClip, fadeDuration: 0.12) { [weak self] in
                     guard let self, self.locomotionGeneration == generation,
-                          self.locomotionMode == .none else { return }
-                    self.playIdle(.stand, resetMirroring: !self.followCursor)
+                          self.locomotionMode == .none,
+                          !self.isTransitioning else { return }
+                    self.playIdle(.stand)
                 }
                 return
             }
 
             guard let clips = newMode.clips else { return }
-            renderer.setMirrored(direction > 0)
+            actionFacing = direction > 0 ? .right : .left
+            renderer.setMirrored(actionFacing.isMirrored)
             if previousMode == .none {
                 try renderer.play(clips.start, fadeDuration: 0.12) { [weak self] in
                     guard let self, self.locomotionGeneration == generation,
@@ -812,19 +1320,20 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         } catch {
             locomotionMode = .none
-            locomotionVelocity = 0
+            locomotionVelocity = .zero
             present(error)
         }
     }
 
     private func playLocomotionLoop(_ mode: LocomotionMode, direction: CGFloat) {
         guard let loopClip = mode.clips?.loop else { return }
-        renderer.setMirrored(direction > 0)
+        actionFacing = direction > 0 ? .right : .left
+        renderer.setMirrored(actionFacing.isMirrored)
         do {
             try renderer.play(loopClip, fadeDuration: 0.12)
         } catch {
             locomotionMode = .none
-            locomotionVelocity = 0
+            locomotionVelocity = .zero
             present(error)
         }
     }
@@ -870,11 +1379,99 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
-        guard autoBehavior, !followCursor else { return }
+        guard autoBehavior, !followCursor, !freeRoamEnabled else { return }
         if posture == .sleep {
             scheduleWake(epoch: epoch)
         } else {
             schedule(after: 12, epoch: epoch) { [weak self] in self?.settleDown(epoch: epoch) }
+        }
+    }
+
+    private func prepareStandForImageTurn(resumeFollowing: Bool, resumeFreeRoaming: Bool) {
+        guard !isTransitioning else { return }
+        switch posture {
+        case .stand:
+            actionFacing = .left
+            if isUsingImageFacing, facingView != .leftProfile {
+                returnImageFacingToActionProfile { [weak self] in
+                    self?.playImageTurn(
+                        resumeFollowing: resumeFollowing,
+                        resumeFreeRoaming: resumeFreeRoaming
+                    )
+                }
+            } else {
+                playImageTurn(resumeFollowing: resumeFollowing, resumeFreeRoaming: resumeFreeRoaming)
+            }
+        case .sit:
+            playTransition(PetClips.sitToLie) { [weak self] in
+                self?.prepareStandForImageTurn(
+                    resumeFollowing: resumeFollowing,
+                    resumeFreeRoaming: resumeFreeRoaming
+                )
+            }
+        case .lie:
+            playTransition(PetClips.lieToSleep) { [weak self] in
+                self?.prepareStandForImageTurn(
+                    resumeFollowing: resumeFollowing,
+                    resumeFreeRoaming: resumeFreeRoaming
+                )
+            }
+        case .sleep:
+            playTransition(PetClips.sleepToStand) { [weak self] in
+                self?.prepareStandForImageTurn(
+                    resumeFollowing: resumeFollowing,
+                    resumeFreeRoaming: resumeFreeRoaming
+                )
+            }
+        }
+    }
+
+    private func playImageTurn(resumeFollowing: Bool, resumeFreeRoaming: Bool) {
+        locomotionGeneration += 1
+        locomotionMode = .none
+        locomotionVelocity = .zero
+        pendingLocomotionMode = nil
+        actionFacing = .left
+        facingView = .leftProfile
+        pendingFacingView = nil
+        isUsingImageFacing = false
+        renderer.setMirrored(false)
+        isTransitioning = true
+        showSpeech(appLanguage.imageTurnGreeting)
+        speechBubble.updateAppearance(mood: speechMood)
+
+        do {
+            try renderer.play(PetClips.lookAroundImages, fadeDuration: 0.10) { [weak self] in
+                guard let self else { return }
+                self.isTransitioning = false
+                self.playIdle(.stand)
+                if resumeFollowing, self.followCursor {
+                    self.beginCursorFollowing()
+                } else if resumeFreeRoaming, self.freeRoamEnabled {
+                    self.beginFreeRoaming()
+                } else {
+                    self.restartAutonomy()
+                }
+            }
+        } catch {
+            isTransitioning = false
+            if resumeFollowing, followCursor { beginCursorFollowing() }
+            else if resumeFreeRoaming, freeRoamEnabled { beginFreeRoaming() }
+            else { restartAutonomy() }
+            present(error)
+        }
+    }
+
+    private func switchToVideoStandIdle() {
+        guard posture == .stand else { return }
+        isUsingImageFacing = false
+        facingView = actionFacing.profileView
+        pendingFacingView = nil
+        renderer.setMirrored(actionFacing.isMirrored)
+        do {
+            try renderer.play(PetClips.standIdle, fadeDuration: 0.08)
+        } catch {
+            present(error)
         }
     }
 
@@ -903,7 +1500,7 @@ final class PetController: NSObject, NSMenuDelegate {
         panel.orderFrontRegardless()
         registerUserActivity()
         speakRandomly()
-        if !followCursor { advanceBehavior() }
+        if !followCursor, !freeRoamEnabled { advanceBehavior() }
     }
 
     @objc private func speakFromMenu() {
@@ -911,11 +1508,38 @@ final class PetController: NSObject, NSMenuDelegate {
         speakRandomly()
     }
 
+    @objc private func imageTurnFromMenu() {
+        panel.orderFrontRegardless()
+        guard !isTransitioning else {
+            showSpeech(appLanguage.imageTurnBusy)
+            return
+        }
+
+        behaviorEpoch += 1
+        behaviorTimer?.invalidate()
+        stopPatrol()
+        let resumeFollowing = followCursor
+        let resumeFreeRoaming = freeRoamEnabled
+        cursorFollowTimer?.invalidate()
+        cursorFollowTimer = nil
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        smoothedCursorSpeed = 0
+        prepareStandForImageTurn(
+            resumeFollowing: resumeFollowing,
+            resumeFreeRoaming: resumeFreeRoaming
+        )
+    }
+
     @objc private func sleepFromMenu() {
         panel.orderFrontRegardless()
         if followCursor {
             followCursor = false
             stopCursorFollowing()
+        }
+        if freeRoamEnabled {
+            freeRoamEnabled = false
+            stopFreeRoaming()
         }
         showSpeech(appLanguage.sleepConfirmation)
         requestSleep()
@@ -952,12 +1576,52 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleCursorFollowing() {
-        followCursor.toggle()
         if followCursor {
-            beginCursorFollowing()
-        } else {
+            followCursor = false
             stopCursorFollowing()
             restartAutonomy()
+        } else {
+            if freeRoamEnabled {
+                freeRoamEnabled = false
+                stopFreeRoaming()
+            }
+            followCursor = true
+            beginCursorFollowing()
+        }
+    }
+
+    @objc private func toggleFreeRoaming() {
+        if freeRoamEnabled {
+            freeRoamEnabled = false
+            stopFreeRoaming()
+            showSpeech(appLanguage.freeRoamStopped)
+            restartAutonomy()
+        } else {
+            if followCursor {
+                followCursor = false
+                stopCursorFollowing()
+            }
+            freeRoamEnabled = true
+            showSpeech(appLanguage.freeRoamStarted)
+            beginFreeRoaming()
+        }
+    }
+
+    @objc private func toggleImageFacing() {
+        imageFacingEnabled.toggle()
+        pendingFacingView = nil
+        guard posture == .stand, !followCursor, !freeRoamEnabled,
+              locomotionMode == .none, patrolTimer == nil,
+              !isTransitioning else { return }
+
+        if imageFacingEnabled {
+            playFacingView(facingView, fadeDuration: 0.07)
+        } else if isUsingImageFacing, facingView != actionFacing.profileView {
+            returnImageFacingToActionProfile { [weak self] in
+                self?.switchToVideoStandIdle()
+            }
+        } else {
+            switchToVideoStandIdle()
         }
     }
 

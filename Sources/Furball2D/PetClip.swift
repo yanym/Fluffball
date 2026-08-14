@@ -7,6 +7,38 @@ enum PetPosture {
     case sleep
 }
 
+enum PetFacingView: Int, CaseIterable, Sendable {
+    case leftProfile
+    case frontNearProfileLeft
+    case frontThreeQuarterLeft
+    case frontNearCenterLeft
+    case front
+    case frontNearCenterRight
+    case frontThreeQuarterRight
+    case frontNearProfileRight
+    case rightProfile
+
+    var assetName: String {
+        switch self {
+        case .leftProfile: "left-profile"
+        case .frontNearProfileLeft: "front-near-profile-left"
+        case .frontThreeQuarterLeft: "front-three-quarter-left"
+        case .frontNearCenterLeft: "front-near-center-left"
+        case .front: "front"
+        case .frontNearCenterRight: "front-near-center-right"
+        case .frontThreeQuarterRight: "front-three-quarter-right"
+        case .frontNearProfileRight: "front-near-profile-right"
+        case .rightProfile: "right-profile"
+        }
+    }
+
+    func stepped(toward target: PetFacingView) -> PetFacingView {
+        guard target != self else { return self }
+        let nextRawValue = rawValue + (target.rawValue > rawValue ? 1 : -1)
+        return PetFacingView(rawValue: nextRawValue) ?? target
+    }
+}
+
 struct PetClip {
     let fileName: String
     let loops: Bool
@@ -51,10 +83,19 @@ enum PetClips {
     static let slowRun = motion("slow-run")
     static let fastRun = motion("fast-run")
     static let walkIdle = walk.loop
+    static let lookAroundImages = clip("look-around-images", loops: false, posture: .stand)
     static let sleepToStand = clip("sleep-to-stand", loops: false, posture: .stand)
     static let sitDown = clip("stand-to-sit", loops: false, posture: .sit)
     static let sitToLie = clip("sit-to-lie", loops: false, posture: .lie)
     static let lieToSleep = clip("lie-to-sleep", loops: false, posture: .sleep)
+
+    static func imageFacing(_ view: PetFacingView) -> PetClip {
+        PetClip(
+            fileName: "image-views/\(view.assetName)",
+            loops: true,
+            resultingPosture: .stand
+        )
+    }
 
     static func idle(for posture: PetPosture) -> PetClip {
         switch posture {

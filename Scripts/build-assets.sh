@@ -242,4 +242,6 @@ compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-loop" "2.75000
 compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-stop" "3.333333" "5.166667" "0x539648" 124 \
   "0.945081" "1.022727" "-12.716" "2.779" "35.963" "-9.788"
 
+"$SCRIPT_DIR/build-image-turn-mvp.sh"
+
 print "透明素材已写入：$OUTPUT_DIR"

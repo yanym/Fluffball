@@ -24,6 +24,7 @@ typeset -a required_clips=(
   walk-start walk-loop walk-stop
   slow-run-start slow-run-loop slow-run-stop
   fast-run-start fast-run-loop fast-run-stop
+  look-around-images
 )
 assets_missing=false
 for clip_name in "${required_clips[@]}"; do
@@ -32,8 +33,22 @@ for clip_name in "${required_clips[@]}"; do
     break
   fi
 done
+typeset -a required_image_views=(
+  left-profile front-near-profile-left front-three-quarter-left
+  front-near-center-left front front-near-center-right
+  front-three-quarter-right front-near-profile-right right-profile
+)
+for view_name in "${required_image_views[@]}"; do
+  if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views/$view_name.mov" ]]; then
+    assets_missing=true
+    break
+  fi
+done
 if [[ "$assets_missing" == true ]]; then
   "$SCRIPT_DIR/build-assets.sh"
+fi
+if [[ ! -f "$PROJECT_DIR/Support/AppIcon.icns" ]]; then
+  "$SCRIPT_DIR/build-app-icon.sh"
 fi
 
 swift build -c release
@@ -44,7 +59,9 @@ STAGE_APP="$STAGE_DIR/Furball2D.app"
 mkdir -p "$STAGE_APP/Contents/MacOS" "$STAGE_APP/Contents/Resources"
 cp "$BUILD_DIR/Furball2D" "$STAGE_APP/Contents/MacOS/Furball2D"
 cp "$PROJECT_DIR/Support/Info.plist" "$STAGE_APP/Contents/Info.plist"
+cp "$PROJECT_DIR/Support/AppIcon.icns" "$STAGE_APP/Contents/Resources/AppIcon.icns"
 cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/Assets" "$STAGE_APP/Contents/Resources/Assets"
+find "$STAGE_APP" -type f -name '.DS_Store' -delete
 
 # Desktop 由 File Provider 管理，会主动给新 .app 写 FinderInfo。先在 /tmp 的干净
 # 暂存区完成签名和严格校验，再制作不携带扩展属性的 ZIP，避免签名竞争。
