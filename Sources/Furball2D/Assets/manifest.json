@@ -1,0 +1,14 @@
+{
+  "formatVersion": 2,
+  "canvas": { "width": 960, "height": 540, "fps": 24 },
+  "clips": [
+    { "id": "stand.idle", "view": "left-profile", "file": "Clips/left-profile/stand-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-idle.mp4" },
+    { "id": "stand.to.sit", "view": "left-profile", "file": "Clips/left-profile/stand-to-sit.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-sit.mp4" },
+    { "id": "sit.idle", "view": "left-profile", "file": "Clips/left-profile/sit-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/sit-to-lie.mp4" },
+    { "id": "sit.to.lie", "view": "left-profile", "file": "Clips/left-profile/sit-to-lie.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/sit-to-lie.mp4" },
+    { "id": "lie.idle", "view": "left-profile", "file": "Clips/left-profile/lie-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/lie-to-sleep.mp4" },
+    { "id": "lie.to.sleep", "view": "left-profile", "file": "Clips/left-profile/lie-to-sleep.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/lie-to-sleep.mp4" },
+    { "id": "sleep.idle", "view": "left-profile", "file": "Clips/left-profile/sleep-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/sleep-idle.mp4" },
+    { "id": "sleep.to.stand", "view": "left-profile", "file": "Clips/left-profile/sleep-to-stand.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/sleep-to-stand.mp4" }
+  ]
+}
