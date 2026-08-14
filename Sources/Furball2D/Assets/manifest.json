@@ -1,6 +1,11 @@
 {
-  "formatVersion": 3,
+  "formatVersion": 4,
   "canvas": { "width": 960, "height": 540, "fps": 24 },
+  "normalization": {
+    "workCanvas": { "width": 1600, "height": 900 },
+    "anchors": ["subjectHeight", "alphaCenterX", "groundY"],
+    "curve": "smoothstep"
+  },
   "clips": [
     { "id": "stand.idle", "view": "left-profile", "file": "Clips/left-profile/stand-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-idle.mp4" },
     { "id": "stand.to.sit", "view": "left-profile", "file": "Clips/left-profile/stand-to-sit.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-sit.mp4" },

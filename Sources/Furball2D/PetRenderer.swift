@@ -378,8 +378,11 @@ final class PetRenderer: NSObject, MTKViewDelegate {
                 } else {
                     linearProgress = Float(min(1, max(0, (now - fade.startTime) / fade.duration)))
                 }
-                // Smoothstep avoids visible velocity discontinuities at both ends.
-                blendWeight = linearProgress * linearProgress * (3 - 2 * linearProgress)
+                // Smootherstep has zero first and second derivatives at both ends.
+                // With aligned clip ports this removes the last subtle opacity jolt
+                // without extending the overlap and creating double paws or tails.
+                blendWeight = linearProgress * linearProgress * linearProgress
+                    * (linearProgress * (linearProgress * 6 - 15) + 10)
                 fadeIsActive = linearProgress < 1
 
                 if linearProgress >= 1 {

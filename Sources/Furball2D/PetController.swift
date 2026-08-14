@@ -68,6 +68,8 @@ final class PetController: NSObject, NSMenuDelegate {
     private var locomotionGeneration = 0
     private var locomotionDirection: CGFloat = -1
     private var lastLocomotionChangeTime: TimeInterval = 0
+    private var pendingLocomotionMode: LocomotionMode?
+    private var pendingLocomotionSince: TimeInterval = 0
     private var lastCursorLocation = NSPoint.zero
     private var lastCursorSampleTime: TimeInterval = 0
     private var smoothedCursorSpeed: CGFloat = 0
@@ -486,10 +488,10 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func playIdle(_ newPosture: PetPosture) {
+    private func playIdle(_ newPosture: PetPosture, resetMirroring: Bool = true) {
         posture = newPosture
         isTransitioning = false
-        renderer.setMirrored(false)
+        if resetMirroring { renderer.setMirrored(false) }
         speechBubble.updateAppearance(mood: speechMood)
         do {
             try renderer.play(PetClips.idle(for: newPosture))
@@ -706,9 +708,19 @@ final class PetController: NSObject, NSMenuDelegate {
         let canChangeMode = now - lastLocomotionChangeTime >= 0.70
             || desiredMode == .none
             || locomotionMode == .none
-        if desiredMode != locomotionMode, canChangeMode {
+        if desiredMode == locomotionMode {
+            pendingLocomotionMode = nil
+        } else if desiredMode == .none || locomotionMode == .none {
+            pendingLocomotionMode = nil
             setLocomotionMode(desiredMode, direction: locomotionDirection)
-        } else if locomotionMode != .none {
+        } else if pendingLocomotionMode != desiredMode {
+            pendingLocomotionMode = desiredMode
+            pendingLocomotionSince = now
+        } else if canChangeMode, now - pendingLocomotionSince >= 0.18 {
+            pendingLocomotionMode = nil
+            setLocomotionMode(desiredMode, direction: locomotionDirection)
+        }
+        if locomotionMode != .none {
             renderer.setMirrored(locomotionDirection > 0)
         }
 
@@ -768,6 +780,7 @@ final class PetController: NSObject, NSMenuDelegate {
         locomotionMode = newMode
         locomotionDirection = direction
         locomotionGeneration += 1
+        pendingLocomotionMode = nil
         let generation = locomotionGeneration
         lastLocomotionChangeTime = ProcessInfo.processInfo.systemUptime
         speechBubble.updateAppearance(mood: speechMood)
@@ -775,13 +788,13 @@ final class PetController: NSObject, NSMenuDelegate {
         do {
             if newMode == .none {
                 guard let stopClip = previousMode.clips?.stop else {
-                    playIdle(.stand)
+                    playIdle(.stand, resetMirroring: !followCursor)
                     return
                 }
                 try renderer.play(stopClip, fadeDuration: 0.12) { [weak self] in
                     guard let self, self.locomotionGeneration == generation,
                           self.locomotionMode == .none else { return }
-                    self.playIdle(.stand)
+                    self.playIdle(.stand, resetMirroring: !self.followCursor)
                 }
                 return
             }

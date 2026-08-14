@@ -1,5 +1,7 @@
 # Furball 视频素材目录
 
+[中文](#furball-视频素材目录) · [English](#fluffball-video-asset-catalog)
+
 所有原始视频按 `视角/动作` 组织，目录与文件名统一使用小写英文和 kebab-case。运行时使用的透明导出视频也保持相同的视角层级，避免未来加入正面、右侧面或背面动作时混用。
 
 `SourceImagesForAIVideo/` 是另一类资产：它保存生成 AI 视频时使用的狗狗身份、姿态和视角参考图，不会进入应用包。具体目录和选图规则见 [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md)。
@@ -36,16 +38,16 @@
 | `stand-idle.mov` | 无缝待机循环 | `stand-idle.mp4` |
 | `stand-to-sit.mov` | 单次过渡 | `stand-to-sit.mp4` |
 | `sit-idle.mov` | 无缝待机循环 | `sit-to-lie.mp4` 的稳定开头 |
-| `sit-to-lie.mov` | 单次过渡 | `sit-to-lie.mp4` |
+| `sit-to-lie.mov` | 单次过渡并校正坐姿/趴卧端口 | `sit-to-lie.mp4` |
 | `lie-idle.mov` | 无缝待机循环 | `lie-to-sleep.mp4` 的稳定开头 |
-| `lie-to-sleep.mov` | 单次过渡 | `lie-to-sleep.mp4` |
+| `lie-to-sleep.mov` | 单次过渡并校正趴卧/睡眠端口 | `lie-to-sleep.mp4` |
 | `sleep-idle.mov` | 低动作呼吸循环 | `sleep-idle.mp4` 的 0.55 秒稳定窗口 |
 | `sleep-to-stand.mov` | 单次过渡并校正尺度 | `sleep-to-stand.mp4` |
 | `walk-start/loop/stop.mov` | 走路起步、相位闭合循环、停步 | `stand-to-walk-to-stand.mp4` |
 | `slow-run-start/loop/stop.mov` | 慢跑起步、相位闭合循环、停步 | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | 快跑起步、相位闭合循环、停步 | `stand-to-fast-run-to-stand.mp4` |
 
-这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，统一缩放至现有站姿尺度；循环段使用相同落脚相位且不倒放。切点、循环策略和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
+这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，并对 start / loop / stop 的首末帧分别归一化主体高度、Alpha 中心和脚底基线；循环段使用相同落脚相位且不倒放。校正通过 1600×900 透明工作画布平滑完成，最后裁回标准画布，不会使用固定缩放值硬套整条原片。切点、端口参数、循环策略和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
 
 ## 新素材命名规则
 
@@ -55,3 +57,63 @@ Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 ```
 
 建议视角名：`left-profile`、`right-profile`、`front`、`rear`、`three-quarter-left`、`three-quarter-right`。如果动作过程中视角发生改变，使用 `three-quarter-to-front` 这类方向明确的目录名。
+
+---
+
+# Fluffball Video Asset Catalog
+
+All original videos are organized by `view/action`. Directory and file names use lowercase English and kebab-case. Transparent runtime exports retain the same view hierarchy so future front, right-profile, or rear actions cannot be mixed accidentally.
+
+`SourceImagesForAIVideo/` is a separate asset class. It contains dog identity, posture, and view references used to generate AI videos and is not included in the app bundle. See [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md) for its layout and image-selection rules.
+
+## Original video mapping
+
+| Legacy name | Current path | View and content | Status |
+|---|---|---|---|
+| `v2/1 2.MP4` | `SourceVideos/left-profile/sleep-to-stand.mp4` | Left profile, lying down to standing | Main action chain |
+| `v2/1.mp4` | `SourceVideos/left-profile/stand-look-around-reference.mp4` | Left-profile stand with a brief look toward the camera | Alternate reference; appearance differs slightly from the main chain |
+| `v2/2 2.MP4` | `SourceVideos/left-profile/stand-to-sit.mp4` | Left profile, standing to sitting | Main action chain |
+| `v2/2.mp4` | `SourceVideos/three-quarter-to-front/stand-to-sit.mp4` | Left-front three-quarter view turning toward the camera and sitting | Alternate view; not used by the current main chain |
+| `v2/3.MP4` | `SourceVideos/left-profile/stand-idle.mp4` | Left-profile standing idle | Main action chain |
+| `v2/4.MP4` | `SourceVideos/left-profile/sit-to-lie.mp4` | Left profile, sitting to lying; the beginning also supplies the sit idle | Main action chain |
+| `v2/5.MP4` | `SourceVideos/left-profile/lie-to-sleep.mp4` | Left profile, lying to sleeping; the beginning also supplies the lie idle | Main action chain |
+| `v2/6.MP4` | `SourceVideos/left-profile/sleep-idle.mp4` | Left-profile sleep with a small head lift | Main action chain; only a low-motion window is used |
+| `v2/Generated Video August 13, 2026 - 1_28AM.mp4` | `SourceVideos/archive/exact-duplicates/three-quarter-to-front-stand-to-sit.duplicate.mp4` | Byte-identical to the original `v2/2.mp4` | Archived only; excluded from builds |
+| User-provided walk video | `SourceVideos/left-profile/stand-to-walk-to-stand.mp4` | Left profile, stand to walk to stand | Locomotion chain, split into start/loop/stop |
+| User-provided jog video | `SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4` | Left profile, stand to jog to stand | Locomotion chain, split into start/loop/stop |
+| User-provided run video | `SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4` | Left profile, stand to run to stand | Locomotion chain, split into start/loop/stop |
+
+The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4` both have this SHA-256 digest:
+
+```text
+906fb512fccd3f10b91053877d4263a9b545cd6bdb790af329f90dff4eb34535
+```
+
+## Exported videos
+
+`Sources/Furball2D/Assets/Clips/left-profile/` contains the 17 HEVC-with-alpha clips played by the app:
+
+| File | Type | Source |
+|---|---|---|
+| `stand-idle.mov` | Seamless idle loop | `stand-idle.mp4` |
+| `stand-to-sit.mov` | One-shot transition | `stand-to-sit.mp4` |
+| `sit-idle.mov` | Seamless idle loop | Stable beginning of `sit-to-lie.mp4` |
+| `sit-to-lie.mov` | One-shot transition with sit/lie port correction | `sit-to-lie.mp4` |
+| `lie-idle.mov` | Seamless idle loop | Stable beginning of `lie-to-sleep.mp4` |
+| `lie-to-sleep.mov` | One-shot transition with lie/sleep port correction | `lie-to-sleep.mp4` |
+| `sleep-idle.mov` | Low-motion breathing loop | A stable 0.55-second window from `sleep-idle.mp4` |
+| `sleep-to-stand.mov` | One-shot transition with scale correction | `sleep-to-stand.mp4` |
+| `walk-start/loop/stop.mov` | Walk start, phase-closed loop, and stop | `stand-to-walk-to-stand.mp4` |
+| `slow-run-start/loop/stop.mov` | Jog start, phase-closed loop, and stop | `stand-to-slow-run-to-stand.mp4` |
+| `fast-run-start/loop/stop.mov` | Run start, phase-closed loop, and stop | `stand-to-fast-run-to-stand.mp4` |
+
+`Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Cut points, port parameters, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/manifest.json`.
+
+## Naming new assets
+
+```text
+Assets/SourceVideos/<view>/<action>.mp4
+Sources/Furball2D/Assets/Clips/<view>/<action>.mov
+```
+
+Recommended view names include `left-profile`, `right-profile`, `front`, `rear`, `three-quarter-left`, and `three-quarter-right`. If the view changes during an action, use a directional name such as `three-quarter-to-front`.
