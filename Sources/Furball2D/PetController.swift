@@ -11,6 +11,32 @@ final class PetController: NSObject, NSMenuDelegate {
         static let petScale = "petScale"
         static let fullPassThrough = "fullPassThrough"
         static let autoBehavior = "autoBehavior"
+        static let followCursor = "followCursor"
+    }
+
+    private enum LocomotionMode: Equatable {
+        case none
+        case walk
+        case slowRun
+        case fastRun
+
+        var pointsPerSecond: CGFloat {
+            switch self {
+            case .none: 0
+            case .walk: 76
+            case .slowRun: 154
+            case .fastRun: 285
+            }
+        }
+
+        var clips: PetMotionClipSet? {
+            switch self {
+            case .none: nil
+            case .walk: PetClips.walk
+            case .slowRun: PetClips.slowRun
+            case .fastRun: PetClips.fastRun
+            }
+        }
     }
 
     private let panel: PetPanel
@@ -30,10 +56,21 @@ final class PetController: NSObject, NSMenuDelegate {
     private var patrolTimer: Timer?
     private var speechTimer: Timer?
     private var speechHideTimer: Timer?
+    private var speechFollowTimer: Timer?
+    private var cursorFollowTimer: Timer?
+    private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
     private var patrolDirection: CGFloat = -1
     private var patrolDeadline: TimeInterval = 0
     private var currentlyInteractive = false
+    private var locomotionMode: LocomotionMode = .none
+    private var locomotionVelocity: CGFloat = 0
+    private var locomotionGeneration = 0
+    private var locomotionDirection: CGFloat = -1
+    private var lastLocomotionChangeTime: TimeInterval = 0
+    private var lastCursorLocation = NSPoint.zero
+    private var lastCursorSampleTime: TimeInterval = 0
+    private var smoothedCursorSpeed: CGFloat = 0
     private let behaviorTimeScale: Double = ProcessInfo.processInfo.environment["FURBALL_FAST_BEHAVIOR"] == "1" ? 0.08 : 1
 
     private var petScale: CGFloat {
@@ -46,6 +83,10 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private var autoBehavior: Bool {
         didSet { UserDefaults.standard.set(autoBehavior, forKey: PreferenceKey.autoBehavior) }
+    }
+
+    private var followCursor: Bool {
+        didSet { UserDefaults.standard.set(followCursor, forKey: PreferenceKey.followCursor) }
     }
 
     private var appLanguage: AppLanguage {
@@ -61,6 +102,7 @@ final class PetController: NSObject, NSMenuDelegate {
         autoBehavior = defaults.object(forKey: PreferenceKey.autoBehavior) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.autoBehavior)
+        followCursor = defaults.bool(forKey: PreferenceKey.followCursor)
         appLanguage = AppLanguage.stored
 
         let size = NSSize(width: Self.basePetSize.width * initialScale, height: Self.basePetSize.height * initialScale)
@@ -91,7 +133,11 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.updateClickThrough()
             }
         }
-        scheduleWake(epoch: behaviorEpoch)
+        if followCursor {
+            beginCursorFollowing()
+        } else {
+            scheduleWake(epoch: behaviorEpoch)
+        }
         scheduleNextSpeech(after: 1.4)
     }
 
@@ -126,6 +172,8 @@ final class PetController: NSObject, NSMenuDelegate {
         passItem.state = fullPassThrough ? .on : .off
         let autoItem = menu.addItem(withTitle: appLanguage.autoBehaviorMenu, action: #selector(toggleAutoBehavior), keyEquivalent: "")
         autoItem.state = autoBehavior ? .on : .off
+        let followItem = menu.addItem(withTitle: appLanguage.followCursorMenu, action: #selector(toggleCursorFollowing), keyEquivalent: "")
+        followItem.state = followCursor ? .on : .off
         let fadeItem = menu.addItem(withTitle: appLanguage.crossfadeMenu, action: #selector(toggleCrossfade), keyEquivalent: "")
         fadeItem.state = renderer.crossfadeEnabled ? .on : .off
         let levelItem = menu.addItem(withTitle: appLanguage.alwaysOnTopMenu, action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
@@ -213,15 +261,20 @@ final class PetController: NSObject, NSMenuDelegate {
         let dy = mouse.y - dragStartMouse.y
         totalDragDistance = max(totalDragDistance, hypot(dx, dy))
         panel.setFrameOrigin(clampedOrigin(NSPoint(x: dragStartOrigin.x + dx, y: dragStartOrigin.y + dy)))
-        repositionSpeechBubble()
+        repositionSpeechBubble(refreshSilhouette: false)
     }
 
     private func mouseUp(_ event: NSEvent) {
         guard isDragging else { return }
         isDragging = false
+        if followCursor {
+            lastCursorLocation = NSEvent.mouseLocation
+            lastCursorSampleTime = ProcessInfo.processInfo.systemUptime
+            smoothedCursorSpeed = 0
+        }
         if totalDragDistance < 6 {
             speakRandomly()
-            advanceBehavior()
+            if !followCursor { advanceBehavior() }
         }
         registerUserActivity()
     }
@@ -265,24 +318,100 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func showSpeech(_ message: String) {
         guard panel.isVisible else { return }
+        smoothedSpeechLocalFrame = nil
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
-        speechBubble.show(message: message, near: speechAnchorFrame(), in: visibleFrame, level: panel.level)
+        speechBubble.show(
+            message: message,
+            avoiding: stabilizedVisiblePetFrame(refresh: true, reset: true),
+            in: visibleFrame,
+            level: panel.level,
+            petScale: petScale,
+            mood: speechMood
+        )
+        startSpeechFollowing()
 
         speechHideTimer?.invalidate()
         speechHideTimer = Timer.scheduledTimer(withTimeInterval: 4.6, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.speechBubble.hide()
+                self?.hideSpeechBubble()
             }
         }
     }
 
-    private func repositionSpeechBubble() {
+    private func repositionSpeechBubble(refreshSilhouette: Bool = true, resetSilhouette: Bool = false) {
         guard speechBubble.isVisible else { return }
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
-        speechBubble.reposition(near: speechAnchorFrame(), in: visibleFrame)
+        speechBubble.reposition(
+            avoiding: stabilizedVisiblePetFrame(refresh: refreshSilhouette, reset: resetSilhouette),
+            in: visibleFrame,
+            petScale: petScale
+        )
     }
 
-    private func speechAnchorFrame() -> NSRect {
+    private func startSpeechFollowing() {
+        speechFollowTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 8.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.repositionSpeechBubble()
+            }
+        }
+        speechFollowTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func hideSpeechBubble(animated: Bool = true) {
+        speechFollowTimer?.invalidate()
+        speechFollowTimer = nil
+        smoothedSpeechLocalFrame = nil
+        speechBubble.hide(animated: animated)
+    }
+
+    private var speechMood: PetSpeechBubbleMood {
+        if isTransitioning || patrolTimer != nil || locomotionMode != .none { return .active }
+        switch posture {
+        case .stand: return .stand
+        case .sit: return .sit
+        case .lie: return .lie
+        case .sleep: return .sleep
+        }
+    }
+
+    private func stabilizedVisiblePetFrame(refresh: Bool, reset: Bool = false) -> NSRect {
+        let measured = measuredLocalPetFrame()
+        if reset || smoothedSpeechLocalFrame == nil {
+            smoothedSpeechLocalFrame = measured
+        } else if refresh, let current = smoothedSpeechLocalFrame {
+            let response: CGFloat = isTransitioning ? 0.10 : 0.16
+            let deadZone = 2.2 * petScale
+            func filtered(_ old: CGFloat, _ new: CGFloat) -> CGFloat {
+                let delta = new - old
+                guard abs(delta) > deadZone else { return old }
+                return old + delta * response
+            }
+            let minimumX = filtered(current.minX, measured.minX)
+            let minimumY = filtered(current.minY, measured.minY)
+            let maximumX = filtered(current.maxX, measured.maxX)
+            let maximumY = filtered(current.maxY, measured.maxY)
+            smoothedSpeechLocalFrame = NSRect(
+                x: minimumX,
+                y: minimumY,
+                width: max(1, maximumX - minimumX),
+                height: max(1, maximumY - minimumY)
+            )
+        }
+
+        let localFrame = smoothedSpeechLocalFrame ?? measured
+        return NSRect(
+            x: panel.frame.minX + localFrame.minX,
+            y: panel.frame.minY + localFrame.minY,
+            width: localFrame.width,
+            height: localFrame.height
+        )
+    }
+
+    private func measuredLocalPetFrame() -> NSRect {
+        if let localFrame = renderer.visibleContentRect(), !localFrame.isEmpty { return localFrame }
+
         let transparentTopRatio: CGFloat
         switch posture {
         case .stand, .sit:
@@ -293,9 +422,12 @@ final class PetController: NSObject, NSMenuDelegate {
             transparentTopRatio = 0.52
         }
 
-        var anchorFrame = panel.frame
-        anchorFrame.size.height *= 1 - transparentTopRatio
-        return anchorFrame
+        return NSRect(
+            x: 0,
+            y: 0,
+            width: panel.frame.width,
+            height: panel.frame.height * (1 - transparentTopRatio)
+        )
     }
 
     private func updateClickThrough() {
@@ -340,6 +472,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private func playTransition(_ clip: PetClip, completion: (() -> Void)? = nil) {
         stopPatrol()
         isTransitioning = true
+        speechBubble.updateAppearance(mood: speechMood)
         do {
             try renderer.play(clip) { [weak self] in
                 guard let self else { return }
@@ -357,6 +490,7 @@ final class PetController: NSObject, NSMenuDelegate {
         posture = newPosture
         isTransitioning = false
         renderer.setMirrored(false)
+        speechBubble.updateAppearance(mood: speechMood)
         do {
             try renderer.play(PetClips.idle(for: newPosture))
         } catch {
@@ -369,7 +503,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
-        guard autoBehavior else { return }
+        guard autoBehavior, !followCursor else { return }
         schedule(after: 12, epoch: epoch) { [weak self] in
             self?.settleDown(epoch: epoch)
         }
@@ -447,6 +581,7 @@ final class PetController: NSObject, NSMenuDelegate {
             patrolDirection = panel.frame.midX < screen.midX ? 1 : -1
             renderer.setMirrored(patrolDirection > 0)
             patrolDeadline = ProcessInfo.processInfo.systemUptime + Double.random(in: 10...18)
+            speechBubble.updateAppearance(mood: .active)
             patrolTimer?.invalidate()
             patrolTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -483,7 +618,7 @@ final class PetController: NSObject, NSMenuDelegate {
             origin.x = min(rightLimit, max(leftLimit, origin.x))
         }
         panel.setFrameOrigin(origin)
-        repositionSpeechBubble()
+        repositionSpeechBubble(refreshSilhouette: false)
     }
 
     private func stopPatrol() {
@@ -493,6 +628,191 @@ final class PetController: NSObject, NSMenuDelegate {
         renderer.setMirrored(false)
         if wasPatrolling, posture == .stand, !isTransitioning {
             playIdle(.stand)
+        }
+    }
+
+    private func beginCursorFollowing() {
+        behaviorEpoch += 1
+        behaviorTimer?.invalidate()
+        stopPatrol()
+        cursorFollowTimer?.invalidate()
+        lastCursorLocation = NSEvent.mouseLocation
+        lastCursorSampleTime = ProcessInfo.processInfo.systemUptime
+        smoothedCursorSpeed = 0
+
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.updateCursorFollowing()
+            }
+        }
+        cursorFollowTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        continueToStandForCursorFollowing()
+    }
+
+    private func stopCursorFollowing() {
+        cursorFollowTimer?.invalidate()
+        cursorFollowTimer = nil
+        smoothedCursorSpeed = 0
+        setLocomotionMode(.none, direction: locomotionDirection)
+    }
+
+    private func continueToStandForCursorFollowing() {
+        guard followCursor, !isTransitioning else { return }
+        switch posture {
+        case .stand:
+            return
+        case .sit:
+            playTransition(PetClips.sitToLie) { [weak self] in
+                self?.continueToStandForCursorFollowing()
+            }
+        case .lie:
+            playTransition(PetClips.lieToSleep) { [weak self] in
+                self?.continueToStandForCursorFollowing()
+            }
+        case .sleep:
+            playTransition(PetClips.sleepToStand) { [weak self] in
+                self?.continueToStandForCursorFollowing()
+            }
+        }
+    }
+
+    private func updateCursorFollowing() {
+        guard followCursor, panel.isVisible, !isDragging else { return }
+        guard posture == .stand, !isTransitioning else {
+            if !isTransitioning { continueToStandForCursorFollowing() }
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - lastCursorSampleTime))
+        let cursor = NSEvent.mouseLocation
+        let cursorDelta = hypot(cursor.x - lastCursorLocation.x, cursor.y - lastCursorLocation.y)
+        let instantaneousCursorSpeed = cursorDelta / deltaTime
+        smoothedCursorSpeed += (instantaneousCursorSpeed - smoothedCursorSpeed) * min(1, deltaTime * 7)
+        lastCursorLocation = cursor
+        lastCursorSampleTime = now
+
+        let horizontalDelta = cursor.x - panel.frame.midX
+        let distance = abs(horizontalDelta)
+        let deadZone = 76 * petScale
+        let demand = max(smoothedCursorSpeed, max(0, distance - deadZone) * 1.1)
+        let desiredMode = desiredLocomotionMode(distance: distance, demand: demand, deadZone: deadZone)
+
+        if distance > deadZone + 18 {
+            locomotionDirection = horizontalDelta >= 0 ? 1 : -1
+        }
+
+        let canChangeMode = now - lastLocomotionChangeTime >= 0.70
+            || desiredMode == .none
+            || locomotionMode == .none
+        if desiredMode != locomotionMode, canChangeMode {
+            setLocomotionMode(desiredMode, direction: locomotionDirection)
+        } else if locomotionMode != .none {
+            renderer.setMirrored(locomotionDirection > 0)
+        }
+
+        let scaleSpeed = min(1.16, max(0.82, sqrt(petScale)))
+        let targetVelocity = locomotionDirection * locomotionMode.pointsPerSecond * scaleSpeed
+        let velocityResponse = locomotionMode == .none ? 6.5 : 4.2
+        locomotionVelocity += (targetVelocity - locomotionVelocity) * min(1, deltaTime * velocityResponse)
+
+        guard abs(locomotionVelocity) > 0.25 else {
+            locomotionVelocity = 0
+            return
+        }
+
+        let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let leftLimit = visibleFrame.minX - panel.frame.width * 0.30
+        let rightLimit = visibleFrame.maxX - panel.frame.width * 0.70
+        var origin = panel.frame.origin
+        origin.x = min(rightLimit, max(leftLimit, origin.x + locomotionVelocity * deltaTime))
+
+        if (origin.x == leftLimit && locomotionVelocity < 0)
+            || (origin.x == rightLimit && locomotionVelocity > 0) {
+            locomotionVelocity = 0
+        }
+        panel.setFrameOrigin(origin)
+        repositionSpeechBubble(refreshSilhouette: false)
+    }
+
+    private func desiredLocomotionMode(
+        distance: CGFloat,
+        demand: CGFloat,
+        deadZone: CGFloat
+    ) -> LocomotionMode {
+        guard distance > deadZone else { return .none }
+
+        switch locomotionMode {
+        case .none:
+            if demand > 650 || distance > 520 * petScale { return .fastRun }
+            if demand > 260 || distance > 270 * petScale { return .slowRun }
+            return .walk
+        case .walk:
+            if demand > 700 || distance > 560 * petScale { return .fastRun }
+            if demand > 320 || distance > 300 * petScale { return .slowRun }
+            return .walk
+        case .slowRun:
+            if demand > 720 || distance > 580 * petScale { return .fastRun }
+            if demand < 175, distance < 220 * petScale { return .walk }
+            return .slowRun
+        case .fastRun:
+            if demand < 430, distance < 390 * petScale { return .slowRun }
+            return .fastRun
+        }
+    }
+
+    private func setLocomotionMode(_ newMode: LocomotionMode, direction: CGFloat) {
+        guard newMode != locomotionMode else { return }
+        let previousMode = locomotionMode
+        locomotionMode = newMode
+        locomotionDirection = direction
+        locomotionGeneration += 1
+        let generation = locomotionGeneration
+        lastLocomotionChangeTime = ProcessInfo.processInfo.systemUptime
+        speechBubble.updateAppearance(mood: speechMood)
+
+        do {
+            if newMode == .none {
+                guard let stopClip = previousMode.clips?.stop else {
+                    playIdle(.stand)
+                    return
+                }
+                try renderer.play(stopClip, fadeDuration: 0.12) { [weak self] in
+                    guard let self, self.locomotionGeneration == generation,
+                          self.locomotionMode == .none else { return }
+                    self.playIdle(.stand)
+                }
+                return
+            }
+
+            guard let clips = newMode.clips else { return }
+            renderer.setMirrored(direction > 0)
+            if previousMode == .none {
+                try renderer.play(clips.start, fadeDuration: 0.12) { [weak self] in
+                    guard let self, self.locomotionGeneration == generation,
+                          self.locomotionMode == newMode else { return }
+                    self.playLocomotionLoop(newMode, direction: self.locomotionDirection)
+                }
+            } else {
+                try renderer.play(clips.loop, fadeDuration: 0.12)
+            }
+        } catch {
+            locomotionMode = .none
+            locomotionVelocity = 0
+            present(error)
+        }
+    }
+
+    private func playLocomotionLoop(_ mode: LocomotionMode, direction: CGFloat) {
+        guard let loopClip = mode.clips?.loop else { return }
+        renderer.setMirrored(direction > 0)
+        do {
+            try renderer.play(loopClip, fadeDuration: 0.12)
+        } catch {
+            locomotionMode = .none
+            locomotionVelocity = 0
+            present(error)
         }
     }
 
@@ -537,7 +857,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
-        guard autoBehavior else { return }
+        guard autoBehavior, !followCursor else { return }
         if posture == .sleep {
             scheduleWake(epoch: epoch)
         } else {
@@ -555,7 +875,7 @@ final class PetController: NSObject, NSMenuDelegate {
         )
         let newOrigin = NSPoint(x: oldFrame.midX - newSize.width / 2, y: oldFrame.minY)
         panel.setFrame(NSRect(origin: clampedOrigin(newOrigin, panelSize: newSize), size: newSize), display: true)
-        repositionSpeechBubble()
+        repositionSpeechBubble(resetSilhouette: true)
     }
 
     private func present(_ error: Error) {
@@ -570,7 +890,7 @@ final class PetController: NSObject, NSMenuDelegate {
         panel.orderFrontRegardless()
         registerUserActivity()
         speakRandomly()
-        advanceBehavior()
+        if !followCursor { advanceBehavior() }
     }
 
     @objc private func speakFromMenu() {
@@ -580,6 +900,10 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @objc private func sleepFromMenu() {
         panel.orderFrontRegardless()
+        if followCursor {
+            followCursor = false
+            stopCursorFollowing()
+        }
         showSpeech(appLanguage.sleepConfirmation)
         requestSleep()
     }
@@ -597,7 +921,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @objc private func toggleVisibility() {
         if panel.isVisible {
-            speechBubble.hide(animated: false)
+            hideSpeechBubble(animated: false)
             panel.orderOut(nil)
         } else {
             panel.orderFrontRegardless()
@@ -612,6 +936,16 @@ final class PetController: NSObject, NSMenuDelegate {
     @objc private func toggleAutoBehavior() {
         autoBehavior.toggle()
         restartAutonomy()
+    }
+
+    @objc private func toggleCursorFollowing() {
+        followCursor.toggle()
+        if followCursor {
+            beginCursorFollowing()
+        } else {
+            stopCursorFollowing()
+            restartAutonomy()
+        }
     }
 
     @objc private func toggleCrossfade() {

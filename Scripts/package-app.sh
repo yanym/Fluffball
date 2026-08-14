@@ -21,6 +21,9 @@ cd "$PROJECT_DIR"
 typeset -a required_clips=(
   stand-idle stand-to-sit sit-idle sit-to-lie
   lie-idle lie-to-sleep sleep-idle sleep-to-stand
+  walk-start walk-loop walk-stop
+  slow-run-start slow-run-loop slow-run-stop
+  fast-run-start fast-run-loop fast-run-stop
 )
 assets_missing=false
 for clip_name in "${required_clips[@]}"; do

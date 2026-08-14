@@ -478,6 +478,24 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         return max(alphaA * (1 - weight), alphaB * weight)
     }
 
+    /// Returns the pet's current non-transparent silhouette in view coordinates.
+    /// Sampling both decoder lanes keeps placement stable during a crossfade.
+    func visibleContentRect(alphaThreshold: UInt8 = 18) -> NSRect? {
+        channelLock.lock()
+        let buffers = [
+            primaryChannel?.latestPixelBuffer(),
+            secondaryChannel?.latestPixelBuffer()
+        ].compactMap { $0 }
+        channelLock.unlock()
+
+        let rects = buffers.compactMap { visibleRect(in: $0, alphaThreshold: alphaThreshold) }
+        guard var result = rects.first else { return nil }
+        for rect in rects.dropFirst() {
+            result = result.union(rect)
+        }
+        return result.insetBy(dx: -4, dy: -4).intersection(view.bounds)
+    }
+
     func setMirrored(_ mirrored: Bool) {
         isMirrored = mirrored
     }
@@ -529,5 +547,55 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             }
         }
         return Float(maximum) / 255
+    }
+
+    private func visibleRect(in buffer: CVPixelBuffer, alphaThreshold: UInt8) -> NSRect? {
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+        let sampleStep = max(2, min(width, height) / 150)
+        var minimumX = width
+        var maximumX = -1
+        var minimumY = height
+        var maximumY = -1
+
+        for y in Swift.stride(from: 0, to: height, by: sampleStep) {
+            let row = y * rowBytes
+            for x in Swift.stride(from: 0, to: width, by: sampleStep) {
+                if bytes[row + x * 4 + 3] >= alphaThreshold {
+                    minimumX = min(minimumX, x)
+                    maximumX = max(maximumX, x)
+                    minimumY = min(minimumY, y)
+                    maximumY = max(maximumY, y)
+                }
+            }
+        }
+
+        guard maximumX >= minimumX, maximumY >= minimumY else { return nil }
+        minimumX = max(0, minimumX - sampleStep)
+        maximumX = min(width - 1, maximumX + sampleStep)
+        minimumY = max(0, minimumY - sampleStep)
+        maximumY = min(height - 1, maximumY + sampleStep)
+
+        if isMirrored {
+            let mirroredMinimumX = width - 1 - maximumX
+            maximumX = width - 1 - minimumX
+            minimumX = mirroredMinimumX
+        }
+
+        let scaleX = view.bounds.width / CGFloat(width)
+        let scaleY = view.bounds.height / CGFloat(height)
+        return NSRect(
+            x: CGFloat(minimumX) * scaleX,
+            y: CGFloat(height - 1 - maximumY) * scaleY,
+            width: CGFloat(maximumX - minimumX + 1) * scaleX,
+            height: CGFloat(maximumY - minimumY + 1) * scaleY
+        )
     }
 }

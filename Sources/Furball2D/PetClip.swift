@@ -34,6 +34,12 @@ struct PetClip {
     var isAvailable: Bool { (try? url) != nil }
 }
 
+struct PetMotionClipSet {
+    let start: PetClip
+    let loop: PetClip
+    let stop: PetClip
+}
+
 enum PetClips {
     private static let viewDirectory = "left-profile"
 
@@ -41,7 +47,10 @@ enum PetClips {
     static let sitIdle = clip("sit-idle", loops: true, posture: .sit)
     static let lieIdle = clip("lie-idle", loops: true, posture: .lie)
     static let sleepIdle = clip("sleep-idle", loops: true, posture: .sleep)
-    static let walkIdle = clip("walk-idle", loops: true, posture: .stand)
+    static let walk = motion("walk")
+    static let slowRun = motion("slow-run")
+    static let fastRun = motion("fast-run")
+    static let walkIdle = walk.loop
     static let sleepToStand = clip("sleep-to-stand", loops: false, posture: .stand)
     static let sitDown = clip("stand-to-sit", loops: false, posture: .sit)
     static let sitToLie = clip("sit-to-lie", loops: false, posture: .lie)
@@ -58,6 +67,14 @@ enum PetClips {
 
     private static func clip(_ name: String, loops: Bool, posture: PetPosture) -> PetClip {
         PetClip(fileName: "\(viewDirectory)/\(name)", loops: loops, resultingPosture: posture)
+    }
+
+    private static func motion(_ name: String) -> PetMotionClipSet {
+        PetMotionClipSet(
+            start: clip("\(name)-start", loops: false, posture: .stand),
+            loop: clip("\(name)-loop", loops: true, posture: .stand),
+            stop: clip("\(name)-stop", loops: false, posture: .stand)
+        )
     }
 }
 

@@ -7,12 +7,12 @@
 ## 功能
 
 - 狗狗会睡觉、醒来、站立、坐下和趴下，并在无人互动时自行休息。
-- 根据姿态随机显示可爱对话；点击狗狗或菜单中的“让它说句话”可立即触发。
+- 根据姿态随机显示可爱对话；气泡会按宠物大小缩放、跟随动作，并依据视频 Alpha 轮廓自动避开身体。
 - 菜单中的“语言 / Language”可即时切换简体中文或 English，并记住选择。
 - 宠物大小支持 60%–140% 无级调节。
 - 透明区域自动穿透鼠标，也可开启完全穿透。
 - 通过短时双通道 Crossfade、端口对齐和无缝待机循环改善动作衔接。
-- 如果加入合格的侧视步态循环，狗狗可以自动巡视桌面。
+- 狗狗会使用真实走路、慢跑和快跑素材在桌面移动；开启“跟随鼠标”后会依据距离与鼠标速度自动换挡。
 
 ## 运行与构建
 
@@ -60,19 +60,14 @@ Sources/Furball2D/Assets/
 - “宠物大小”：连续调节 60%–140%。
 - “语言 / Language”：选择简体中文或 English。
 - “现在去睡觉”：立即走完合法姿态链并睡觉。
+- “跟随鼠标（按速度走 / 跑）”：让狗狗沿桌面追随鼠标，近距离走路、中距离慢跑、远距离或快速移动时快跑。
 - “柔和动作过渡（MVP）”：启用或关闭短 Crossfade，方便 A/B 对比。
 
 无人互动约 12 秒后，狗狗会依次坐下、趴下并睡觉；睡一段时间后会偶尔自己醒来观察四周，然后再次休息。
 
-### 可选走路素材
+### 移动素材
 
-将侧视原地步态循环放到：
-
-```text
-Assets/SourceVideos/left-profile/walk-idle.mp4
-```
-
-然后重新运行构建和打包脚本。素材需要固定机位、纯绿背景、与现有狗尺度一致，且首尾为同一只脚的相同触地相位。不要使用静止站姿在桌面上滑行，也不要倒放有明确方向性的步态。
+走路、慢跑和快跑原片分别保存为 `stand-to-walk-to-stand.mp4`、`stand-to-slow-run-to-stand.mp4` 和 `stand-to-fast-run-to-stand.mp4`。构建脚本会从每段原片导出起步、相位闭合循环和停步三部分；方向性步态不会倒放。
 
 ## English
 
@@ -81,11 +76,11 @@ Furball is a realistic video-based desktop pet for Apple Silicon Macs running ma
 Highlights:
 
 - Natural sleep, wake, stand, sit, and lie-down behavior.
-- Posture-aware speech bubbles with both Chinese and English copy.
+- Posture-aware speech bubbles that scale with the pet, follow its motion, and avoid its live alpha silhouette.
 - Runtime language selection under “语言 / Language”, persisted across launches.
 - Continuous 60%–140% size control and alpha-aware mouse hit testing.
 - Short dual-channel crossfades and prepared seamless idle loops.
-- Optional desktop patrol when a valid left-profile walking loop is provided.
+- Real walk, jog, and run locomotion, including cursor following with automatic speed selection.
 
 Build and run:
 

@@ -1,5 +1,5 @@
 {
-  "formatVersion": 2,
+  "formatVersion": 3,
   "canvas": { "width": 960, "height": 540, "fps": 24 },
   "clips": [
     { "id": "stand.idle", "view": "left-profile", "file": "Clips/left-profile/stand-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-idle.mp4" },
@@ -9,6 +9,15 @@
     { "id": "lie.idle", "view": "left-profile", "file": "Clips/left-profile/lie-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/lie-to-sleep.mp4" },
     { "id": "lie.to.sleep", "view": "left-profile", "file": "Clips/left-profile/lie-to-sleep.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/lie-to-sleep.mp4" },
     { "id": "sleep.idle", "view": "left-profile", "file": "Clips/left-profile/sleep-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/sleep-idle.mp4" },
-    { "id": "sleep.to.stand", "view": "left-profile", "file": "Clips/left-profile/sleep-to-stand.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/sleep-to-stand.mp4" }
+    { "id": "sleep.to.stand", "view": "left-profile", "file": "Clips/left-profile/sleep-to-stand.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/sleep-to-stand.mp4" },
+    { "id": "walk.start", "view": "left-profile", "file": "Clips/left-profile/walk-start.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "walk.loop", "view": "left-profile", "file": "Clips/left-profile/walk-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "walk.stop", "view": "left-profile", "file": "Clips/left-profile/walk-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "slow-run.start", "view": "left-profile", "file": "Clips/left-profile/slow-run-start.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "slow-run.loop", "view": "left-profile", "file": "Clips/left-profile/slow-run-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "slow-run.stop", "view": "left-profile", "file": "Clips/left-profile/slow-run-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "fast-run.start", "view": "left-profile", "file": "Clips/left-profile/fast-run-start.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" },
+    { "id": "fast-run.loop", "view": "left-profile", "file": "Clips/left-profile/fast-run-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" },
+    { "id": "fast-run.stop", "view": "left-profile", "file": "Clips/left-profile/fast-run-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" }
   ]
 }
