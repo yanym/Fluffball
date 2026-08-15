@@ -34,6 +34,8 @@
 
 ## 2. 接收新素材后的第一步
 
+如果任务是替换整只宠物，而不是只新增一段动作，必须先阅读 `Docs/PET_PACK_STANDARD.md`。狗和猫使用同一组 27 个语义动作槽位。不得在 Swift 中为某只宠物新增硬编码文件路径；路径、循环属性和宠物身份必须写入 Pet Pack `manifest.json`。替换整包后运行 `Scripts/validate-pet-pack.swift`，验收未通过时不得打包。
+
 保留原始视频，不要立刻覆盖 `Sources/Furball2D/Assets/Clips`。原片先按 `Assets/SourceVideos/<view>/<action>.mp4` 归档，再完成以下检查：
 
 视角目录使用小写 kebab-case，例如 `left-profile`、`right-profile`、`front`、`three-quarter-left`。如果视频本身发生视角变化，使用 `three-quarter-to-front` 这类带方向的名称。动作文件也使用 kebab-case，例如 `stand-idle.mp4`、`stand-to-sit.mp4`。导出视频必须落到对应的 `Sources/Furball2D/Assets/Clips/<view>/`，不能把不同视角的动作混放在同一层。
@@ -121,6 +123,16 @@ port = (主体高度, Alpha 加权中心 x, 脚底 y)
 当前 `sleep-to-stand` 就有原片末端约放大 6% 的问题，构建脚本使用动态缩放和脚底锚定修正。新素材必须重新测量，不能复用这个 6% 数字或现有偏移量。
 
 不要轻易使用非等比缩放。它虽然能让边界框数字吻合，但会让写实宠物身体变形。如果不同视频中的尾巴长度、头型或花纹发生改变，应明确告诉用户这是 AI 源素材一致性问题；优先请求重新生成，而不是强行拉伸。
+
+### 4.1 色彩归一化
+
+同一只宠物的不同生成批次必须在抠像后统一到一个明确参考。当前参考是 `stand-idle` / `left-profile`，分别测量不透明区域中的黑毛、棕毛和白毛，而不是用整帧平均色；透明背景或不同姿势所占面积会让整帧平均值失真。
+
+- 同一条移动原片拆出的 start / loop / stop 必须共用同一条色彩曲线，不能逐段自动白平衡。
+- 不同图片视角可以使用各自的单调 PCHIP 曲线，但都必须落到同一组黑/棕/白参考锚点。
+- 色彩处理放在 chromakey / despill 之后，Alpha 通道保持不变；不要让绿色背景参与白平衡统计。
+- 先对源片抽取代表帧，用 `Scripts/audit-png-color.swift` 复测，再把确定的锚点写进构建脚本。不要在运行时按帧自动校色，否则毛色会随动作呼吸式漂移。
+- 交付前把所有动作代表帧合成到同一中灰背景并排观看。数值接近仍需检查白毛是否偏粉、黑毛是否发蓝以及棕毛是否过饱和。
 
 ## 5. 抠像与透明视频输出
 
@@ -341,6 +353,8 @@ When the user explicitly rejects AI-generated video, generate only the missing s
 
 ## 2. First steps after receiving new footage
 
+If the task replaces the complete animal rather than adding one action, read `Docs/PET_PACK_STANDARD.md` first. Dogs and cats use the same 27 semantic action slots. Never add pet-specific hardcoded file paths to Swift; paths, loop properties, and identity belong in the Pet Pack `manifest.json`. Run `Scripts/validate-pet-pack.swift` after replacing a complete pack, and never package a validation failure.
+
 Preserve the original video. Do not immediately overwrite `Sources/Furball2D/Assets/Clips`. Archive sources under `Assets/SourceVideos/<view>/<action>.mp4`, then complete these checks:
 
 View directories use lowercase kebab-case, such as `left-profile`, `right-profile`, `front`, and `three-quarter-left`. If the view changes during the clip, use a directional name such as `three-quarter-to-front`. Action filenames also use kebab-case, such as `stand-idle.mp4` and `stand-to-sit.mp4`. Exports go under the matching `Sources/Furball2D/Assets/Clips/<view>/` directory; never mix views in one folder.
@@ -421,6 +435,16 @@ When correction requires both enlargement and reduction, transform on a larger t
 The current `sleep-to-stand` source enlarges the subject by roughly 6% near the end. The build script corrects it with dynamic scale and foot anchoring. New footage must be measured independently; never reuse this 6% value or its offsets.
 
 Avoid non-uniform scaling. It may make bounding-box numbers agree while deforming a realistic animal. If separate videos contain different tail length, head shape, or markings, report an AI-source consistency problem and request a new generation rather than stretching the body.
+
+### 4.1 Color normalization
+
+Normalize separate generation batches to one explicit reference after keying. The current reference is `stand-idle` / `left-profile`. Measure opaque black, tan, and white fur separately instead of using a whole-frame average; transparent background and posture-dependent area make whole-frame averages misleading.
+
+- All start / loop / stop clips cut from one locomotion source must share one color curve. Never auto-white-balance each segment independently.
+- Individual image views may use separate monotonic PCHIP curves, but every curve must target the same black/tan/white reference anchors.
+- Apply grading after chromakey / despill without changing alpha. Never include the green background in white-balance statistics.
+- Extract representative source frames, verify them with `Scripts/audit-png-color.swift`, and record accepted anchors in the build script. Do not auto-grade every runtime frame; that creates breathing color drift during motion.
+- Composite all representative outputs over the same middle-gray background before delivery. Matching numbers do not replace checking pink whites, blue blacks, or oversaturated tan fur.
 
 ## 5. Keying and transparent-video output
 

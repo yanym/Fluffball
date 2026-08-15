@@ -14,10 +14,12 @@ Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的写实�
 - 宠物大小支持 60%–140% 无级调节。
 - 透明区域自动穿透鼠标，也可开启完全穿透。
 - 通过五阶淡化曲线、主体高度/中心/脚底三重端口对齐和无缝待机循环改善动作衔接。
+- 不同生成批次会在离线导出时统一到站立基准的黑毛、棕毛和白毛色彩锚点，避免走路、跑步或转向时突然变暖、变亮。
 - 狗狗会使用真实走路、慢跑和快跑素材在桌面全方向移动；开启“追随鼠标”后会依据二维距离与鼠标速度自动换挡。
 - “自由漫游”会在当前桌面的安全范围内随机选择二维目标，走到后停留片刻，再继续探索。
 - 不依赖 AI 视频的多角度转头使用 9 张对齐后的透明关键帧；站立待机时逐级转向鼠标，也可播放一次完整的左右转身演示。
 - 左侧面的动作视频可在运行时镜像为右侧动作，因此自主待机、摇尾巴、姿态过渡和睡眠都能保持选定的左右朝向。
+- 运行时通过 Pet Pack 标准动作 ID 读取素材，文件路径和循环属性不再硬编码；同规格的狗狗或猫猫素材包可复用同一行为引擎。
 
 ### 运行与构建
 
@@ -37,6 +39,10 @@ dist/Furball2D.zip
 ```
 
 应用图标源文件保存在 `Support/AppIcon.png`。需要替换图标时，放入新的正方形图片并运行 `./Scripts/build-app-icon.sh`；打包脚本会将生成的多尺寸 `AppIcon.icns` 写入应用包。
+
+当前 ZIP 约 15.2 MB，主要体积来自 18 段动作视频和 9 段多视角静态循环，共27 段 960×540、24 fps 的 HEVC with Alpha 视频，而不是静态图片。AI 视角源图保留为 1440×1080，运行时按统一画布降采样为 960×540；这是当前显示尺寸下的清晰度/解码开销平衡，并非把原图全分辨率直接塞进安装包。应用图标源图为用户提供的 800×800，`.icns` 包含 macOS 要求的 16–1024 px 层级，其中 1024 px 层是高质量上采样。
+
+通用宠物素材包的生产流程、27 个必需动作槽位和当前实现边界记录在 [Pet Pack v1 规范](Docs/PET_PACK_STANDARD.md)。可用 `./Scripts/validate-pet-pack.swift Sources/Furball2D/Assets` 对清单、视频格式、Alpha 和动作完整性进行自动验收。
 
 ### 素材结构
 
@@ -96,10 +102,12 @@ Fluffball is a realistic, video-based desktop pet project for Apple Silicon Macs
 - Continuous pet sizing from 60% to 140%.
 - Alpha-aware mouse click-through, with an optional full pass-through mode.
 - Smoother action changes using a fifth-order fade curve, subject-height/center/ground port alignment, and seamless idle loops.
+- Offline black/tan/white fur anchor matching keeps separate generation batches from becoming abruptly warmer or brighter during locomotion and view changes.
 - Real walk, jog, and run footage moves the pet in any desktop direction. Cursor-follow mode selects a gait from two-dimensional distance and cursor speed.
 - Free Roam chooses safe two-dimensional destinations across the current desktop, pauses briefly after each arrival, and then continues exploring.
 - Multi-angle head turning uses nine aligned transparent image keyframes instead of AI-generated video. While standing idle, the dog turns one view at a time toward the cursor; a complete look-around demo is also available.
 - Runtime mirroring gives the left-profile footage a right-facing counterpart, so autonomous idles, tail wags, posture transitions, and sleep retain the selected side.
+- Runtime resolves assets by Pet Pack semantic action IDs, so paths and loop behavior are no longer hardcoded. Conforming dog and cat packs can reuse one behavior engine.
 
 ### Build and run
 
@@ -119,6 +127,10 @@ dist/Furball2D.zip
 ```
 
 The app-icon source is stored at `Support/AppIcon.png`. To replace it, provide another square image and run `./Scripts/build-app-icon.sh`; the packaging script embeds the generated multi-resolution `AppIcon.icns` in the app bundle.
+
+The current ZIP is about 15.2 MB, dominated by 18 action clips plus nine multi-view still loops—27 HEVC-with-alpha videos in total at 960×540 and 24 fps—rather than source images. AI view sources remain available at 1440×1080 and are downsampled to the common 960×540 runtime canvas. This balances clarity and decoding cost at the current display size; the installer does not embed every source image at full resolution. The user-provided app-icon source is 800×800. Its `.icns` contains the required macOS 16–1024 px representations, with the 1024 px representation produced by high-quality upsampling.
+
+See the [Pet Pack v1 specification](Docs/PET_PACK_STANDARD.md) for the production pipeline, 27 required semantic slots, and current implementation boundaries. Run `./Scripts/validate-pet-pack.swift Sources/Furball2D/Assets` to validate the manifest, video format, alpha, and action completeness automatically.
 
 ### Asset layout
 

@@ -18,6 +18,51 @@ mkdir -p "$OUTPUT_DIR"
 SOURCE_CLEANUP="delogo=x=1122:y=538:w=96:h=96"
 FINISH_FILTERS="chromakey=0x3f985b:0.075:0.025,despill=green:mix=0.30:expand=0.05,unsharp=5:5:0.25:3:3:0,scale=960:540:flags=lanczos+accurate_rnd,format=bgra"
 
+# 移动素材来自另一批生成视频，原始白毛和棕毛明显偏暖、偏亮。以下曲线用
+# stand-idle 的黑毛、棕毛和白毛统计值作为三个锚点，在抠像后统一色温与明度。
+# 每种移动源片使用一条固定曲线，保证 start / loop / stop 内部不会发生色漂。
+color_curve_points() {
+  local source_black="$1"
+  local source_tan="$2"
+  local source_white="$3"
+  local target_black="$4"
+  local target_tan="$5"
+  local target_white="$6"
+  awk \
+    -v x1="$source_black" -v x2="$source_tan" -v x3="$source_white" \
+    -v y1="$target_black" -v y2="$target_tan" -v y3="$target_white" \
+    'BEGIN {
+      printf "0/0 %.6f/%.6f %.6f/%.6f %.6f/%.6f 1/1", \
+        x1/255, y1/255, x2/255, y2/255, x3/255, y3/255
+    }'
+}
+
+motion_color_filter() {
+  local source_name="$1"
+  local -a anchors
+  case "$source_name" in
+    stand-to-walk-to-stand.mp4)
+      anchors=(32.2 142.3 207.6 24.7 103.7 180.4 23.1 91.0 177.2)
+      ;;
+    stand-to-slow-run-to-stand.mp4)
+      anchors=(31.1 137.8 209.2 23.6 99.6 182.8 21.9 86.7 180.2)
+      ;;
+    stand-to-fast-run-to-stand.mp4)
+      anchors=(28.8 137.1 211.1 22.2 94.8 184.6 20.9 79.8 182.0)
+      ;;
+    *)
+      print -r -- "null"
+      return
+      ;;
+  esac
+
+  local red green blue
+  red="$(color_curve_points "${anchors[1]}" "${anchors[2]}" "${anchors[3]}" 30 112 181)"
+  green="$(color_curve_points "${anchors[4]}" "${anchors[5]}" "${anchors[6]}" 26 78 164)"
+  blue="$(color_curve_points "${anchors[7]}" "${anchors[8]}" "${anchors[9]}" 27 67 166)"
+  print -r -- "curves=interp=pchip:r='$red':g='$green':b='$blue'"
+}
+
 # 在透明的 1600×900 工作画布上做等比缩放和位移，再裁回 1280×720。
 # 这样既支持缩小，也支持放大，不会因为 pad 目标小于动态输入而失败。
 # q / dx / dy 在片段首尾之间使用 smoothstep，避免校正本身造成速度突变。
@@ -92,6 +137,7 @@ compile_stabilized_clip() {
   local source_path="$SOURCE_DIR/$source_name"
   local output_path="$OUTPUT_DIR/$output_name.mov"
   local normalize
+  local color_grade
 
   if [[ ! -f "$source_path" ]]; then
     print -u2 "缺少素材：$source_path"
@@ -197,7 +243,8 @@ compile_motion_segment() {
   # 首末 q/dx/dy 校正；循环段的两端被归一到同一高度、中心和脚底基线。
   # 走路/跑步是方向性动作，循环段只取相同落脚相位，绝不使用倒放。
   normalize="$(stabilize_filter 1190 670 "$frame_count" "$q0" "$q1" "$dx0" "$dx1" "$dy0" "$dy1")"
-  local motion_filters="$SOURCE_CLEANUP,chromakey=$key_color:0.078:0.025,despill=green:mix=0.32:expand=0.05,unsharp=5:5:0.25:3:3:0,format=rgba,$normalize,scale=960:540:flags=lanczos+accurate_rnd,fps=24,format=bgra"
+  color_grade="$(motion_color_filter "$source_name")"
+  local motion_filters="$SOURCE_CLEANUP,chromakey=$key_color:0.078:0.025,despill=green:mix=0.32:expand=0.05,format=rgba,$color_grade,unsharp=5:5:0.25:3:3:0,$normalize,scale=960:540:flags=lanczos+accurate_rnd,fps=24,format=bgra"
 
   print "编译移动动作 $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \

@@ -5,11 +5,12 @@
 ## 纳入仓库
 
 - Swift 源码与 `Package.swift`
-- `Assets/SourceImagesForAIVideo/` 下的 30 张 AI 视频生成参考图及用途说明
-- `Assets/SourceVideos/` 下的 9 段原始视频（包含 1 个明确标注的完全重复归档）
-- `Sources/Furball2D/Assets/Clips/left-profile/` 下的 8 段透明导出视频
+- `Assets/SourceImagesForAIVideo/` 下的 38 张 AI 视频生成参考图及用途说明
+- `Assets/SourceVideos/` 下的 12 段原始视频（包含 1 个明确标注的完全重复归档）
+- `Sources/Furball2D/Assets/Clips/` 下的 27 段透明运行时视频
 - 素材清单 `manifest.json`
 - 素材重建与应用打包脚本
+- Pet Pack v1 双语规范与自动验收工具
 - 中英文 README
 - 根目录 `AGENTS.md` 视频处理规范
 - `Assets/README.md` 旧文件名映射与视角目录说明

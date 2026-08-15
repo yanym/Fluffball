@@ -1,10 +1,25 @@
 {
-  "formatVersion": 7,
+  "petPackVersion": 1,
+  "pet": {
+    "id": "furball-demo-dog",
+    "name": "Furball",
+    "species": "dog",
+    "assetVersion": 1
+  },
+  "formatVersion": 8,
   "canvas": { "width": 960, "height": 540, "fps": 24 },
   "normalization": {
     "workCanvas": { "width": 1600, "height": 900 },
     "anchors": ["subjectHeight", "alphaCenterX", "groundY"],
     "curve": "smoothstep"
+  },
+  "colorNormalization": {
+    "reference": "stand-idle / left-profile",
+    "sampleBuckets": ["blackFur", "tanFur", "whiteFur"],
+    "curve": "monotonic-pchip",
+    "application": "after chromakey and despill, before final scale",
+    "locomotionPolicy": "one curve per source shared by start-loop-stop",
+    "imageViewPolicy": "one curve per view targeting the shared reference"
   },
   "clips": [
     { "id": "stand.idle", "view": "left-profile", "file": "Clips/left-profile/stand-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-idle.mp4" },

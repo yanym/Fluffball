@@ -54,7 +54,7 @@
 
 首次从站立进入走路、慢跑或快跑时，运行时分别等待约 0.32、0.16 和 0.32 秒再开始桌面位移，并使用平滑加速接入目标速度。这些时间来自起步片段接触表中的第一处明确步态，而不是从菜单点击时刻立即平移。
 
-这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，并对 start / loop / stop 的首末帧分别归一化主体高度、Alpha 中心和脚底基线；循环段使用相同落脚相位且不倒放。校正通过 1600×900 透明工作画布平滑完成，最后裁回标准画布，不会使用固定缩放值硬套整条原片。切点、端口参数、循环策略和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
+这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，并对 start / loop / stop 的首末帧分别归一化主体高度、Alpha 中心和脚底基线；循环段使用相同落脚相位且不倒放。校正通过 1600×900 透明工作画布平滑完成，最后裁回标准画布，不会使用固定缩放值硬套整条原片。移动素材还会按源视频共享单调色彩曲线，匹配 `stand-idle` 的黑毛、棕毛和白毛锚点；9 个图片视角也在导出时分别匹配同一参考。可用 `Scripts/audit-png-color.swift` 对透明 PNG 代表帧复测。切点、端口参数、循环策略、色彩参考和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
 
 ## 新素材命名规则
 
@@ -121,7 +121,7 @@ The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4
 
 On a fresh transition from standing to walking, jogging, or running, runtime translation waits approximately 0.32, 0.16, or 0.32 seconds respectively, then ramps smoothly to the target speed. These offsets come from the first clear gait motion in each start-clip contact sheet rather than translating immediately when the menu action occurs.
 
-`Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Cut points, port parameters, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/manifest.json`.
+`Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Every locomotion source also shares one monotonic grading curve across start / loop / stop, matching the black, tan, and white fur anchors from `stand-idle`; all nine image views independently target the same reference during export. Use `Scripts/audit-png-color.swift` to re-audit representative transparent PNG frames. Cut points, port parameters, color references, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/manifest.json`.
 
 ## Naming new assets
 

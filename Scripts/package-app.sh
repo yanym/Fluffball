@@ -51,6 +51,10 @@ if [[ ! -f "$PROJECT_DIR/Support/AppIcon.icns" ]]; then
   "$SCRIPT_DIR/build-app-icon.sh"
 fi
 
+# A Pet Pack is runtime data, not best-effort content. Reject incomplete or
+# malformed packs before compiling/signing an application that cannot recover.
+"$SCRIPT_DIR/validate-pet-pack.swift" "$PROJECT_DIR/Sources/Furball2D/Assets"
+
 swift build -c release
 BUILD_DIR="$(swift build -c release --show-bin-path)"
 STAGE_DIR="$(mktemp -d /tmp/furball-package.XXXXXX)"

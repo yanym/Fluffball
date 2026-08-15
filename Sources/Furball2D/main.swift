@@ -3,9 +3,22 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petController: PetController?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+    }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Wait one main-run-loop turn so the accessory activation policy and the
+        // system status bar have both settled before creating the status item.
+        // Creating it synchronously while changing activation policy can leave a
+        // launch-services app without a visible recovery entry in the menu bar.
+        DispatchQueue.main.async { [weak self] in
+            self?.launchPet()
+        }
+    }
+
+    @MainActor
+    private func launchPet() {
         do {
             let controller = try PetController(startingPosture: .sleep)
             petController = controller

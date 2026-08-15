@@ -72,7 +72,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private let panel: PetPanel
     private let renderer: PetRenderer
-    private let statusItem: NSStatusItem
+    private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private let speechBubble = PetSpeechBubble()
 
@@ -91,6 +91,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var cursorFollowTimer: Timer?
     private var freeRoamTimer: Timer?
     private var facingTimer: Timer?
+    private var statusItemHealthTimer: Timer?
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
     private var patrolDirection: CGFloat = -1
@@ -172,7 +173,6 @@ final class PetController: NSObject, NSMenuDelegate {
         let origin = NSPoint(x: screen.maxX - size.width - 24, y: screen.minY + 18)
         renderer = try PetRenderer(frame: NSRect(origin: .zero, size: size))
         panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
         posture = startingPosture
@@ -195,6 +195,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.updateClickThrough()
             }
         }
+        startStatusItemHealthCheck()
         startFacingTracking()
         if freeRoamEnabled {
             beginFreeRoaming()
@@ -214,11 +215,68 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func configureMenu() {
-        statusItem.button?.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "Furball2D")
-        statusItem.button?.toolTip = appLanguage.statusTooltip
-        statusItem.menu = menu
         menu.delegate = self
         rebuildMenu()
+        repairStatusItemIfNeeded()
+    }
+
+    private func startStatusItemHealthCheck() {
+        statusItemHealthTimer?.invalidate()
+        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.repairStatusItemIfNeeded()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusItemHealthTimer = timer
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(systemDisplayConfigurationChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDisplayConfigurationChanged),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func systemDisplayConfigurationChanged() {
+        // Menu-bar ownership can move between displays after wake or a monitor
+        // change. Reattach on the next turn after AppKit finishes that migration.
+        DispatchQueue.main.async { [weak self] in
+            self?.repairStatusItemIfNeeded()
+        }
+    }
+
+    private func repairStatusItemIfNeeded() {
+        if let item = statusItem, item.button == nil {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+
+        if statusItem == nil {
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        }
+
+        guard let item = statusItem, let button = item.button else { return }
+        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        let image = NSImage(
+            systemSymbolName: "pawprint.fill",
+            accessibilityDescription: "Furball2D"
+        )?.withSymbolConfiguration(symbolConfiguration)
+        image?.isTemplate = true
+
+        item.length = NSStatusItem.squareLength
+        item.menu = menu
+        item.isVisible = true
+        button.image = image
+        button.imagePosition = .imageOnly
+        button.toolTip = appLanguage.statusTooltip
+        button.isEnabled = true
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -1551,7 +1609,7 @@ final class PetController: NSObject, NSMenuDelegate {
               language != appLanguage else { return }
 
         appLanguage = language
-        statusItem.button?.toolTip = language.statusTooltip
+        statusItem?.button?.toolTip = language.statusTooltip
         rebuildMenu()
         showSpeech(language.languageChanged)
     }
