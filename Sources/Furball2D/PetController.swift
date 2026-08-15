@@ -16,6 +16,11 @@ final class PetController: NSObject, NSMenuDelegate {
         static let followCursor = "followCursor"
         static let freeRoam = "freeRoam"
         static let imageFacing = "imageFacing"
+        static let videoAnimations = "videoAnimationsEnabled"
+    }
+
+    private static var videoAnimationsPreferenceKey: String {
+        "\(PreferenceKey.videoAnimations).\(PetAssetCatalog.petID)"
     }
 
     private enum HorizontalFacing {
@@ -120,7 +125,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var freeRoamTarget: NSPoint?
     private var freeRoamPauseUntil: TimeInterval = 0
     private var lastFreeRoamSampleTime: TimeInterval = 0
-    private var autonomousVideoFacingUntil: TimeInterval = 0
+    private var autonomousActionFacingUntil: TimeInterval = 0
     private var restFacingPreparedEpoch: Int?
     private let behaviorTimeScale: Double = ProcessInfo.processInfo.environment["FURBALL_FAST_BEHAVIOR"] == "1" ? 0.08 : 1
 
@@ -148,6 +153,15 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(imageFacingEnabled, forKey: PreferenceKey.imageFacing) }
     }
 
+    private var videoAnimationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                videoAnimationsEnabled,
+                forKey: Self.videoAnimationsPreferenceKey
+            )
+        }
+    }
+
     private var appLanguage: AppLanguage {
         didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: AppLanguage.preferenceKey) }
     }
@@ -166,12 +180,23 @@ final class PetController: NSObject, NSMenuDelegate {
         imageFacingEnabled = defaults.object(forKey: PreferenceKey.imageFacing) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.imageFacing)
+        let capabilities = PetAssetCatalog.capabilities
+        if capabilities.supportsModeSwitching {
+            videoAnimationsEnabled = defaults.object(forKey: Self.videoAnimationsPreferenceKey) == nil
+                ? true
+                : defaults.bool(forKey: Self.videoAnimationsPreferenceKey)
+        } else {
+            videoAnimationsEnabled = capabilities.supportsVideoMode
+        }
         appLanguage = AppLanguage.stored
 
         let size = NSSize(width: Self.basePetSize.width * initialScale, height: Self.basePetSize.height * initialScale)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(x: screen.maxX - size.width - 24, y: screen.minY + 18)
-        renderer = try PetRenderer(frame: NSRect(origin: .zero, size: size))
+        renderer = try PetRenderer(
+            frame: NSRect(origin: .zero, size: size),
+            visualMode: videoAnimationsEnabled ? .video : .images
+        )
         panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
         super.init()
 
@@ -215,6 +240,10 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func configureMenu() {
+        // Capability-gated items (for example an image-only pack's video
+        // switch) must keep their explicit disabled state. AppKit otherwise
+        // re-enables any item whose target responds to its action.
+        menu.autoenablesItems = false
         menu.delegate = self
         rebuildMenu()
         repairStatusItemIfNeeded()
@@ -291,6 +320,16 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: appLanguage.sleepMenu, action: #selector(sleepFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.visibilityMenu(isVisible: panel.isVisible), action: #selector(toggleVisibility), keyEquivalent: "")
         menu.addItem(.separator())
+
+        let capabilities = PetAssetCatalog.capabilities
+        let videoItem = menu.addItem(
+            withTitle: appLanguage.videoAnimationsMenu,
+            action: #selector(toggleVideoAnimations),
+            keyEquivalent: ""
+        )
+        videoItem.state = renderer.visualMode == .video ? .on : .off
+        videoItem.isEnabled = capabilities.supportsModeSwitching
+        videoItem.toolTip = appLanguage.videoAnimationsTooltip(capabilities: capabilities)
 
         let passItem = menu.addItem(withTitle: appLanguage.passThroughMenu, action: #selector(togglePassThrough), keyEquivalent: "")
         passItem.state = fullPassThrough ? .on : .off
@@ -633,7 +672,7 @@ final class PetController: NSObject, NSMenuDelegate {
             && !isDragging
             && locomotionMode == .none
             && patrolTimer == nil
-            && ProcessInfo.processInfo.systemUptime >= autonomousVideoFacingUntil
+            && ProcessInfo.processInfo.systemUptime >= autonomousActionFacingUntil
             && panel.isVisible
     }
 
@@ -809,7 +848,7 @@ final class PetController: NSObject, NSMenuDelegate {
            !freeRoamEnabled,
            patrolTimer == nil,
            locomotionMode == .none,
-           ProcessInfo.processInfo.systemUptime >= autonomousVideoFacingUntil {
+           ProcessInfo.processInfo.systemUptime >= autonomousActionFacingUntil {
             facingView = actionFacing.profileView
             playFacingView(facingView, fadeDuration: 0.07)
             return
@@ -886,7 +925,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func showAutonomousStandFacing(epoch: Int) {
         guard behaviorEpoch == epoch, posture == .stand, !freeRoamEnabled else { return }
-        autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.35
+        autonomousActionFacingUntil = ProcessInfo.processInfo.systemUptime + 1.35
         isUsingImageFacing = false
         renderer.setMirrored(actionFacing.isMirrored)
         do {
@@ -927,7 +966,10 @@ final class PetController: NSObject, NSMenuDelegate {
             return
         }
 
-        if PetClips.walkIdle.isAvailable {
+        let walkAssetIsAvailable = renderer.visualMode == .video
+            ? PetClips.walkIdle.isAvailable
+            : PetClips.walkIdle.isImageAvailable
+        if walkAssetIsAvailable {
             isUsingImageFacing = false
             renderer.setMirrored(actionFacing.isMirrored)
             do {
@@ -947,7 +989,8 @@ final class PetController: NSObject, NSMenuDelegate {
                 }
             }
         } else {
-            // 当前左侧面素材没有步态循环；保持站立观察，避免用静止脚掌在桌面上滑行。
+            // Keep the pet standing when the active representation does not
+            // provide locomotion instead of sliding an unanimated silhouette.
             playIdle(.stand)
             schedule(after: Double.random(in: 7...12), epoch: epoch) { [weak self] in
                 self?.settleDown(epoch: epoch)
@@ -960,7 +1003,7 @@ final class PetController: NSObject, NSMenuDelegate {
               ProcessInfo.processInfo.systemUptime < patrolDeadline else {
             patrolTimer?.invalidate()
             patrolTimer = nil
-            autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
+            autonomousActionFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
             playIdle(.stand)
             schedule(after: 1.2, epoch: epoch) { [weak self] in self?.settleDown(epoch: epoch) }
             return
@@ -987,7 +1030,7 @@ final class PetController: NSObject, NSMenuDelegate {
         patrolTimer?.invalidate()
         patrolTimer = nil
         if wasPatrolling, posture == .stand, !isTransitioning {
-            autonomousVideoFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
+            autonomousActionFacingUntil = ProcessInfo.processInfo.systemUptime + 1.25
             playIdle(.stand)
         }
     }
@@ -1263,7 +1306,12 @@ final class PetController: NSObject, NSMenuDelegate {
             locomotionVelocity = .zero
             return
         } else {
-            let rampDuration = max(0.01, locomotionMode.startTranslationRampDuration)
+            let rampDuration = max(
+                0.01,
+                renderer.visualMode == .video
+                    ? locomotionMode.startTranslationRampDuration
+                    : 0.14
+            )
             let linearProgress = min(1, max(0, (now - locomotionTranslationStartTime) / rampDuration))
             translationProgress = CGFloat(linearProgress * linearProgress * (3 - 2 * linearProgress))
         }
@@ -1343,7 +1391,8 @@ final class PetController: NSObject, NSMenuDelegate {
         lastLocomotionChangeTime = now
         if previousMode == .none, newMode != .none {
             locomotionVelocity = .zero
-            locomotionTranslationStartTime = now + newMode.startTranslationDelay
+            let translationDelay = renderer.visualMode == .video ? newMode.startTranslationDelay : 0
+            locomotionTranslationStartTime = now + translationDelay
         } else if newMode == .none {
             locomotionTranslationStartTime = 0
         }
@@ -1520,7 +1569,7 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func switchToVideoStandIdle() {
+    private func switchToStandIdle() {
         guard posture == .stand else { return }
         isUsingImageFacing = false
         facingView = actionFacing.profileView
@@ -1623,6 +1672,28 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
+    @objc private func toggleVideoAnimations() {
+        let capabilities = PetAssetCatalog.capabilities
+        guard capabilities.supportsModeSwitching else { return }
+
+        let previousValue = videoAnimationsEnabled
+        let previousMode = renderer.visualMode
+        videoAnimationsEnabled.toggle()
+        do {
+            try renderer.setVisualMode(videoAnimationsEnabled ? .video : .images)
+            showSpeech(
+                videoAnimationsEnabled
+                    ? appLanguage.videoModeEnabled
+                    : appLanguage.imageModeEnabled
+            )
+            repositionSpeechBubble(resetSilhouette: true)
+        } catch {
+            videoAnimationsEnabled = previousValue
+            try? renderer.setVisualMode(previousMode)
+            present(error)
+        }
+    }
+
     @objc private func togglePassThrough() {
         fullPassThrough.toggle()
         updateClickThrough()
@@ -1676,10 +1747,10 @@ final class PetController: NSObject, NSMenuDelegate {
             playFacingView(facingView, fadeDuration: 0.07)
         } else if isUsingImageFacing, facingView != actionFacing.profileView {
             returnImageFacingToActionProfile { [weak self] in
-                self?.switchToVideoStandIdle()
+                self?.switchToStandIdle()
             }
         } else {
-            switchToVideoStandIdle()
+            switchToStandIdle()
         }
     }
 

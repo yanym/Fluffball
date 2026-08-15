@@ -18,6 +18,16 @@ trap cleanup_stage EXIT
 
 cd "$PROJECT_DIR"
 
+MANIFEST_PATH="$PROJECT_DIR/Sources/Furball2D/Assets/manifest.json"
+video_mode_enabled=false
+image_mode_enabled=false
+if grep -Eq '"videoMode"[[:space:]]*:[[:space:]]*true' "$MANIFEST_PATH"; then
+  video_mode_enabled=true
+fi
+if grep -Eq '"imageMode"[[:space:]]*:[[:space:]]*true' "$MANIFEST_PATH"; then
+  image_mode_enabled=true
+fi
+
 typeset -a required_clips=(
   stand-idle stand-to-sit sit-idle sit-to-lie
   lie-idle lie-to-sleep sleep-idle sleep-to-stand
@@ -27,25 +37,48 @@ typeset -a required_clips=(
   look-around-images
 )
 assets_missing=false
-for clip_name in "${required_clips[@]}"; do
-  if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile/$clip_name.mov" ]]; then
-    assets_missing=true
-    break
-  fi
-done
+if [[ "$video_mode_enabled" == true ]]; then
+  for clip_name in "${required_clips[@]}"; do
+    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile/$clip_name.mov" ]]; then
+      assets_missing=true
+      break
+    fi
+  done
+fi
 typeset -a required_image_views=(
   left-profile front-near-profile-left front-three-quarter-left
   front-near-center-left front front-near-center-right
   front-three-quarter-right front-near-profile-right right-profile
 )
-for view_name in "${required_image_views[@]}"; do
-  if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views/$view_name.mov" ]]; then
-    assets_missing=true
-    break
-  fi
-done
+if [[ "$video_mode_enabled" == true ]]; then
+  for view_name in "${required_image_views[@]}"; do
+    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views/$view_name.mov" ]]; then
+      assets_missing=true
+      break
+    fi
+  done
+fi
 if [[ "$assets_missing" == true ]]; then
   "$SCRIPT_DIR/build-assets.sh"
+fi
+
+if [[ "$image_mode_enabled" == true ]]; then
+  typeset -a required_images=(
+    stand/left-profile stand/right-profile stand/front
+    sit/left-profile sit/right-profile
+    lie/left-profile lie/right-profile
+    sleep/left-profile sleep/right-profile
+  )
+  image_assets_missing=false
+  for image_name in "${required_images[@]}"; do
+    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Images/$image_name.png" ]]; then
+      image_assets_missing=true
+      break
+    fi
+  done
+  if [[ "$image_assets_missing" == true ]]; then
+    "$SCRIPT_DIR/build-image-assets.sh"
+  fi
 fi
 if [[ ! -f "$PROJECT_DIR/Support/AppIcon.icns" ]]; then
   "$SCRIPT_DIR/build-app-icon.sh"

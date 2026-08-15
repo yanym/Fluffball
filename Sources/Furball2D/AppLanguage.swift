@@ -87,6 +87,40 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var videoAnimationsMenu: String {
+        switch self {
+        case .simplifiedChinese: "视频动画（更细腻）"
+        case .english: "Video Animations (More Detailed)"
+        }
+    }
+
+    func videoAnimationsTooltip(capabilities: PetPackCapabilities) -> String {
+        switch (self, capabilities.supportsImageMode, capabilities.supportsVideoMode) {
+        case (.simplifiedChinese, true, true): "关闭后使用省资源的图片动画模式"
+        case (.english, true, true): "Turn off to use the lightweight image animation mode"
+        case (.simplifiedChinese, true, false): "此宠物素材包只有图片动画，无法开启视频"
+        case (.english, true, false): "This pet pack only includes image animation"
+        case (.simplifiedChinese, false, true): "此宠物素材包只有视频动画"
+        case (.english, false, true): "This pet pack only includes video animation"
+        case (.simplifiedChinese, false, false): "此宠物素材包没有可用的视觉模式"
+        case (.english, false, false): "This pet pack has no available visual mode"
+        }
+    }
+
+    var imageModeEnabled: String {
+        switch self {
+        case .simplifiedChinese: "切到图片动画啦，轻巧也很可爱～"
+        case .english: "Image animation mode—lightweight and cute!"
+        }
+    }
+
+    var videoModeEnabled: String {
+        switch self {
+        case .simplifiedChinese: "切回细腻的视频动画啦 ✨"
+        case .english: "Detailed video animation is back! ✨"
+        }
+    }
+
     var autoBehaviorMenu: String {
         switch self {
         case .simplifiedChinese: "自动作息（睡觉 / 巡游）"

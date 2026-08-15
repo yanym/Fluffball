@@ -160,6 +160,7 @@ private final class SubmittedFrameResources: @unchecked Sendable {
 @MainActor
 final class PetRenderer: NSObject, MTKViewDelegate {
     let view: PetMetalView
+    private(set) var visualMode: PetVisualMode
 
     var crossfadeEnabled: Bool {
         get {
@@ -179,6 +180,13 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         var blendWeight: Float
         var hasTextureA: UInt32
         var hasTextureB: UInt32
+        var texturesArePremultiplied: UInt32
+    }
+
+    private struct PlayRequest {
+        let clip: PetClip
+        let fadeDuration: TimeInterval
+        let completion: (() -> Void)?
     }
 
     private let channelLock = NSLock()
@@ -191,8 +199,10 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
     private let samplerState: MTLSamplerState
+    private let imageAnimator: PetImageAnimator
     private var textureCache: CVMetalTextureCache?
     private var isMirrored = false
+    private var lastPlayRequest: PlayRequest?
 
     private static let shaderSource = """
     #include <metal_stdlib>
@@ -207,6 +217,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         float blendWeight;
         uint hasTextureA;
         uint hasTextureB;
+        uint texturesArePremultiplied;
     };
 
     vertex VertexOut petVertex(const device float4 *vertices [[buffer(0)]], uint id [[vertex_id]]) {
@@ -228,18 +239,22 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         // HEVC Alpha is delivered as straight RGBA. Convert each lane to
         // premultiplied alpha before interpolation; mixing straight RGBA first
         // creates dark fringes and color cross-terms when silhouettes differ.
-        colorA.rgb *= colorA.a;
-        colorB.rgb *= colorB.a;
+        if (uniforms.texturesArePremultiplied == 0) {
+            colorA.rgb *= colorA.a;
+            colorB.rgb *= colorB.a;
+        }
         float weight = clamp(uniforms.blendWeight, 0.0f, 1.0f);
         return mix(colorA, colorB, weight);
     }
     """
 
-    init(frame: NSRect) throws {
+    init(frame: NSRect, visualMode: PetVisualMode = .video) throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw PetAppError.metalUnavailable
         }
 
+        self.visualMode = visualMode
+        imageAnimator = PetImageAnimator(device: device)
         view = PetMetalView(frame: frame, device: device)
         guard let commandQueue = device.makeCommandQueue() else {
             throw PetAppError.rendererSetup(AppLanguage.stored.commandQueueFailure)
@@ -309,6 +324,28 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     /// tied to the fade completion, otherwise a 3–6 second transition clip would
     /// be truncated after the first 0.14 seconds.
     func play(_ clip: PetClip, fadeDuration: TimeInterval = 0.14, completion: (() -> Void)? = nil) throws {
+        lastPlayRequest = PlayRequest(clip: clip, fadeDuration: fadeDuration, completion: completion)
+        switch visualMode {
+        case .video:
+            try playVideo(clip, fadeDuration: fadeDuration, completion: completion)
+        case .images:
+            try playImages(clip, fadeDuration: fadeDuration, completion: completion)
+        }
+    }
+
+    func setVisualMode(_ mode: PetVisualMode) throws {
+        guard visualMode != mode else { return }
+        visualMode = mode
+        guard let request = lastPlayRequest else { return }
+        try play(request.clip, fadeDuration: request.fadeDuration, completion: request.completion)
+    }
+
+    private func playVideo(
+        _ clip: PetClip,
+        fadeDuration: TimeInterval,
+        completion: (() -> Void)?
+    ) throws {
+        imageAnimator.stop()
         let channel = try PetVideoChannel(clip: clip)
         channel.onClipFinished = {
             DispatchQueue.main.async { completion?() }
@@ -332,10 +369,28 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         discardedSecondary?.invalidate()
     }
 
+    private func playImages(
+        _ clip: PetClip,
+        fadeDuration: TimeInterval,
+        completion: (() -> Void)?
+    ) throws {
+        clearVideoChannels()
+        try imageAnimator.play(
+            clip.imageAnimation,
+            fadeDuration: crossfadeEnabled ? fadeDuration : 0,
+            completion: completion
+        )
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
+        if visualMode == .images {
+            drawImage(in: view, at: now)
+            return
+        }
+
         channelLock.lock()
         let primary = primaryChannel
         let secondary = secondaryChannel
@@ -438,7 +493,8 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         var uniforms = FragmentUniforms(
             blendWeight: bufferA == nil ? 1 : blendWeight,
             hasTextureA: bufferA == nil ? 0 : 1,
-            hasTextureB: bufferB == nil ? 0 : 1
+            hasTextureB: bufferB == nil ? 0 : 1,
+            texturesArePremultiplied: 0
         )
 
         encoder.setRenderPipelineState(pipelineState)
@@ -469,6 +525,10 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     /// During a fade the hit area uses a weighted union, preventing the mouse
     /// from falling through between two slightly different silhouettes.
     func alpha(at point: NSPoint) -> Float? {
+        if visualMode == .images {
+            return imageAnimator.alpha(at: point, in: view.bounds)
+        }
+
         channelLock.lock()
         let primaryBuffer = primaryChannel?.latestPixelBuffer()
         let secondaryBuffer = secondaryChannel?.latestPixelBuffer()
@@ -484,6 +544,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     /// Returns the pet's current non-transparent silhouette in view coordinates.
     /// Sampling both decoder lanes keeps placement stable during a crossfade.
     func visibleContentRect(alphaThreshold: UInt8 = 18) -> NSRect? {
+        if visualMode == .images {
+            return imageAnimator.visibleContentRect(in: view.bounds)?
+                .insetBy(dx: -4, dy: -4)
+                .intersection(view.bounds)
+        }
+
         channelLock.lock()
         let buffers = [
             primaryChannel?.latestPixelBuffer(),
@@ -501,6 +567,73 @@ final class PetRenderer: NSObject, MTKViewDelegate {
 
     func setMirrored(_ mirrored: Bool) {
         isMirrored = mirrored
+        imageAnimator.setMirrored(mirrored)
+    }
+
+    private func drawImage(in view: MTKView, at now: CFTimeInterval) {
+        guard let sample = imageAnimator.sample(at: now),
+              let renderPass = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass) else { return }
+
+        var vertices = imageVertices(transform: sample.transform, mirrored: sample.isMirrored)
+        var uniforms = FragmentUniforms(
+            blendWeight: sample.blendWeight,
+            hasTextureA: 1,
+            hasTextureB: 1,
+            texturesArePremultiplied: 1
+        )
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setVertexBytes(&vertices, length: MemoryLayout<Float>.stride * vertices.count, index: 0)
+        encoder.setFragmentTexture(sample.textureA, index: 0)
+        encoder.setFragmentTexture(sample.textureB, index: 1)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FragmentUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    private func imageVertices(transform: PetImageTransform, mirrored: Bool) -> [Float] {
+        let leftU: Float = mirrored ? 1 : 0
+        let rightU: Float = mirrored ? 0 : 1
+        let cosine = cos(transform.rotation)
+        let sine = sin(transform.rotation)
+
+        func point(_ x: Float, _ y: Float) -> (Float, Float) {
+            let scaledX = x * transform.scaleX
+            let scaledYFromBottom = (y + 1) * transform.scaleY
+            let rotatedX = scaledX * cosine - scaledYFromBottom * sine
+            let rotatedY = scaledX * sine + scaledYFromBottom * cosine - 1
+            return (
+                rotatedX + transform.translationX,
+                rotatedY + transform.translationY
+            )
+        }
+
+        let bottomLeft = point(-1, -1)
+        let bottomRight = point(1, -1)
+        let topLeft = point(-1, 1)
+        let topRight = point(1, 1)
+        return [
+            bottomLeft.0, bottomLeft.1, leftU, 1,
+            bottomRight.0, bottomRight.1, rightU, 1,
+            topLeft.0, topLeft.1, leftU, 0,
+            topRight.0, topRight.1, rightU, 0
+        ]
+    }
+
+    private func clearVideoChannels() {
+        channelLock.lock()
+        let channels = [primaryChannel, secondaryChannel].compactMap { $0 }
+        primaryChannel = nil
+        secondaryChannel = nil
+        crossfadeState = nil
+        currentBlendWeight = 0
+        channelLock.unlock()
+        channels.forEach { $0.invalidate() }
     }
 
     private func makeTexture(

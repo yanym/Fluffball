@@ -1,13 +1,24 @@
 {
-  "petPackVersion": 1,
+  "petPackVersion": 2,
   "pet": {
     "id": "furball-demo-dog",
     "name": "Furball",
     "species": "dog",
-    "assetVersion": 1
+    "assetVersion": 2
   },
-  "formatVersion": 8,
+  "capabilities": {
+    "imageMode": true,
+    "videoMode": true
+  },
+  "formatVersion": 9,
   "canvas": { "width": 960, "height": 540, "fps": 24 },
+  "imageCanvas": {
+    "width": 960,
+    "height": 540,
+    "pixelFormat": "RGBA PNG",
+    "runtimeKeying": false,
+    "animationEngine": "procedural-squash-stretch-v1"
+  },
   "normalization": {
     "workCanvas": { "width": 1600, "height": 900 },
     "anchors": ["subjectHeight", "alphaCenterX", "groundY"],
@@ -21,6 +32,35 @@
     "locomotionPolicy": "one curve per source shared by start-loop-stop",
     "imageViewPolicy": "one curve per view targeting the shared reference"
   },
+  "imageAnimations": [
+    { "id": "stand.idle", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.look.images", "files": ["Images/stand/left-profile.png", "Images/stand/front-near-profile-left.png", "Images/stand/front-three-quarter-left.png", "Images/stand/front-near-center-left.png", "Images/stand/front.png", "Images/stand/front-near-center-right.png", "Images/stand/front-three-quarter-right.png", "Images/stand/front-near-profile-right.png", "Images/stand/right-profile.png", "Images/stand/front-near-profile-right.png", "Images/stand/front-three-quarter-right.png", "Images/stand/front-near-center-right.png", "Images/stand/front.png", "Images/stand/front-near-center-left.png", "Images/stand/front-three-quarter-left.png", "Images/stand/front-near-profile-left.png", "Images/stand/left-profile.png"], "loop": false, "motion": "look", "frameDuration": 0.10, "duration": 1.70 },
+    { "id": "stand.facing.left-profile", "files": ["Images/stand/left-profile.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-near-profile-left", "files": ["Images/stand/front-near-profile-left.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-three-quarter-left", "files": ["Images/stand/front-three-quarter-left.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-near-center-left", "files": ["Images/stand/front-near-center-left.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front", "files": ["Images/stand/front.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-near-center-right", "files": ["Images/stand/front-near-center-right.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-three-quarter-right", "files": ["Images/stand/front-three-quarter-right.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.front-near-profile-right", "files": ["Images/stand/front-near-profile-right.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.facing.right-profile", "files": ["Images/stand/right-profile.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 3.8 },
+    { "id": "stand.to.sit", "files": ["Images/sit/left-profile.png"], "rightFiles": ["Images/sit/right-profile.png"], "loop": false, "motion": "transition", "frameDuration": 0.12, "duration": 0.48 },
+    { "id": "sit.idle", "files": ["Images/sit/left-profile.png"], "rightFiles": ["Images/sit/right-profile.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 4.2 },
+    { "id": "sit.to.lie", "files": ["Images/lie/left-profile.png"], "rightFiles": ["Images/lie/right-profile.png"], "loop": false, "motion": "transition", "frameDuration": 0.12, "duration": 0.52 },
+    { "id": "lie.idle", "files": ["Images/lie/left-profile.png"], "rightFiles": ["Images/lie/right-profile.png"], "loop": true, "motion": "idle", "frameDuration": 0.12, "duration": 4.2 },
+    { "id": "lie.to.sleep", "files": ["Images/sleep/left-profile.png"], "rightFiles": ["Images/sleep/right-profile.png"], "loop": false, "motion": "transition", "frameDuration": 0.12, "duration": 0.60 },
+    { "id": "sleep.idle", "files": ["Images/sleep/left-profile.png"], "rightFiles": ["Images/sleep/right-profile.png"], "loop": true, "motion": "sleep", "frameDuration": 0.12, "duration": 4.8 },
+    { "id": "sleep.to.stand", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "transition", "frameDuration": 0.12, "duration": 0.70 },
+    { "id": "walk.start", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "walk", "frameDuration": 0.12, "duration": 0.22 },
+    { "id": "walk.loop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": true, "motion": "walk", "frameDuration": 0.12, "duration": 0.46 },
+    { "id": "walk.stop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "settle", "frameDuration": 0.12, "duration": 0.24 },
+    { "id": "slow-run.start", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "slow-run", "frameDuration": 0.12, "duration": 0.18 },
+    { "id": "slow-run.loop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": true, "motion": "slow-run", "frameDuration": 0.12, "duration": 0.34 },
+    { "id": "slow-run.stop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "settle", "frameDuration": 0.12, "duration": 0.22 },
+    { "id": "fast-run.start", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "fast-run", "frameDuration": 0.12, "duration": 0.16 },
+    { "id": "fast-run.loop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": true, "motion": "fast-run", "frameDuration": 0.12, "duration": 0.26 },
+    { "id": "fast-run.stop", "files": ["Images/stand/left-profile.png"], "rightFiles": ["Images/stand/right-profile.png"], "loop": false, "motion": "settle", "frameDuration": 0.12, "duration": 0.20 }
+  ],
   "clips": [
     { "id": "stand.idle", "view": "left-profile", "file": "Clips/left-profile/stand-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-idle.mp4" },
     { "id": "stand.look.images", "view": "multi-angle", "file": "Clips/left-profile/look-around-images.mov", "loop": false, "generation": "static-image-keyframes", "source": ["Assets/ImageTurnMVP/normalized/left-profile.png", "Assets/ImageTurnMVP/normalized/front-near-profile-left.png", "Assets/ImageTurnMVP/normalized/front-three-quarter-left.png", "Assets/ImageTurnMVP/normalized/front-near-center-left.png", "Assets/ImageTurnMVP/normalized/front.png", "Assets/ImageTurnMVP/normalized/front-near-center-right.png", "Assets/ImageTurnMVP/normalized/front-three-quarter-right.png", "Assets/ImageTurnMVP/normalized/front-near-profile-right.png", "Assets/ImageTurnMVP/normalized/right-profile.png"] },

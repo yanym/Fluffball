@@ -1,4 +1,4 @@
-# Furball Pet Pack v1 / Furball 宠物素材包 v1
+# Furball Pet Pack v2 / Furball 宠物素材包 v2
 
 [中文](#中文) · [English](#english)
 
@@ -6,13 +6,13 @@
 
 ### 目标
 
-Pet Pack 把“这是哪只动物”与“应用如何行为”完全分开。用户只提供身份照片并确认一次标准身份板；后续的视角生成、动作生成、抠像、颜色、尺寸、脚底锚点、循环和验收由离线生产工具处理。应用只读取统一的动作 ID，因此狗、猫或其他四足宠物不需要各写一套 Swift 状态机。
+Pet Pack 把“这是哪只动物”“有哪些素材表示”和“应用如何行为”分开。用户只提供身份照片并确认标准身份板；图片与可选视频的生成、抠像、颜色、尺寸、脚底锚点、循环和验收由离线生产工具处理。应用只读取统一动作 ID，因此狗、猫或其他四足宠物不需要各写一套 Swift 状态机，也不必为了加入应用而先购买整套 AI 视频。
 
 ### 用户最小输入
 
 1. 6–12 张清晰原始照片：正面、左/右侧面、左/右 3/4，以及一张能看清全身比例和尾巴的照片。
 2. 宠物名称与种类：`dog`、`cat` 或 `other`。
-3. 用户只需确认一张“标准身份板”，检查脸型、耳朵、花纹、毛色、尾巴和体型。身份板未通过前不进入视频阶段，避免将错误放大到几十段动作。
+3. 用户确认一张“标准身份板”，检查脸型、耳朵、花纹、毛色、尾巴和体型。身份板未通过前不批量生成姿态图；只有用户选择高级视频模式时才进入视频阶段。
 
 绿幕不应该是用户必须理解的输入。生成器可以输出固定绿幕、纯色背景或原生 Alpha；只要生产适配器能生成同一组透明标准片段，应用层无需知道上游模型。
 
@@ -21,15 +21,19 @@ Pet Pack 把“这是哪只动物”与“应用如何行为”完全分开。�
 1. **输入质检**：检测清晰度、遮挡、视角覆盖、过度滤镜和多只动物。
 2. **身份建模**：保留原图，生成统一的正面/侧面/花纹身份板，并记录毛色锚点。
 3. **标准视角与姿态**：生成 9 个站立视角，以及 stand / sit / lie / sleep 稳定姿态。所有结果使用同一相机、主体尺度和地面基线。
-4. **动作生成适配器**：不同 AI 提供商使用同一组输入/输出约定。每次生成必须包含标准进入姿态、主动作和标准离开姿态。
-5. **自动编译**：进行时间切分、Alpha 抠像、去色边、逐帧跟踪、尺度/中心/脚底归一、毛色匹配、起步延迟检测和循环相位搜索。
-6. **自动验收与重试**：身份相似度、突变、端口偏差、循环缝、透明边缘或颜色超标时拒收；生成型问题回到上游重试，不用长 Crossfade 隐藏。
-7. **导出**：只有通过验收的运行时素材才进入 `.furballpet` 包。
+4. **图片包先交付**：将站、坐、趴、睡和视角图离线抠像并归一到透明 PNG；程序化运动参数在清单中按语义声明。到这里已能形成完整可用的低成本宠物。
+5. **可选视频增强**：只有用户选择时才调用视频模型。不同提供商使用同一进入姿态、主动作和离开姿态约定。
+6. **自动编译**：图片执行 Alpha、去色边、尺度/脚底归一；视频额外执行时间切分、逐帧跟踪、起步延迟检测和循环相位搜索。
+7. **自动验收与重试**：身份相似度、突变、端口偏差、循环缝、透明边缘或颜色超标时拒收；生成型问题回到上游重试，不用长 Crossfade 隐藏。
+8. **导出**：只有通过验收的运行时素材才进入 `.furballpet` 包。
 
-### Pet Pack v1 运行时合同
+### Pet Pack v2 运行时合同
 
-- 统一规格：960×540、24 fps、HEVC with Alpha、`hvc1`、无音轨。
-- 统一动作语义：17 个姿态/移动片段、9 个站立视角循环和 1 个完整转身演示，共 27 个必需槽位。
+- `capabilities.imageMode` 与 `capabilities.videoMode` 明确声明可用表示，至少一个为 `true`。
+- 每种已启用的表示都必须覆盖同一组 27 个语义槽位：17 个姿态/移动动作、9 个站立视角和 1 个完整转身演示。
+- 图片规格：960×540 RGBA PNG，必须已有透明背景，禁止运行时 chromakey。`imageAnimations` 为每个语义 ID 声明 `files`、可选 `rightFiles`、循环属性、时长和程序化 `motion`。
+- 视频规格：960×540、24 fps、HEVC with Alpha、`hvc1`、无音轨。`clips` 为每个语义 ID 声明相对路径与循环属性。
+- 同时具备两种表示时默认使用视频，用户可即时切换；纯图片包强制图片模式并将视频开关置灰，纯视频包反之。
 - 统一姿态端口：`stand`、`sit`、`lie`、`sleep`。
 - 统一跟踪端口：主体高度、Alpha 加权中心 x 和接地 y。
 - 统一色彩端口：黑毛、棕毛和浅色毛锚点，背景不参与统计。
@@ -38,7 +42,12 @@ Pet Pack 把“这是哪只动物”与“应用如何行为”完全分开。�
 ```text
 MyPet.furballpet/
 ├── manifest.json
-└── Clips/
+├── Images/                          # imageMode=true 时必需
+│   ├── stand/
+│   ├── sit/
+│   ├── lie/
+│   └── sleep/
+└── Clips/                           # videoMode=true 时必需
     ├── left-profile/
     │   ├── stand-idle.mov
     │   ├── walk-start.mov
@@ -52,9 +61,10 @@ MyPet.furballpet/
 
 ### 当前已落地的部分
 
-- 应用现在会按标准动作 ID 从 `manifest.json` 解析实际文件路径和循环属性。
+- 应用会按标准动作 ID 从 `manifest.json` 解析 PNG 动画和视频片段，并在一个行为状态机下切换渲染器。
+- 图片模式具备呼吸、睡眠起伏、姿态弹性、转头序列和速度相关移动节奏；右向优先使用 `rightFiles`，缺失时才镜像。
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` 可在不重新编译的情况下运行一个外部包，适合制作和测试工具。
-- `Scripts/validate-pet-pack.swift <pack>` 会检查清单、27 个必需动作、路径安全、循环语义、分辨率、帧率、编码、音轨和透明像素。
+- `Scripts/validate-pet-pack.swift <pack>` 会按能力检查 27 个语义动作、路径安全、循环语义、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。
 
 这是通用宠物的底层合同，但还不是完整的普通用户生产器。下一阶段是在 App 中加入 Pet Pack 导入/切换菜单，并将身份板生成、AI 提供商适配器、自动重试和 QA 报告组成独立制作向导。在视频 AI 仍会偶发换脸或改变花纹的情况下，“身份板一次确认”不应被取消。
 
@@ -64,13 +74,13 @@ MyPet.furballpet/
 
 ### Goal
 
-A Pet Pack separates animal identity from application behavior. The user supplies identity photos and approves one canonical identity board. View generation, motion generation, keying, color, scale, ground anchoring, loops, and validation belong to an offline production tool. The app consumes semantic action IDs, so dogs, cats, and other quadrupeds share one Swift behavior graph.
+A Pet Pack separates animal identity, available representations, and application behavior. The user supplies identity photos and approves one canonical identity board. Image and optional video generation, keying, color, scale, ground anchoring, loops, and validation belong to an offline production tool. The app consumes semantic action IDs, so dogs, cats, and other quadrupeds share one Swift behavior graph without requiring a full AI-video purchase first.
 
 ### Minimum user input
 
 1. Six to twelve clear originals covering front, both profiles, both three-quarter views, and one full-body image that shows proportions and tail.
 2. A pet name and `dog`, `cat`, or `other` species metadata.
-3. One approval of a canonical identity board covering face, ears, markings, coat, tail, and proportions. Motion generation does not begin before this gate passes.
+3. One approval of a canonical identity board covering face, ears, markings, coat, tail, and proportions. Pose-image generation does not fan out before this gate passes; video starts only when the user opts into the enhanced mode.
 
 Green screen is an implementation detail, not a user requirement. A provider may emit fixed chroma, a clean solid background, or native alpha. Provider adapters must converge on the same transparent runtime clips.
 
@@ -79,15 +89,19 @@ Green screen is an implementation detail, not a user requirement. A provider may
 1. **Intake QA:** score sharpness, occlusion, view coverage, heavy filters, and multiple animals.
 2. **Identity model:** preserve originals, build a canonical front/profile/marking board, and record coat-color anchors.
 3. **Canonical views and postures:** produce nine standing views plus stable stand, sit, lie, and sleep ports with one camera, scale, and ground baseline.
-4. **Motion provider adapters:** every provider follows the same entry-pose, action, and exit-pose contract.
-5. **Automated compilation:** segment time, extract alpha, despill, track, normalize scale/center/ground, match coat color, detect translation delay, and search loop phase.
-6. **Automated QA and retry:** reject identity changes, discontinuities, bad ports, loop seams, alpha edges, and color outliers. Regenerate failed sources instead of hiding them with long fades.
-7. **Export:** only validated runtime clips enter a `.furballpet` package.
+4. **Ship images first:** key and normalize stand, sit, lie, sleep, and view images as transparent PNGs, then declare semantic procedural motion. This already forms a complete low-cost pet.
+5. **Optional video enhancement:** call a video provider only when selected. Every provider follows the same entry-pose, action, and exit-pose contract.
+6. **Automated compilation:** images receive alpha, despill, scale, and ground normalization; video additionally receives segmentation, per-frame tracking, translation-delay detection, and loop-phase search.
+7. **Automated QA and retry:** reject identity changes, discontinuities, bad ports, loop seams, alpha edges, and color outliers. Regenerate failed sources instead of hiding them with long fades.
+8. **Export:** only validated runtime assets enter a `.furballpet` package.
 
-### Pet Pack v1 runtime contract
+### Pet Pack v2 runtime contract
 
-- 960×540, 24 fps, HEVC with Alpha, `hvc1`, and no audio.
-- Twenty-seven required semantic slots: 17 posture/locomotion clips, nine standing-view loops, and one complete look-around demonstration.
+- `capabilities.imageMode` and `capabilities.videoMode` declare available representations; at least one is true.
+- Every enabled representation covers the same 27 semantic slots: 17 posture/locomotion actions, nine standing views, and one complete look-around demonstration.
+- Image assets are transparent 960×540 RGBA PNGs with no runtime chroma key. Each `imageAnimations` entry declares `files`, optional `rightFiles`, looping, duration, and procedural `motion`.
+- Video assets are 960×540, 24 fps, HEVC with Alpha, `hvc1`, and no audio. Each `clips` entry declares a relative file and loop behavior.
+- Dual-mode packs default to video and can switch instantly. Image-only packs force image mode and disable the video toggle; video-only packs do the inverse.
 - Four posture ports: stand, sit, lie, and sleep.
 - Geometry ports use subject height, alpha-weighted center x, and ground y.
 - Color ports use black, tan, and light-fur anchors without background pixels.
@@ -97,8 +111,9 @@ Source photos, chroma footage, and generation logs stay in a private source proj
 
 ### Implemented foundation
 
-- Runtime now resolves file paths and loop properties by semantic ID from `manifest.json`.
+- Runtime resolves both PNG animation descriptors and video clips by semantic ID under one behavior state machine.
+- Image mode implements breathing, quiet sleep, springy posture changes, look sequences, and speed-specific locomotion rhythm. Right-facing art prefers `rightFiles` and mirrors only as a fallback.
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` runs an unpacked external pack without recompilation for production and QA workflows.
-- `Scripts/validate-pet-pack.swift <pack>` validates the manifest, all 27 required actions, safe relative paths, loop semantics, canvas, frame rate, codec, audio absence, and decoded transparency.
+- `Scripts/validate-pet-pack.swift <pack>` validates enabled capabilities, all 27 semantic actions, safe paths, loop semantics, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency.
 
 This establishes the universal runtime contract, not yet the complete consumer production experience. The next phase is an in-app Pet Pack importer/switcher and a separate production wizard combining identity-board generation, provider adapters, automated retries, and a visual QA report. While video models can still change faces or markings, the single identity-board approval remains a necessary quality gate.

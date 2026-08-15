@@ -21,20 +21,21 @@
 
 ## 1.2 只用图片制作动作
 
-当用户明确不要 AI 生成视频时，可以用图片生成补齐静态视角，再离线组成短动作。当前实现位于 `Assets/ImageTurnMVP/normalized/`，由 `Scripts/build-image-turn-mvp.sh` 生成 `look-around-images.mov`。
+当用户明确不要 AI 生成视频时，优先交付 Pet Pack v2 图片模式。当前运行时 PNG 由 `Scripts/build-image-assets.sh` 写入 `Sources/Furball2D/Assets/Images/`，应用直接读取图片并用程序化微动形成完整行为；`Scripts/build-image-turn-mvp.sh` 生成的旧 `.mov` 只服务视频表示的兼容转头动作，不是图片模式依赖。
 
 1. 先确定等距的角度关键帧，例如左侧面、左前 3/4、正面、右前 3/4、右侧面。生成时固定同一只狗、站姿、闭嘴表情、机位、光照和纯色背景。
 2. 抠像后统一到 960×540；同一站姿的可见高度误差应小于 2%，边界框中心误差尽量小于 2 px，脚底 y 误差不超过 1–2 px。
-3. 第一张和最后一张必须与运行时待机端口一致。当前实现的左侧面直接取自 `stand-idle.mov`，用于平稳进出图片动作；右侧面端口必须能与镜像后的 `stand-idle.mov` 对齐。
+3. 第一张和最后一张必须与运行时待机端口一致。左右侧面优先使用各自真实图片；只有没有右侧图且花纹、文字和光向允许时才镜像左侧图。
 4. 大角度静态图只使用约 0.06–0.10 秒的短淡化；姿态非常接近时最多约 0.14 秒。更长淡化会产生双头、双腿和两条尾巴；静态图数量不足时，不得用长淡化冒充连续转身。
-5. 图片序列适合转头、换朝向、眨眼和轻微姿态变化，不适合走路或跑步。移动仍需要真实步态循环，否则脚掌会在桌面上滑行。
+5. 图片序列适合转头、换朝向、眨眼和轻微姿态变化。图片模式允许用底部锚定的 squash/stretch、抬升和轻微侧倾做“可爱弹跳式”走/慢跑/快跑，但必须明确它不是物理正确的脚掌步态；需要真实落脚相位时使用视频模式。
 6. 交付前同时检查每张原始 PNG、透明关键帧、接触表和应用实机效果。若仍需要电影级连续性，应增加中间角度图，或使用可控骨骼/网格动画；不要声称静态图片序列等同于真实视频运动。当前实现使用 9 张图片，约每 22.5° 一个视角。
-7. 运行时响应鼠标方向时，每次只切换一个相邻视角，并设置约 0.15–0.22 秒的首次方向稳定时间和约 0.09–0.12 秒的相邻切换冷却，避免鼠标在阈值附近造成高频抖动。进入视频动作前，按相邻顺序抵达与动作朝向匹配的 `left-profile` 或 `right-profile` 端口；右向动作可镜像左侧面视频，但必须实机检查不对称花纹、项圈文字和光向是否会因镜像而显得错误。移动期间不得同时切换静态视角。
-8. 鼠标跟随和自由漫游统一使用二维目标向量；新增的连续移动模式也必须复用同一套起步延迟、平滑加速、步态滞回与横纵边界。接近纯纵向移动时保留最近的左右朝向，避免高频翻转。旧的短时自动巡游仍是独立低速逻辑，若继续扩展它，应迁移到同一移动引擎。
+7. 运行时响应鼠标方向时，每次只切换一个相邻视角，并设置约 0.15–0.22 秒的首次方向稳定时间和约 0.09–0.12 秒的相邻切换冷却，避免鼠标在阈值附近造成高频抖动。进入侧面动作前，按相邻顺序抵达匹配的 `left-profile` 或 `right-profile` 端口。移动期间不得同时切换静态视角。
+8. 鼠标跟随和自由漫游统一使用二维目标向量、速度档位迟滞与横纵边界。视频模式使用素材实测起步延迟和 0.18–0.36 秒渐入；图片模式不等待“首个抬爪帧”，当前使用约 0.14 秒速度渐入。接近纯纵向移动时保留最近的左右朝向，避免高频翻转。
+9. 每个图片模式包都必须在 `manifest.json` 声明 `capabilities.imageMode=true`，并为全部 27 个语义 ID 提供 `imageAnimations`。纯图片包将 `videoMode=false` 并可省略 `clips`；不得通过伪造空视频来启用开关。生成后运行 `Scripts/validate-pet-pack.swift` 和 `Scripts/package-app.sh`。
 
 ## 2. 接收新素材后的第一步
 
-如果任务是替换整只宠物，而不是只新增一段动作，必须先阅读 `Docs/PET_PACK_STANDARD.md`。狗和猫使用同一组 27 个语义动作槽位。不得在 Swift 中为某只宠物新增硬编码文件路径；路径、循环属性和宠物身份必须写入 Pet Pack `manifest.json`。替换整包后运行 `Scripts/validate-pet-pack.swift`，验收未通过时不得打包。
+如果任务是替换整只宠物，而不是只新增一段动作，必须先阅读 `Docs/PET_PACK_STANDARD.md`。狗和猫使用同一组 27 个语义动作槽位。不得在 Swift 中为某只宠物新增硬编码文件路径；路径、循环属性、能力和宠物身份必须写入 Pet Pack `manifest.json`。图片、视频或双模式整包都必须通过 `Scripts/validate-pet-pack.swift`，验收未通过时不得打包。
 
 保留原始视频，不要立刻覆盖 `Sources/Furball2D/Assets/Clips`。原片先按 `Assets/SourceVideos/<view>/<action>.mp4` 归档，再完成以下检查：
 
@@ -340,20 +341,21 @@ A typical action uses two to four references. Do not mix opposite profile views 
 
 ## 1.2 Building actions from images only
 
-When the user explicitly rejects AI-generated video, generate only the missing still views and assemble a short offline action. The current implementation stores normalized keyframes under `Assets/ImageTurnMVP/normalized/`; `Scripts/build-image-turn-mvp.sh` compiles them into `look-around-images.mov`.
+When the user explicitly rejects AI-generated video, ship Pet Pack v2 image mode first. `Scripts/build-image-assets.sh` writes runtime PNGs under `Sources/Furball2D/Assets/Images/`; the app reads them directly and creates complete behavior through procedural micro-motion. The legacy `.mov` output from `Scripts/build-image-turn-mvp.sh` only supports the video representation's compatible look action and is not an image-mode dependency.
 
 1. Choose evenly spaced view keyframes such as left profile, front-left three-quarter, front, front-right three-quarter, and right profile. Keep the same dog, standing pose, closed-mouth expression, camera, lighting, and solid background in every generated still.
 2. Key each image and normalize it to 960×540. For one standing pose, keep visible-height error below 2%, bounding-box center error near 2 px or less, and ground-y error within 1–2 px.
-3. Match the first and last still to the runtime idle ports. The current implementation extracts its left-profile endpoint from `stand-idle.mov`; the right-profile endpoint must align with the mirrored `stand-idle.mov`.
+3. Match the first and last still to the runtime idle ports. Prefer real left- and right-profile images. Mirror the left side only when no right image exists and asymmetric markings, text, and lighting remain safe.
 4. Keep large-angle still transitions around 0.06–0.10 seconds, extending only very similar poses to roughly 0.14 seconds. Longer fades create duplicate heads, legs, and tails. Never disguise too few keyframes with a long dissolve.
-5. Image sequences suit head turns, view changes, blinks, and small pose changes. They do not replace walk or run footage; desktop translation still needs a real gait loop to avoid sliding paws.
+5. Image sequences suit head turns, view changes, blinks, and small pose changes. Image mode may use bottom-anchored squash/stretch, lift, and restrained tilt for a deliberately cute walk/jog/run bounce, but this is not a physically correct footfall gait. Use video mode when real contact phase matters.
 6. Review source PNGs, keyed keyframes, a contact sheet, and the packaged app. For film-like continuity, add more intermediate views or use controllable rig/mesh animation; do not present a still-image sequence as equivalent to real continuous motion. The current implementation uses nine images at roughly 22.5-degree intervals.
-7. When responding to cursor direction at runtime, change only one adjacent view at a time and require roughly 0.15–0.22 seconds of initial directional stability plus an adjacent-step cooldown around 0.09–0.12 seconds, preventing rapid jitter near a threshold. Before a video action, step through adjacent stills to the `left-profile` or `right-profile` port matching the selected action facing. A right-facing action may mirror left-profile footage, but inspect asymmetric markings, collar text, and lighting in the packaged app because mirroring may make them incorrect. Never change static facing views during locomotion.
-8. Cursor following and free roaming share one two-dimensional target-vector movement implementation. Any new continuous movement mode must reuse its gait hysteresis, start delay, acceleration ramp, and horizontal/vertical bounds. Preserve the last horizontal facing during near-vertical travel so the renderer does not flip rapidly. The legacy short autonomous patrol still uses a separate low-speed path; migrate it to the shared engine before extending it.
+7. When responding to cursor direction at runtime, change only one adjacent view at a time and require roughly 0.15–0.22 seconds of initial directional stability plus an adjacent-step cooldown around 0.09–0.12 seconds. Before a profile action, step through adjacent stills to the matching `left-profile` or `right-profile` port. Never change static facing views during locomotion.
+8. Cursor following and free roaming share one two-dimensional target vector, gait hysteresis, and horizontal/vertical bounds. Video mode uses measured start delays and a 0.18–0.36-second acceleration ramp. Image mode does not wait for a nonexistent first paw lift and currently uses a roughly 0.14-second ramp. Preserve the last horizontal facing during near-vertical travel to prevent rapid flips.
+9. Every image-mode pack declares `capabilities.imageMode=true` and supplies `imageAnimations` for all 27 semantic IDs. An image-only pack declares `videoMode=false` and may omit `clips`; never create placeholder videos merely to enable the toggle. Run `Scripts/validate-pet-pack.swift` and `Scripts/package-app.sh` after generation.
 
 ## 2. First steps after receiving new footage
 
-If the task replaces the complete animal rather than adding one action, read `Docs/PET_PACK_STANDARD.md` first. Dogs and cats use the same 27 semantic action slots. Never add pet-specific hardcoded file paths to Swift; paths, loop properties, and identity belong in the Pet Pack `manifest.json`. Run `Scripts/validate-pet-pack.swift` after replacing a complete pack, and never package a validation failure.
+If the task replaces the complete animal rather than adding one action, read `Docs/PET_PACK_STANDARD.md` first. Dogs and cats use the same 27 semantic action slots. Never add pet-specific hardcoded file paths to Swift; paths, loop properties, capabilities, and identity belong in the Pet Pack `manifest.json`. Image, video, and dual-mode packs must all pass `Scripts/validate-pet-pack.swift`; never package a validation failure.
 
 Preserve the original video. Do not immediately overwrite `Sources/Furball2D/Assets/Clips`. Archive sources under `Assets/SourceVideos/<view>/<action>.mp4`, then complete these checks:
 

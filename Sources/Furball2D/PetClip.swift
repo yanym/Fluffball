@@ -1,19 +1,72 @@
 import Foundation
 
 private struct PetAssetManifest: Decodable {
+    struct PetDescriptor: Decodable {
+        let id: String
+    }
+
+    struct CapabilitiesDescriptor: Decodable {
+        let imageMode: Bool?
+        let videoMode: Bool?
+    }
+
     struct ClipDescriptor: Decodable {
         let id: String
         let file: String
         let loop: Bool
     }
 
-    let clips: [ClipDescriptor]
+    struct ImageAnimationDescriptor: Decodable {
+        let id: String
+        let files: [String]
+        let rightFiles: [String]?
+        let loop: Bool
+        let motion: PetImageMotion
+        let frameDuration: TimeInterval?
+        let duration: TimeInterval?
+    }
+
+    let pet: PetDescriptor?
+    let capabilities: CapabilitiesDescriptor?
+    let clips: [ClipDescriptor]?
+    let imageAnimations: [ImageAnimationDescriptor]?
 }
 
-private enum PetAssetCatalog {
+struct PetPackCapabilities {
+    let supportsImageMode: Bool
+    let supportsVideoMode: Bool
+
+    var supportsModeSwitching: Bool { supportsImageMode && supportsVideoMode }
+}
+
+enum PetImageMotion: String, Decodable {
+    case idle
+    case sleep
+    case transition
+    case look
+    case walk
+    case slowRun = "slow-run"
+    case fastRun = "fast-run"
+    case settle
+}
+
+struct PetImageAnimation {
+    let id: String
+    let files: [URL]
+    let rightFiles: [URL]?
+    let loops: Bool
+    let motion: PetImageMotion
+    let frameDuration: TimeInterval
+    let duration: TimeInterval
+}
+
+enum PetAssetCatalog {
     private struct LoadedCatalog {
         let rootURL: URL
+        let petID: String
+        let capabilities: PetPackCapabilities
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
+        let imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor]
     }
 
     private static let loaded: LoadedCatalog? = {
@@ -24,13 +77,33 @@ private enum PetAssetCatalog {
                 continue
             }
             var clipsByID: [String: PetAssetManifest.ClipDescriptor] = [:]
-            for clip in manifest.clips where clipsByID[clip.id] == nil {
+            for clip in manifest.clips ?? [] where clipsByID[clip.id] == nil {
                 clipsByID[clip.id] = clip
             }
-            return LoadedCatalog(rootURL: rootURL.standardizedFileURL, clipsByID: clipsByID)
+            var imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor] = [:]
+            for animation in manifest.imageAnimations ?? [] where imagesByID[animation.id] == nil {
+                imagesByID[animation.id] = animation
+            }
+            let capabilities = PetPackCapabilities(
+                supportsImageMode: manifest.capabilities?.imageMode ?? !imagesByID.isEmpty,
+                supportsVideoMode: manifest.capabilities?.videoMode ?? !clipsByID.isEmpty
+            )
+            return LoadedCatalog(
+                rootURL: rootURL.standardizedFileURL,
+                petID: manifest.pet?.id ?? "legacy-pet",
+                capabilities: capabilities,
+                clipsByID: clipsByID,
+                imagesByID: imagesByID
+            )
         }
         return nil
     }()
+
+    static var capabilities: PetPackCapabilities {
+        loaded?.capabilities ?? PetPackCapabilities(supportsImageMode: false, supportsVideoMode: true)
+    }
+
+    static var petID: String { loaded?.petID ?? "legacy-pet" }
 
     static func loops(for id: String, fallback: Bool) -> Bool {
         loaded?.clipsByID[id]?.loop ?? fallback
@@ -39,11 +112,8 @@ private enum PetAssetCatalog {
     static func url(for id: String, fallbackFileName: String) throws -> URL {
         if let loaded {
             let relativePath = loaded.clipsByID[id]?.file ?? "Clips/\(fallbackFileName).mov"
-            let candidate = loaded.rootURL.appendingPathComponent(relativePath).standardizedFileURL
-            let rootPrefix = loaded.rootURL.path.hasSuffix("/")
-                ? loaded.rootURL.path
-                : loaded.rootURL.path + "/"
-            guard candidate.path.hasPrefix(rootPrefix),
+            let candidate = try safeAssetURL(relativePath, in: loaded.rootURL)
+            guard
                   FileManager.default.fileExists(atPath: candidate.path) else {
                 throw PetAppError.missingAsset(relativePath)
             }
@@ -56,6 +126,46 @@ private enum PetAssetCatalog {
             return candidate
         }
         throw PetAppError.missingAsset("\(fallbackFileName).mov")
+    }
+
+    static func imageAnimation(for id: String) throws -> PetImageAnimation {
+        guard let loaded, let descriptor = loaded.imagesByID[id] else {
+            throw PetAppError.missingAsset("image animation: \(id)")
+        }
+
+        let files = try descriptor.files.map { try existingAssetURL($0, in: loaded.rootURL) }
+        guard !files.isEmpty else { throw PetAppError.missingAsset("image animation: \(id)") }
+        let rightFiles = try descriptor.rightFiles.map { paths in
+            try paths.map { try existingAssetURL($0, in: loaded.rootURL) }
+        }
+        let frameDuration = max(1.0 / 60.0, descriptor.frameDuration ?? 0.12)
+        let duration = max(frameDuration, descriptor.duration ?? frameDuration * Double(files.count))
+        return PetImageAnimation(
+            id: id,
+            files: files,
+            rightFiles: rightFiles,
+            loops: descriptor.loop,
+            motion: descriptor.motion,
+            frameDuration: frameDuration,
+            duration: duration
+        )
+    }
+
+    private static func existingAssetURL(_ relativePath: String, in rootURL: URL) throws -> URL {
+        let candidate = try safeAssetURL(relativePath, in: rootURL)
+        guard FileManager.default.fileExists(atPath: candidate.path) else {
+            throw PetAppError.missingAsset(relativePath)
+        }
+        return candidate
+    }
+
+    private static func safeAssetURL(_ relativePath: String, in rootURL: URL) throws -> URL {
+        let candidate = rootURL.appendingPathComponent(relativePath).standardizedFileURL
+        let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+        guard candidate.path.hasPrefix(rootPrefix) else {
+            throw PetAppError.missingAsset(relativePath)
+        }
+        return candidate
     }
 
     private static func candidateAssetRoots() -> [URL] {
@@ -152,6 +262,8 @@ struct PetClip {
     }
 
     var isAvailable: Bool { (try? url) != nil }
+    var imageAnimation: PetImageAnimation { get throws { try PetAssetCatalog.imageAnimation(for: id) } }
+    var isImageAvailable: Bool { (try? imageAnimation) != nil }
 }
 
 struct PetMotionClipSet {

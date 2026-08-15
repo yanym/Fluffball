@@ -1,4 +1,4 @@
-# Furball 视频素材目录
+# Furball 素材目录
 
 [中文](#furball-视频素材目录) · [English](#fluffball-video-asset-catalog)
 
@@ -7,6 +7,10 @@
 `SourceImagesForAIVideo/` 是另一类资产：它保存生成 AI 视频时使用的狗狗身份、姿态和视角参考图，不会进入应用包。具体目录和选图规则见 [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md)。
 
 `ImageTurnMVP/normalized/` 保存 9 张 960×540 透明 PNG，按主体高度、边界框中心和脚底基线对齐。`Scripts/build-image-turn-mvp.sh` 不调用任何 AI 视频模型：它会合成一次性演示 `look-around-images.mov`，并为运行时多角度转头导出 `Clips/image-views/` 下的 9 个单视角循环。目录名保留 `MVP` 仅为兼容现有构建路径，菜单中的功能已经作为正式功能提供。
+
+`Scripts/build-image-assets.sh` 会独立构建真正的图片运行时素材，不把 PNG 再编码成视频。输出位于 `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`：站姿来自已归一化的 9 个视角，坐/趴/睡来自 `generation-ready/` 姿态图并离线抠像。`ImageMode/qa/contact-sheet.png` 是本次 17 张运行时图片的接触表。`manifest.json.imageAnimations` 再把同一组 27 个语义动作映射到这些图片与程序化 motion。
+
+图片与视频是两套并列运行时表示。`capabilities.imageMode` 和 `capabilities.videoMode` 决定素材包支持哪一种；纯图片包可以完全不带 `Clips/`。两者都存在时应用默认视频并允许用户切换。图片模式中的走/慢跑/快跑是可爱的弹跳节奏，不声称具备真实脚掌相位。
 
 ## 原始视频映射
 
@@ -60,6 +64,8 @@
 
 ```text
 Assets/SourceVideos/<view>/<action>.mp4
+Assets/SourceImagesForAIVideo/generation-ready/<pose>/<view>.png
+Sources/Furball2D/Assets/Images/<pose>/<view>.png
 Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 ```
 
@@ -67,13 +73,17 @@ Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 
 ---
 
-# Fluffball Video Asset Catalog
+# Fluffball Asset Catalog
 
 All original videos are organized by `view/action`. Directory and file names use lowercase English and kebab-case. Transparent runtime exports retain the same view hierarchy so future front, right-profile, or rear actions cannot be mixed accidentally.
 
 `SourceImagesForAIVideo/` is a separate asset class. It contains dog identity, posture, and view references used to generate AI videos and is not included in the app bundle. See [SourceImagesForAIVideo/README.md](SourceImagesForAIVideo/README.md) for its layout and image-selection rules.
 
 `ImageTurnMVP/normalized/` contains nine transparent 960×540 PNGs aligned by subject height, bounding-box center, and ground baseline. Without invoking any AI video model, `Scripts/build-image-turn-mvp.sh` composes the one-shot `look-around-images.mov` demo and exports nine single-view loops under `Clips/image-views/` for runtime multi-angle turning. The `MVP` directory name remains only for build-path compatibility; the menu now presents this as a regular feature.
+
+`Scripts/build-image-assets.sh` independently builds true image-runtime assets; it does not encode the PNGs back into video. Outputs live under `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`. Standing views come from the normalized nine-angle set, while sit/lie/sleep sources under `generation-ready/` are keyed offline. `ImageMode/qa/contact-sheet.png` reviews the current 17 runtime images. `manifest.json.imageAnimations` maps the same 27 semantic actions to these images and procedural motion types.
+
+Images and videos are parallel runtime representations. `capabilities.imageMode` and `capabilities.videoMode` declare what the pack supports; an image-only pack may omit `Clips/` completely. When both exist, the app defaults to video and lets the user switch. Image-mode walk/jog/run is an intentionally cute bounce rhythm, not a claim of physically correct footfall phase.
 
 ## Original video mapping
 
@@ -127,6 +137,8 @@ On a fresh transition from standing to walking, jogging, or running, runtime tra
 
 ```text
 Assets/SourceVideos/<view>/<action>.mp4
+Assets/SourceImagesForAIVideo/generation-ready/<pose>/<view>.png
+Sources/Furball2D/Assets/Images/<pose>/<view>.png
 Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 ```
 
