@@ -43,6 +43,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var cuteActionsMenu: String {
+        switch self {
+        case .simplifiedChinese: "可爱动作"
+        case .english: "Cute Actions"
+        }
+    }
+
     var imageTurnMenu: String {
         switch self {
         case .simplifiedChinese: "转过来看看我"
@@ -143,6 +150,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
     }
 
     var imageFacingMenu: String {
+        switch self {
+        case .simplifiedChinese: "跟随鼠标看向 16 个方向"
+        case .english: "Look Toward Cursor (16 Directions)"
+        }
+    }
+
+    var legacyImageFacingMenu: String {
         switch self {
         case .simplifiedChinese: "多角度转头"
         case .english: "Multi-Angle Head Turning"

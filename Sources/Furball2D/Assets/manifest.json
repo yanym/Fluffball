@@ -4,20 +4,98 @@
     "id": "furball-demo-dog",
     "name": "Furball",
     "species": "dog",
-    "assetVersion": 2
+    "assetVersion": 3
   },
   "capabilities": {
     "imageMode": true,
     "videoMode": true
   },
-  "formatVersion": 9,
+  "formatVersion": 10,
   "canvas": { "width": 960, "height": 540, "fps": 24 },
   "imageCanvas": {
     "width": 960,
     "height": 540,
     "pixelFormat": "RGBA PNG",
     "runtimeKeying": false,
-    "animationEngine": "procedural-squash-stretch-v1"
+    "animationEngine": "sprite-atlas-v2-with-legacy-frame-fallback"
+  },
+  "spriteAtlas": {
+    "file": "Sprites/Furball/spritesheet.webp",
+    "spriteVersionNumber": 2,
+    "layout": {
+      "columns": 8,
+      "rows": 11,
+      "cellWidth": 192,
+      "cellHeight": 208
+    },
+    "rendering": {
+      "canvasWidth": 384,
+      "canvasHeight": 216,
+      "bottomPadding": 4
+    },
+    "animations": [
+      { "id": "idle", "rowIndex": 0, "frameCount": 6, "frameDurations": [0.280, 0.110, 0.110, 0.140, 0.140, 0.320], "loop": true, "motion": "none", "frameBlendFraction": 0.18 },
+      { "id": "running-right", "rowIndex": 1, "frameCount": 8, "frameDurations": [0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.220], "loop": true, "motion": "none", "frameBlendFraction": 0.08 },
+      { "id": "running-left", "rowIndex": 2, "frameCount": 8, "frameDurations": [0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.220], "loop": true, "motion": "none", "frameBlendFraction": 0.08 },
+      { "id": "waving", "rowIndex": 3, "frameCount": 4, "frameDurations": [0.140, 0.140, 0.140, 0.280], "loop": false, "motion": "none", "frameBlendFraction": 0.16 },
+      { "id": "jumping", "rowIndex": 4, "frameCount": 5, "frameDurations": [0.140, 0.140, 0.140, 0.140, 0.280], "loop": false, "motion": "none", "frameBlendFraction": 0.10 },
+      { "id": "failed", "rowIndex": 5, "frameCount": 8, "frameDurations": [0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.240], "loop": false, "motion": "none", "frameBlendFraction": 0.14 },
+      { "id": "waiting", "rowIndex": 6, "frameCount": 6, "frameDurations": [0.150, 0.150, 0.150, 0.150, 0.150, 0.260], "loop": false, "motion": "none", "frameBlendFraction": 0.16 },
+      { "id": "working", "rowIndex": 7, "frameCount": 6, "frameDurations": [0.120, 0.120, 0.120, 0.120, 0.120, 0.220], "loop": false, "motion": "none", "frameBlendFraction": 0.12 },
+      { "id": "review", "rowIndex": 8, "frameCount": 6, "frameDurations": [0.150, 0.150, 0.150, 0.150, 0.150, 0.280], "loop": false, "motion": "none", "frameBlendFraction": 0.16 }
+    ],
+    "bindings": [
+      { "id": "stand.idle", "animation": "idle", "loop": true },
+      { "id": "stand.look.images", "animation": "review", "loop": false },
+      { "id": "stand.to.sit", "animation": "waiting", "frameIndices": [0], "loop": false, "frameDurationScale": 2.50 },
+      { "id": "sit.idle", "animation": "waiting", "loop": true, "frameDurationScale": 1.40 },
+      { "id": "sit.to.lie", "animation": "failed", "frameIndices": [0, 1, 2, 3, 4], "loop": false },
+      { "id": "lie.idle", "animation": "failed", "frameIndices": [4, 5], "loop": true, "frameDurationScale": 3.60 },
+      { "id": "lie.to.sleep", "animation": "failed", "frameIndices": [4, 5], "loop": false, "frameDurationScale": 0.80 },
+      { "id": "sleep.idle", "animation": "failed", "frameIndices": [4, 5], "loop": true, "motion": "sleep", "frameDurationScale": 6.00, "frameBlendFraction": 0.22 },
+      { "id": "sleep.to.stand", "animation": "jumping", "loop": false },
+      { "id": "walk.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 1.18 },
+      { "id": "walk.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 1.18 },
+      { "id": "walk.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 1.18 },
+      { "id": "slow-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.86 },
+      { "id": "slow-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.86 },
+      { "id": "slow-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.86 },
+      { "id": "fast-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.62 },
+      { "id": "fast-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.62 },
+      { "id": "fast-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.62 },
+      { "id": "gesture.wave", "animation": "waving", "loop": false },
+      { "id": "gesture.jump", "animation": "jumping", "loop": false },
+      { "id": "gesture.failed", "animation": "failed", "loop": false },
+      { "id": "gesture.waiting", "animation": "waiting", "loop": false },
+      { "id": "gesture.working", "animation": "working", "loop": false },
+      { "id": "gesture.review", "animation": "review", "loop": false }
+    ],
+    "lookDirections": [
+      { "degrees": 0, "rowIndex": 9, "columnIndex": 0 },
+      { "degrees": 22.5, "rowIndex": 9, "columnIndex": 1 },
+      { "degrees": 45, "rowIndex": 9, "columnIndex": 2 },
+      { "degrees": 67.5, "rowIndex": 9, "columnIndex": 3 },
+      { "degrees": 90, "rowIndex": 9, "columnIndex": 4 },
+      { "degrees": 112.5, "rowIndex": 9, "columnIndex": 5 },
+      { "degrees": 135, "rowIndex": 9, "columnIndex": 6 },
+      { "degrees": 157.5, "rowIndex": 9, "columnIndex": 7 },
+      { "degrees": 180, "rowIndex": 10, "columnIndex": 0 },
+      { "degrees": 202.5, "rowIndex": 10, "columnIndex": 1 },
+      { "degrees": 225, "rowIndex": 10, "columnIndex": 2 },
+      { "degrees": 247.5, "rowIndex": 10, "columnIndex": 3 },
+      { "degrees": 270, "rowIndex": 10, "columnIndex": 4 },
+      { "degrees": 292.5, "rowIndex": 10, "columnIndex": 5 },
+      { "degrees": 315, "rowIndex": 10, "columnIndex": 6 },
+      { "degrees": 337.5, "rowIndex": 10, "columnIndex": 7 }
+    ],
+    "actions": [
+      { "id": "gesture.wave", "title": { "zh-Hans": "挥挥爪", "en": "Wave" }, "resultingPosture": "stand", "autonomous": false },
+      { "id": "gesture.jump", "title": { "zh-Hans": "开心跳跳", "en": "Happy Jump" }, "resultingPosture": "stand", "autonomous": false },
+      { "id": "gesture.failed", "title": { "zh-Hans": "委屈一下", "en": "A Little Sad" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.waiting", "title": { "zh-Hans": "期待地等", "en": "Wait Hopefully" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.working", "title": { "zh-Hans": "认真寻找", "en": "Search Carefully" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.review", "title": { "zh-Hans": "仔细检查", "en": "Inspect Closely" }, "resultingPosture": "stand", "autonomous": true }
+    ]
   },
   "normalization": {
     "workCanvas": { "width": 1600, "height": 900 },

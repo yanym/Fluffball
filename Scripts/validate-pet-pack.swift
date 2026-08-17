@@ -46,12 +46,82 @@ private struct Manifest: Decodable {
         let duration: Double?
     }
 
+    struct SpriteAtlas: Decodable {
+        struct Layout: Decodable {
+            let columns: Int
+            let rows: Int
+            let cellWidth: Int
+            let cellHeight: Int
+        }
+
+        struct Rendering: Decodable {
+            let canvasWidth: Int
+            let canvasHeight: Int
+            let bottomPadding: Int?
+        }
+
+        struct Animation: Decodable {
+            let id: String
+            let rowIndex: Int
+            let frameCount: Int
+            let frameDurations: [Double]
+            let loop: Bool
+            let motion: String
+            let frameBlendFraction: Double?
+        }
+
+        struct Binding: Decodable {
+            let id: String
+            let animation: String
+            let rightAnimation: String?
+            let frameIndices: [Int]?
+            let rightFrameIndices: [Int]?
+            let loop: Bool?
+            let motion: String?
+            let frameDurationScale: Double?
+            let frameBlendFraction: Double?
+        }
+
+        struct LookDirection: Decodable {
+            let degrees: Double
+            let rowIndex: Int
+            let columnIndex: Int
+        }
+
+        struct LocalizedTitle: Decodable {
+            let zhHans: String
+            let en: String
+
+            private enum CodingKeys: String, CodingKey {
+                case zhHans = "zh-Hans"
+                case en
+            }
+        }
+
+        struct Action: Decodable {
+            let id: String
+            let title: LocalizedTitle
+            let resultingPosture: String?
+            let autonomous: Bool?
+        }
+
+        let file: String
+        let spriteVersionNumber: Int
+        let layout: Layout
+        let rendering: Rendering
+        let animations: [Animation]
+        let bindings: [Binding]
+        let lookDirections: [LookDirection]?
+        let actions: [Action]?
+    }
+
     let petPackVersion: Int
     let pet: Pet
     let canvas: Canvas
     let capabilities: Capabilities?
     let imageCanvas: ImageCanvas?
     let imageAnimations: [ImageAnimation]?
+    let spriteAtlas: SpriteAtlas?
     let clips: [Clip]?
 }
 
@@ -88,6 +158,10 @@ private let loopingClipIDs: Set<String> = [
     "stand.facing.front-three-quarter-right", "stand.facing.front-near-profile-right",
     "stand.facing.right-profile"
 ]
+
+private struct ValidatedSpriteAtlas {
+    let loopsByID: [String: Bool]
+}
 
 private func fail(_ message: String) throws -> Never {
     throw ValidationError.failed(message)
@@ -168,7 +242,7 @@ private func validateVideo(_ url: URL, canvas: Manifest.Canvas) async throws {
 private func validateImage(_ url: URL, width: Int, height: Int) throws {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
           let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-        try fail("\(url.lastPathComponent)：无法读取 PNG")
+        try fail("\(url.lastPathComponent)：无法读取图片")
     }
     guard image.width == width, image.height == height else {
         try fail("\(url.lastPathComponent)：画布为 \(image.width)×\(image.height)，期望 \(width)×\(height)")
@@ -199,6 +273,137 @@ private func validateImage(_ url: URL, width: Int, height: Int) throws {
     guard hasTransparentPixel, hasVisiblePixel else {
         try fail("\(url.lastPathComponent)：必须同时包含透明背景与可见宠物像素")
     }
+}
+
+private func validateSpriteAtlas(
+    _ atlas: Manifest.SpriteAtlas,
+    rootURL: URL
+) throws -> ValidatedSpriteAtlas {
+    guard atlas.spriteVersionNumber == 2 else {
+        try fail("spriteAtlas.spriteVersionNumber 必须为 2")
+    }
+    let layout = atlas.layout
+    guard layout.columns == 8, layout.rows == 11,
+          layout.cellWidth == 192, layout.cellHeight == 208 else {
+        try fail("Codex v2 spriteAtlas 必须为 8×11 格，每格 192×208")
+    }
+    guard atlas.rendering.canvasWidth > 0, atlas.rendering.canvasHeight > 0,
+          (atlas.rendering.bottomPadding ?? 0) >= 0 else {
+        try fail("spriteAtlas.rendering 必须声明有效的运行时画布与底部留白")
+    }
+    guard atlas.file.lowercased().hasSuffix(".webp") else {
+        try fail("spriteAtlas.file 必须是透明 WebP")
+    }
+    let atlasURL = try safeAssetURL(atlas.file, rootURL: rootURL)
+    try validateImage(
+        atlasURL,
+        width: layout.columns * layout.cellWidth,
+        height: layout.rows * layout.cellHeight
+    )
+
+    let supportedMotions: Set<String> = [
+        "none", "idle", "sleep", "transition", "look", "walk", "slow-run", "fast-run", "settle"
+    ]
+    var animationsByID: [String: Manifest.SpriteAtlas.Animation] = [:]
+    for animation in atlas.animations {
+        guard animationsByID[animation.id] == nil else {
+            try fail("重复 sprite 动画 ID：\(animation.id)")
+        }
+        guard !animation.id.isEmpty,
+              animation.rowIndex >= 0, animation.rowIndex < layout.rows,
+              animation.frameCount > 0, animation.frameCount <= layout.columns,
+              animation.frameDurations.count == animation.frameCount,
+              animation.frameDurations.allSatisfy({ $0 > 0 }),
+              supportedMotions.contains(animation.motion) else {
+            try fail("\(animation.id)：sprite 动画行、帧数、时长或 motion 无效")
+        }
+        if let fraction = animation.frameBlendFraction, !(0...0.48).contains(fraction) {
+            try fail("\(animation.id)：frameBlendFraction 必须在 0...0.48")
+        }
+        animationsByID[animation.id] = animation
+    }
+
+    func validateIndices(
+        _ indices: [Int]?,
+        animation: Manifest.SpriteAtlas.Animation,
+        bindingID: String
+    ) throws {
+        guard let indices else { return }
+        guard !indices.isEmpty,
+              indices.allSatisfy({ $0 >= 0 && $0 < animation.frameCount }) else {
+            try fail("\(bindingID)：frameIndices 超出 \(animation.id) 的有效帧范围")
+        }
+    }
+
+    var loopsByID: [String: Bool] = [:]
+    for binding in atlas.bindings {
+        guard loopsByID[binding.id] == nil else {
+            try fail("重复 sprite 语义绑定：\(binding.id)")
+        }
+        guard let animation = animationsByID[binding.animation] else {
+            try fail("\(binding.id)：找不到 sprite 动画 \(binding.animation)")
+        }
+        try validateIndices(binding.frameIndices, animation: animation, bindingID: binding.id)
+        if let rightAnimationID = binding.rightAnimation {
+            guard let rightAnimation = animationsByID[rightAnimationID] else {
+                try fail("\(binding.id)：找不到右向 sprite 动画 \(rightAnimationID)")
+            }
+            let leftFrameCount = binding.frameIndices?.count ?? animation.frameCount
+            let rightFrameCount = binding.rightFrameIndices?.count
+                ?? binding.frameIndices?.count
+                ?? rightAnimation.frameCount
+            guard rightFrameCount == leftFrameCount else {
+                try fail("\(binding.id)：左右 sprite 动画的有效帧数必须一致")
+            }
+            try validateIndices(
+                binding.rightFrameIndices ?? binding.frameIndices,
+                animation: rightAnimation,
+                bindingID: binding.id
+            )
+        } else if binding.rightFrameIndices != nil {
+            try fail("\(binding.id)：rightFrameIndices 需要 rightAnimation")
+        }
+        if let scale = binding.frameDurationScale, scale <= 0 {
+            try fail("\(binding.id)：frameDurationScale 必须大于 0")
+        }
+        if let motion = binding.motion, !supportedMotions.contains(motion) {
+            try fail("\(binding.id)：motion 无效")
+        }
+        if let fraction = binding.frameBlendFraction, !(0...0.48).contains(fraction) {
+            try fail("\(binding.id)：frameBlendFraction 必须在 0...0.48")
+        }
+        loopsByID[binding.id] = binding.loop ?? animation.loop
+    }
+
+    if let directions = atlas.lookDirections {
+        let expected = Set((0..<16).map { Double($0) * 22.5 })
+        let actual = Set(directions.map(\.degrees))
+        guard directions.count == 16, actual == expected else {
+            try fail("spriteAtlas.lookDirections 必须完整声明 0° 起每 22.5° 的 16 个方向")
+        }
+        for direction in directions {
+            guard direction.rowIndex >= 0, direction.rowIndex < layout.rows,
+                  direction.columnIndex >= 0, direction.columnIndex < layout.columns else {
+                try fail("lookDirections \(direction.degrees)° 的单元格越界")
+            }
+        }
+    }
+
+    var actionIDs = Set<String>()
+    for action in atlas.actions ?? [] {
+        guard actionIDs.insert(action.id).inserted else {
+            try fail("重复 sprite action ID：\(action.id)")
+        }
+        guard loopsByID[action.id] != nil,
+              !action.title.zhHans.isEmpty,
+              !action.title.en.isEmpty,
+              ["stand", "sit", "lie", "sleep"].contains(action.resultingPosture ?? "stand") else {
+            try fail("sprite action \(action.id) 缺少绑定、双语标题或有效 resultingPosture")
+        }
+    }
+
+    print("✓ sprite atlas  \(atlas.file)  [\(layout.columns)×\(layout.rows), v\(atlas.spriteVersionNumber)]")
+    return ValidatedSpriteAtlas(loopsByID: loopsByID)
 }
 
 private func safeAssetURL(_ relativePath: String, rootURL: URL) throws -> URL {
@@ -263,47 +468,74 @@ private func validate(packURL: URL) async throws {
     }
 
     if supportsImages {
-        guard manifest.petPackVersion >= 2, let imageCanvas = manifest.imageCanvas else {
-            try fail("图片模式需要 petPackVersion 2 和 imageCanvas")
-        }
-        guard imageCanvas.width == 960, imageCanvas.height == 540, !imageCanvas.runtimeKeying else {
-            try fail("图片模式必须使用 960×540 透明 PNG，并关闭运行时抠像")
+        guard manifest.petPackVersion >= 2 else {
+            try fail("图片模式需要 petPackVersion 2")
         }
         var imagesByID: [String: Manifest.ImageAnimation] = [:]
         for animation in manifest.imageAnimations ?? [] {
             guard imagesByID[animation.id] == nil else { try fail("重复图片动作 ID：\(animation.id)") }
             imagesByID[animation.id] = animation
         }
-        let missing = requiredClipIDs.subtracting(imagesByID.keys)
-        guard missing.isEmpty else { try fail("图片模式缺少标准动作：\(missing.sorted().joined(separator: ", "))") }
+        var resolvedLoopsByID: [String: Bool] = [:]
 
-        var validatedPaths = Set<String>()
-        let supportedMotions: Set<String> = [
-            "idle", "sleep", "transition", "look", "walk", "slow-run", "fast-run", "settle"
-        ]
+        if !imagesByID.isEmpty {
+            guard let imageCanvas = manifest.imageCanvas,
+                  imageCanvas.width == 960,
+                  imageCanvas.height == 540,
+                  !imageCanvas.runtimeKeying else {
+                try fail("传统图片序列必须声明 960×540 imageCanvas，并关闭运行时抠像")
+            }
+            var validatedPaths = Set<String>()
+            let supportedMotions: Set<String> = [
+                "none", "idle", "sleep", "transition", "look", "walk", "slow-run", "fast-run", "settle"
+            ]
+            for id in imagesByID.keys.sorted() {
+                guard let animation = imagesByID[id] else { continue }
+                guard supportedMotions.contains(animation.motion), !animation.files.isEmpty else {
+                    try fail("\(id)：图片 motion 或 files 无效")
+                }
+                if let rightFiles = animation.rightFiles, rightFiles.count != animation.files.count {
+                    try fail("\(id)：rightFiles 必须与 files 数量一致")
+                }
+                if let frameDuration = animation.frameDuration, frameDuration <= 0 {
+                    try fail("\(id)：frameDuration 必须大于 0")
+                }
+                if !animation.loop, (animation.duration ?? 0) <= 0 {
+                    try fail("\(id)：一次性图片动作必须声明 duration")
+                }
+                for path in animation.files + (animation.rightFiles ?? [])
+                    where validatedPaths.insert(path).inserted {
+                    guard path.lowercased().hasSuffix(".png") else {
+                        try fail("\(id)：传统图片序列必须使用 PNG")
+                    }
+                    let url = try safeAssetURL(path, rootURL: rootURL)
+                    try validateImage(url, width: imageCanvas.width, height: imageCanvas.height)
+                }
+                resolvedLoopsByID[id] = animation.loop
+                print("✓ image \(id)  \(animation.files.count) frame(s)")
+            }
+        }
+
+        if let atlas = manifest.spriteAtlas {
+            let validatedAtlas = try validateSpriteAtlas(atlas, rootURL: rootURL)
+            // Runtime sprite bindings intentionally override legacy PNG
+            // descriptors that share the same semantic ID.
+            for (id, loops) in validatedAtlas.loopsByID {
+                resolvedLoopsByID[id] = loops
+            }
+        }
+
+        guard !resolvedLoopsByID.isEmpty else {
+            try fail("图片模式至少需要 imageAnimations 或 spriteAtlas")
+        }
+        let missing = requiredClipIDs.subtracting(resolvedLoopsByID.keys)
+        guard missing.isEmpty else {
+            try fail("图片模式缺少标准动作：\(missing.sorted().joined(separator: ", "))")
+        }
         for id in requiredClipIDs.sorted() {
-            guard let animation = imagesByID[id] else { continue }
-            guard animation.loop == loopingClipIDs.contains(id) else {
+            guard resolvedLoopsByID[id] == loopingClipIDs.contains(id) else {
                 try fail("\(id)：图片 loop 标记不符合标准动作语义")
             }
-            guard supportedMotions.contains(animation.motion), !animation.files.isEmpty else {
-                try fail("\(id)：图片 motion 或 files 无效")
-            }
-            if let rightFiles = animation.rightFiles, rightFiles.count != animation.files.count {
-                try fail("\(id)：rightFiles 必须与 files 数量一致")
-            }
-            if let frameDuration = animation.frameDuration, frameDuration <= 0 {
-                try fail("\(id)：frameDuration 必须大于 0")
-            }
-            if !animation.loop, (animation.duration ?? 0) <= 0 {
-                try fail("\(id)：一次性图片动作必须声明 duration")
-            }
-            for path in animation.files + (animation.rightFiles ?? []) where validatedPaths.insert(path).inserted {
-                guard path.hasSuffix(".png") else { try fail("\(id)：图片必须是 PNG") }
-                let url = try safeAssetURL(path, rootURL: rootURL)
-                try validateImage(url, width: imageCanvas.width, height: imageCanvas.height)
-            }
-            print("✓ image \(id)  \(animation.files.count) frame(s)")
         }
     }
 

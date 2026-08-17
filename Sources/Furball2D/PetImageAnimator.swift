@@ -84,7 +84,8 @@ final class PetImageAnimator {
     }
 
     private let device: MTLDevice
-    private var frameCache: [URL: Frame] = [:]
+    private var frameCache: [PetImageFrameReference: Frame] = [:]
+    private var sourceImageCache: [URL: CGImage] = [:]
     private var playback: Playback?
     private var completionTimer: Timer?
     private(set) var isMirrored = false
@@ -105,8 +106,8 @@ final class PetImageAnimator {
         let now = CACurrentMediaTime()
         let previous = currentFrame(at: now)
         let previousMirrored = effectiveMirroring(for: playback)
-        let leftFrames = try animation.files.map(loadFrame)
-        let rightFrames = try animation.rightFiles.map { try $0.map(loadFrame) }
+        let leftFrames = try animation.frames.map(loadFrame)
+        let rightFrames = try animation.rightFrames.map { try $0.map(loadFrame) }
 
         completionTimer?.invalidate()
         playback = Playback(
@@ -210,21 +211,38 @@ final class PetImageAnimator {
         elapsed: TimeInterval
     ) -> (a: Frame, b: Frame, weight: Float) {
         guard frames.count > 1 else { return (frames[0], frames[0], 0) }
-        let framePosition = elapsed / playback.animation.frameDuration
-        let baseIndex = Int(floor(framePosition))
-        let localProgress = Float(framePosition - floor(framePosition))
-        let index: Int
-        let nextIndex: Int
+        let durations = playback.animation.frameDurations
+        guard durations.count == frames.count else { return (frames[0], frames[0], 0) }
+        let cycleDuration = playback.animation.cycleDuration
+        let timelineTime: TimeInterval
         if playback.animation.loops {
-            index = baseIndex % frames.count
-            nextIndex = (index + 1) % frames.count
+            timelineTime = elapsed.truncatingRemainder(dividingBy: cycleDuration)
         } else {
-            index = min(frames.count - 1, baseIndex)
-            nextIndex = min(frames.count - 1, index + 1)
+            timelineTime = min(max(0, cycleDuration - 0.000_001), elapsed)
         }
-        // Hold each generated pose, then use only a short dissolve. This keeps
-        // static view changes lively without creating long double-head trails.
-        let shortFade = max(0, min(1, (localProgress - 0.56) / 0.44))
+
+        var index = frames.count - 1
+        var frameStart: TimeInterval = 0
+        for candidate in frames.indices {
+            let frameEnd = frameStart + durations[candidate]
+            if timelineTime < frameEnd {
+                index = candidate
+                break
+            }
+            frameStart = frameEnd
+        }
+        let nextIndex = playback.animation.loops
+            ? (index + 1) % frames.count
+            : min(frames.count - 1, index + 1)
+        let localProgress = Float(
+            min(1, max(0, (timelineTime - frameStart) / max(durations[index], 0.000_001)))
+        )
+        let blendFraction = Float(playback.animation.frameBlendFraction)
+        guard blendFraction > 0, nextIndex != index else {
+            return (frames[index], frames[index], 0)
+        }
+        let blendStart = 1 - blendFraction
+        let shortFade = max(0, min(1, (localProgress - blendStart) / blendFraction))
         return (frames[index], frames[nextIndex], smootherstep(shortFade))
     }
 
@@ -232,6 +250,8 @@ final class PetImageAnimator {
         let twoPi = Double.pi * 2
         let progress = Float(min(1, elapsed / max(animation.duration, 0.001)))
         switch animation.motion {
+        case .none:
+            return PetImageTransform()
         case .idle:
             let breath = Float(sin(elapsed * twoPi / 3.8))
             return PetImageTransform(
@@ -301,15 +321,25 @@ final class PetImageAnimator {
         return x * x * x * (x * (x * 6 - 15) + 10)
     }
 
-    private func loadFrame(from url: URL) throws -> Frame {
-        if let cached = frameCache[url] { return cached }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            throw PetAppError.missingAsset(url.lastPathComponent)
+    private func loadFrame(from reference: PetImageFrameReference) throws -> Frame {
+        if let cached = frameCache[reference] { return cached }
+        let sourceImage = try sourceImage(at: reference.url)
+        let image: CGImage
+        if let crop = reference.crop {
+            let cropRect = CGRect(x: crop.x, y: crop.y, width: crop.width, height: crop.height)
+            guard crop.x >= 0, crop.y >= 0,
+                  crop.x + crop.width <= sourceImage.width,
+                  crop.y + crop.height <= sourceImage.height,
+                  let cropped = sourceImage.cropping(to: cropRect) else {
+                throw PetAppError.missingAsset("sprite cell in \(reference.url.lastPathComponent)")
+            }
+            image = cropped
+        } else {
+            image = sourceImage
         }
 
-        let width = image.width
-        let height = image.height
+        let width = reference.renderCanvas?.width ?? image.width
+        let height = reference.renderCanvas?.height ?? image.height
         let bytesPerRow = width * 4
         var rgba = [UInt8](repeating: 0, count: height * bytesPerRow)
         rgba.withUnsafeMutableBytes { bytes in
@@ -323,7 +353,26 @@ final class PetImageAnimator {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                     | CGBitmapInfo.byteOrder32Big.rawValue
             ) else { return }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            if reference.renderCanvas != nil {
+                let usableHeight = max(1, height - reference.bottomPadding)
+                let scale = min(
+                    1,
+                    min(CGFloat(width) / CGFloat(image.width), CGFloat(usableHeight) / CGFloat(image.height))
+                )
+                let drawWidth = CGFloat(image.width) * scale
+                let drawHeight = CGFloat(image.height) * scale
+                context.draw(
+                    image,
+                    in: CGRect(
+                        x: (CGFloat(width) - drawWidth) / 2,
+                        y: CGFloat(reference.bottomPadding),
+                        width: drawWidth,
+                        height: drawHeight
+                    )
+                )
+            } else {
+                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            }
         }
 
         var alpha = [UInt8](repeating: 0, count: width * height)
@@ -366,7 +415,17 @@ final class PetImageAnimator {
             )
         }
         let frame = Frame(texture: texture, width: width, height: height, alpha: alpha, visiblePixelRect: visibleRect)
-        frameCache[url] = frame
+        frameCache[reference] = frame
         return frame
+    }
+
+    private func sourceImage(at url: URL) throws -> CGImage {
+        if let cached = sourceImageCache[url] { return cached }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw PetAppError.missingAsset(url.lastPathComponent)
+        }
+        sourceImageCache[url] = image
+        return image
     }
 }

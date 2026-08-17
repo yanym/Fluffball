@@ -21,17 +21,20 @@
 
 ## 1.2 只用图片制作动作
 
-当用户明确不要 AI 生成视频时，优先交付 Pet Pack v2 图片模式。当前运行时 PNG 由 `Scripts/build-image-assets.sh` 写入 `Sources/Furball2D/Assets/Images/`，应用直接读取图片并用程序化微动形成完整行为；`Scripts/build-image-turn-mvp.sh` 生成的旧 `.mov` 只服务视频表示的兼容转头动作，不是图片模式依赖。
+当用户明确不要 AI 生成视频时，优先制作 Codex 兼容的 Pet Pack v2 图集图片模式。若环境提供 `$hatch-pet`，必须按该 Skill 生成、注册和验收；否则严格遵守 `Docs/PET_PACK_STANDARD.md`。旧 `Scripts/build-image-assets.sh` 与 `Images/` 仅是 PNG 兼容路径，不再是新宠物的首选。
 
-1. 先确定等距的角度关键帧，例如左侧面、左前 3/4、正面、右前 3/4、右侧面。生成时固定同一只狗、站姿、闭嘴表情、机位、光照和纯色背景。
-2. 抠像后统一到 960×540；同一站姿的可见高度误差应小于 2%，边界框中心误差尽量小于 2 px，脚底 y 误差不超过 1–2 px。
-3. 第一张和最后一张必须与运行时待机端口一致。左右侧面优先使用各自真实图片；只有没有右侧图且花纹、文字和光向允许时才镜像左侧图。
-4. 大角度静态图只使用约 0.06–0.10 秒的短淡化；姿态非常接近时最多约 0.14 秒。更长淡化会产生双头、双腿和两条尾巴；静态图数量不足时，不得用长淡化冒充连续转身。
-5. 图片序列适合转头、换朝向、眨眼和轻微姿态变化。图片模式允许用底部锚定的 squash/stretch、抬升和轻微侧倾做“可爱弹跳式”走/慢跑/快跑，但必须明确它不是物理正确的脚掌步态；需要真实落脚相位时使用视频模式。
-6. 交付前同时检查每张原始 PNG、透明关键帧、接触表和应用实机效果。若仍需要电影级连续性，应增加中间角度图，或使用可控骨骼/网格动画；不要声称静态图片序列等同于真实视频运动。当前实现使用 9 张图片，约每 22.5° 一个视角。
-7. 运行时响应鼠标方向时，每次只切换一个相邻视角，并设置约 0.15–0.22 秒的首次方向稳定时间和约 0.09–0.12 秒的相邻切换冷却，避免鼠标在阈值附近造成高频抖动。进入侧面动作前，按相邻顺序抵达匹配的 `left-profile` 或 `right-profile` 端口。移动期间不得同时切换静态视角。
-8. 鼠标跟随和自由漫游统一使用二维目标向量、速度档位迟滞与横纵边界。视频模式使用素材实测起步延迟和 0.18–0.36 秒渐入；图片模式不等待“首个抬爪帧”，当前使用约 0.14 秒速度渐入。接近纯纵向移动时保留最近的左右朝向，避免高频翻转。
-9. 每个图片模式包都必须在 `manifest.json` 声明 `capabilities.imageMode=true`，并为全部 27 个语义 ID 提供 `imageAnimations`。纯图片包将 `videoMode=false` 并可省略 `clips`；不得通过伪造空视频来启用开关。生成后运行 `Scripts/validate-pet-pack.swift` 和 `Scripts/package-app.sh`。
+1. 先锁定同一只宠物的标准身份、画风、身体比例、脚底基线和纯色抠像背景。不得在不同动作行改变脸、耳朵、花纹、尾巴、材质或镜头。
+2. 新图集使用 `spriteVersionNumber: 2`：1536×2288、8 列×11 行、每格 192×208。前 9 行依次为 idle、running-right、running-left、waving、jumping、failed、waiting、working、review；空格必须透明。
+3. 左右步态应分别生成。只有宠物完全左右对称且用户明确接受时才可镜像；步态首尾必须闭合相位，不能用倒放制作跑步。
+4. 最后两行必须提供完整 16 方向：0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左，每 22.5° 一格。四个主方向先单独批准，再生成两条连续方向行。
+5. 视线动作保持脚、下躯干和基线稳定；眼睛先动，口鼻和头颈随后，耳朵、面颊毛与胸毛轻微滞后。不得旋转整个 sprite 冒充转头。
+6. `manifest.json` 的 `spriteAtlas.animations` 声明逐帧时长、循环、motion 和短溶解比例；`bindings` 将 27 个标准语义 ID 映射到图集动作。可用 `frameIndices`、`rightAnimation` 和 `frameDurationScale` 复用动作，不得在 Swift 中写某只宠物的路径。
+7. `actions` 可发布任意数量的双语可爱动作。标题、是否自动触发和结果姿态属于素材包；图片模式菜单自动读取，视频模式自动置灰。
+8. 运行时看向鼠标时每次只走一个相邻方向，首次稳定约 0.15 秒，相邻冷却约 0.085–0.12 秒。进入走跑前沿最短路径抵达匹配的 90° 或 270° 侧面；移动期间不切换视线格。
+9. 方向格只在鼠标最近发生移动时接管画面；鼠标静止约 2.4 秒后必须回到完整 idle 行，不能让单张方向格永久遮住呼吸和眨眼。进入坐下等正面动作前先短暂回到 idle 端口。
+10. 鼠标跟随和自由漫游继续使用二维目标、速度迟滞和横纵边界。图集有真实起步帧时桌面位移无需等待视频的首个抬爪时间，但保留约 0.14 秒平滑加速。
+11. `capabilities.imageMode=true`；纯图片包设 `videoMode=false` 并省略 `clips`，顶层视频开关会自动关闭并置灰。纯图集包可省略 `imageAnimations`，但图集绑定与 PNG 描述的并集必须覆盖全部 27 个标准语义槽位。
+12. 交付前必须通过 `Scripts/validate-pet-pack.swift`、Codex v2 图集结构/Alpha 验收、逐行动画预览、16 方向语义与连续性检查、60%/100%/140% 实机测试和 `Scripts/package-app.sh`。指标警告必须结合正常尺寸的可见循环审阅，不得直接放宽阈值。
 
 ## 2. 接收新素材后的第一步
 
@@ -341,17 +344,20 @@ A typical action uses two to four references. Do not mix opposite profile views 
 
 ## 1.2 Building actions from images only
 
-When the user explicitly rejects AI-generated video, ship Pet Pack v2 image mode first. `Scripts/build-image-assets.sh` writes runtime PNGs under `Sources/Furball2D/Assets/Images/`; the app reads them directly and creates complete behavior through procedural micro-motion. The legacy `.mov` output from `Scripts/build-image-turn-mvp.sh` only supports the video representation's compatible look action and is not an image-mode dependency.
+When the user explicitly rejects AI-generated video, prefer a Codex-compatible Pet Pack v2 sprite-atlas image mode. If `$hatch-pet` is available, follow that Skill for generation, registration, and QA; otherwise follow `Docs/PET_PACK_STANDARD.md` exactly. The old `Scripts/build-image-assets.sh` and `Images/` tree are PNG compatibility paths, not the preferred starting point for a new pet.
 
-1. Choose evenly spaced view keyframes such as left profile, front-left three-quarter, front, front-right three-quarter, and right profile. Keep the same dog, standing pose, closed-mouth expression, camera, lighting, and solid background in every generated still.
-2. Key each image and normalize it to 960×540. For one standing pose, keep visible-height error below 2%, bounding-box center error near 2 px or less, and ground-y error within 1–2 px.
-3. Match the first and last still to the runtime idle ports. Prefer real left- and right-profile images. Mirror the left side only when no right image exists and asymmetric markings, text, and lighting remain safe.
-4. Keep large-angle still transitions around 0.06–0.10 seconds, extending only very similar poses to roughly 0.14 seconds. Longer fades create duplicate heads, legs, and tails. Never disguise too few keyframes with a long dissolve.
-5. Image sequences suit head turns, view changes, blinks, and small pose changes. Image mode may use bottom-anchored squash/stretch, lift, and restrained tilt for a deliberately cute walk/jog/run bounce, but this is not a physically correct footfall gait. Use video mode when real contact phase matters.
-6. Review source PNGs, keyed keyframes, a contact sheet, and the packaged app. For film-like continuity, add more intermediate views or use controllable rig/mesh animation; do not present a still-image sequence as equivalent to real continuous motion. The current implementation uses nine images at roughly 22.5-degree intervals.
-7. When responding to cursor direction at runtime, change only one adjacent view at a time and require roughly 0.15–0.22 seconds of initial directional stability plus an adjacent-step cooldown around 0.09–0.12 seconds. Before a profile action, step through adjacent stills to the matching `left-profile` or `right-profile` port. Never change static facing views during locomotion.
-8. Cursor following and free roaming share one two-dimensional target vector, gait hysteresis, and horizontal/vertical bounds. Video mode uses measured start delays and a 0.18–0.36-second acceleration ramp. Image mode does not wait for a nonexistent first paw lift and currently uses a roughly 0.14-second ramp. Preserve the last horizontal facing during near-vertical travel to prevent rapid flips.
-9. Every image-mode pack declares `capabilities.imageMode=true` and supplies `imageAnimations` for all 27 semantic IDs. An image-only pack declares `videoMode=false` and may omit `clips`; never create placeholder videos merely to enable the toggle. Run `Scripts/validate-pet-pack.swift` and `Scripts/package-app.sh` after generation.
+1. Lock one canonical identity, art style, body proportion, ground baseline, and solid key background. No row may change face, ears, markings, tail, materials, or camera.
+2. A new atlas uses `spriteVersionNumber: 2`: 1536×2288, 8 columns × 11 rows, and 192×208 cells. Rows 0–8 are idle, running-right, running-left, waving, jumping, failed, waiting, working, and review. Unused cells remain transparent.
+3. Generate left and right gait rows independently. Mirror only for a truly symmetric pet and explicit user approval. Gait loops must close on contact phase and must never use reverse playback.
+4. Rows 9–10 contain all 16 directions: 0° up, 90° screen-right, 180° down, and 270° screen-left at 22.5° steps. Approve the four cardinals before synthesizing both coherent direction rows.
+5. Keep paws, lower torso, and baseline stable during look motion. Eyes lead, muzzle/head/neck follow, and ears, cheek fur, and ruff lag subtly. Never rotate the whole sprite to fake a head turn.
+6. `spriteAtlas.animations` declares per-frame timing, loop, motion, and short blend fraction. `bindings` maps the 27 standard semantic IDs and may use `frameIndices`, `rightAnimation`, and `frameDurationScale`. Never hardcode a pet-specific path in Swift.
+7. `actions` may publish any number of localized cute actions. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them.
+8. Cursor gaze advances one adjacent direction at a time, using roughly 0.15 seconds of initial stability and a 0.085–0.12-second adjacent cooldown. Before locomotion, take the shortest route to the matching 90° or 270° profile. Do not change look cells during movement.
+9. Direction cells take over only after recent pointer movement. After roughly 2.4 seconds of pointer stillness, return to the full idle row so one static gaze cannot permanently hide breathing and blinking. Briefly return through the idle port before a front-facing posture action such as sitting.
+10. Cursor following and free roam retain one two-dimensional target, gait hysteresis, and horizontal/vertical bounds. A sprite gait with real start frames does not need a video first-paw delay, but retains the roughly 0.14-second image-mode acceleration ramp.
+11. Declare `capabilities.imageMode=true`. An image-only pack sets `videoMode=false` and omits `clips`, automatically forcing and disabling the top-level video toggle. A pure-atlas pack may omit `imageAnimations`, but the union of atlas bindings and PNG descriptors must cover all 27 standard semantic slots.
+12. Before delivery, pass `Scripts/validate-pet-pack.swift`, Codex v2 structure/alpha validation, per-row previews, 16-direction semantics and continuity review, 60%/100%/140% in-app checks, and `Scripts/package-app.sh`. Review metric warnings at normal display size; never silence them by relaxing a threshold.
 
 ## 2. First steps after receiving new footage
 

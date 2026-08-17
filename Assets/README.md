@@ -10,7 +10,9 @@
 
 `Scripts/build-image-assets.sh` 会独立构建真正的图片运行时素材，不把 PNG 再编码成视频。输出位于 `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`：站姿来自已归一化的 9 个视角，坐/趴/睡来自 `generation-ready/` 姿态图并离线抠像。`ImageMode/qa/contact-sheet.png` 是本次 17 张运行时图片的接触表。`manifest.json.imageAnimations` 再把同一组 27 个语义动作映射到这些图片与程序化 motion。
 
-图片与视频是两套并列运行时表示。`capabilities.imageMode` 和 `capabilities.videoMode` 决定素材包支持哪一种；纯图片包可以完全不带 `Clips/`。两者都存在时应用默认视频并允许用户切换。图片模式中的走/慢跑/快跑是可爱的弹跳节奏，不声称具备真实脚掌相位。
+`SpritePets/Furball/` 保存新 Codex v2 图片宠物的生成与 QA 工作区。应用实际使用的成品复制到 `Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp`：1536×2288、8×11、192×208 单元格，包含 9 类标准动画和 16 个视线方向。该图集优先覆盖 `manifest.json.spriteAtlas.bindings` 中的语义，旧 PNG 只为未绑定语义或旧素材包兼容保留。
+
+图集/PNG 图片表示与视频表示并列。`capabilities.imageMode` 和 `capabilities.videoMode` 决定素材包支持哪一种；纯图片包可以完全不带 `Clips/`。两者都存在时应用默认视频并允许用户切换。当前图集具有独立左右步态行和真实脚掌相位，不再用单张站姿的程序化弹跳冒充走跑。
 
 ## 原始视频映射
 
@@ -65,6 +67,8 @@
 ```text
 Assets/SourceVideos/<view>/<action>.mp4
 Assets/SourceImagesForAIVideo/generation-ready/<pose>/<view>.png
+Assets/SpritePets/<pet>/qa/<artifact>.png
+Sources/Furball2D/Assets/Sprites/<pet>/spritesheet.webp
 Sources/Furball2D/Assets/Images/<pose>/<view>.png
 Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 ```
@@ -83,7 +87,9 @@ All original videos are organized by `view/action`. Directory and file names use
 
 `Scripts/build-image-assets.sh` independently builds true image-runtime assets; it does not encode the PNGs back into video. Outputs live under `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`. Standing views come from the normalized nine-angle set, while sit/lie/sleep sources under `generation-ready/` are keyed offline. `ImageMode/qa/contact-sheet.png` reviews the current 17 runtime images. `manifest.json.imageAnimations` maps the same 27 semantic actions to these images and procedural motion types.
 
-Images and videos are parallel runtime representations. `capabilities.imageMode` and `capabilities.videoMode` declare what the pack supports; an image-only pack may omit `Clips/` completely. When both exist, the app defaults to video and lets the user switch. Image-mode walk/jog/run is an intentionally cute bounce rhythm, not a claim of physically correct footfall phase.
+`SpritePets/Furball/` holds the new Codex v2 image-pet generation and QA workspace. The runtime copy is `Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp`: 1536×2288, 8×11, 192×208 cells, nine standard animation families, and 16 gaze directions. It overrides semantics listed in `manifest.json.spriteAtlas.bindings`; legacy PNGs remain only for unbound semantics and old-pack compatibility.
+
+Atlas/PNG image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what the pack supports; an image-only pack may omit `Clips/` completely. When both exist, the app defaults to video and lets the user switch. The current atlas has independent left/right gait rows with real footfall phases instead of moving a procedurally bouncing standing still.
 
 ## Original video mapping
 
@@ -138,6 +144,8 @@ On a fresh transition from standing to walking, jogging, or running, runtime tra
 ```text
 Assets/SourceVideos/<view>/<action>.mp4
 Assets/SourceImagesForAIVideo/generation-ready/<pose>/<view>.png
+Assets/SpritePets/<pet>/qa/<artifact>.png
+Sources/Furball2D/Assets/Sprites/<pet>/spritesheet.webp
 Sources/Furball2D/Assets/Images/<pose>/<view>.png
 Sources/Furball2D/Assets/Clips/<view>/<action>.mov
 ```

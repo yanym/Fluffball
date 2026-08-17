@@ -26,20 +26,92 @@ private struct PetAssetManifest: Decodable {
         let duration: TimeInterval?
     }
 
+    struct SpriteAtlasDescriptor: Decodable {
+        struct LayoutDescriptor: Decodable {
+            let columns: Int
+            let rows: Int
+            let cellWidth: Int
+            let cellHeight: Int
+        }
+
+        struct RenderingDescriptor: Decodable {
+            let canvasWidth: Int
+            let canvasHeight: Int
+            let bottomPadding: Int?
+        }
+
+        struct AnimationDescriptor: Decodable {
+            let id: String
+            let rowIndex: Int
+            let frameCount: Int
+            let frameDurations: [TimeInterval]
+            let loop: Bool
+            let motion: PetImageMotion
+            let frameBlendFraction: Double?
+        }
+
+        struct BindingDescriptor: Decodable {
+            let id: String
+            let animation: String
+            let rightAnimation: String?
+            let frameIndices: [Int]?
+            let rightFrameIndices: [Int]?
+            let loop: Bool?
+            let motion: PetImageMotion?
+            let frameDurationScale: Double?
+            let frameBlendFraction: Double?
+        }
+
+        struct LookDirectionDescriptor: Decodable {
+            let degrees: Double
+            let rowIndex: Int
+            let columnIndex: Int
+        }
+
+        struct LocalizedTitleDescriptor: Decodable {
+            let zhHans: String
+            let en: String
+
+            private enum CodingKeys: String, CodingKey {
+                case zhHans = "zh-Hans"
+                case en
+            }
+        }
+
+        struct ActionDescriptor: Decodable {
+            let id: String
+            let title: LocalizedTitleDescriptor
+            let resultingPosture: PetPosture?
+            let autonomous: Bool?
+        }
+
+        let file: String
+        let spriteVersionNumber: Int
+        let layout: LayoutDescriptor
+        let rendering: RenderingDescriptor
+        let animations: [AnimationDescriptor]
+        let bindings: [BindingDescriptor]
+        let lookDirections: [LookDirectionDescriptor]?
+        let actions: [ActionDescriptor]?
+    }
+
     let pet: PetDescriptor?
     let capabilities: CapabilitiesDescriptor?
     let clips: [ClipDescriptor]?
     let imageAnimations: [ImageAnimationDescriptor]?
+    let spriteAtlas: SpriteAtlasDescriptor?
 }
 
 struct PetPackCapabilities {
     let supportsImageMode: Bool
     let supportsVideoMode: Bool
+    let supportsDirectionalLook: Bool
 
     var supportsModeSwitching: Bool { supportsImageMode && supportsVideoMode }
 }
 
 enum PetImageMotion: String, Decodable {
+    case none
     case idle
     case sleep
     case transition
@@ -50,23 +122,115 @@ enum PetImageMotion: String, Decodable {
     case settle
 }
 
+struct PetPixelRect: Hashable {
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+}
+
+struct PetPixelSize: Hashable {
+    let width: Int
+    let height: Int
+}
+
+struct PetImageFrameReference: Hashable {
+    let url: URL
+    let crop: PetPixelRect?
+    let renderCanvas: PetPixelSize?
+    let bottomPadding: Int
+
+    static func file(_ url: URL) -> PetImageFrameReference {
+        PetImageFrameReference(url: url, crop: nil, renderCanvas: nil, bottomPadding: 0)
+    }
+}
+
 struct PetImageAnimation {
     let id: String
-    let files: [URL]
-    let rightFiles: [URL]?
+    let frames: [PetImageFrameReference]
+    let rightFrames: [PetImageFrameReference]?
     let loops: Bool
     let motion: PetImageMotion
-    let frameDuration: TimeInterval
+    let frameDurations: [TimeInterval]
     let duration: TimeInterval
+    let frameBlendFraction: Double
+
+    var cycleDuration: TimeInterval {
+        max(1.0 / 60.0, frameDurations.reduce(0, +))
+    }
+}
+
+struct PetImageAction {
+    let id: String
+    let zhHansTitle: String
+    let englishTitle: String
+    let resultingPosture: PetPosture
+    let mayRunAutonomously: Bool
+
+    func title(for language: AppLanguage) -> String {
+        switch language {
+        case .simplifiedChinese: zhHansTitle
+        case .english: englishTitle
+        }
+    }
+}
+
+struct PetLookDirection: Hashable, Sendable {
+    static let count = 16
+    static let stepDegrees = 360.0 / Double(count)
+
+    let index: Int
+
+    init(index: Int) {
+        self.index = (index % Self.count + Self.count) % Self.count
+    }
+
+    init(vectorX: CGFloat, vectorY: CGFloat) {
+        let clockwiseFromUp = atan2(Double(vectorX), Double(vectorY)) * 180 / .pi
+        let normalized = clockwiseFromUp < 0 ? clockwiseFromUp + 360 : clockwiseFromUp
+        self.init(index: Int((normalized / Self.stepDegrees).rounded()))
+    }
+
+    var degrees: Double { Double(index) * Self.stepDegrees }
+
+    var assetKey: String {
+        if degrees.rounded() == degrees {
+            return String(format: "%03d", Int(degrees))
+        }
+        let whole = Int(degrees.rounded(.down))
+        return String(format: "%03d.5", whole)
+    }
+
+    func stepped(toward target: PetLookDirection) -> PetLookDirection {
+        guard target != self else { return self }
+        let clockwiseDistance = (target.index - index + Self.count) % Self.count
+        let delta = clockwiseDistance <= Self.count / 2 ? 1 : -1
+        return PetLookDirection(index: index + delta)
+    }
+
+    static let up = PetLookDirection(index: 0)
+    static let right = PetLookDirection(index: 4)
+    static let down = PetLookDirection(index: 8)
+    static let left = PetLookDirection(index: 12)
 }
 
 enum PetAssetCatalog {
+    private struct ResolvedSpriteAtlas {
+        let url: URL
+        let descriptor: PetAssetManifest.SpriteAtlasDescriptor
+        let animationsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.AnimationDescriptor]
+        let bindingsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.BindingDescriptor]
+        let lookDirectionsByKey: [String: PetAssetManifest.SpriteAtlasDescriptor.LookDirectionDescriptor]
+        let actions: [PetImageAction]
+    }
+
     private struct LoadedCatalog {
         let rootURL: URL
         let petID: String
         let capabilities: PetPackCapabilities
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
         let imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor]
+        let spriteAtlas: ResolvedSpriteAtlas?
     }
 
     private static let loaded: LoadedCatalog? = {
@@ -76,6 +240,7 @@ enum PetAssetCatalog {
                   let manifest = try? JSONDecoder().decode(PetAssetManifest.self, from: data) else {
                 continue
             }
+
             var clipsByID: [String: PetAssetManifest.ClipDescriptor] = [:]
             for clip in manifest.clips ?? [] where clipsByID[clip.id] == nil {
                 clipsByID[clip.id] = clip
@@ -84,26 +249,76 @@ enum PetAssetCatalog {
             for animation in manifest.imageAnimations ?? [] where imagesByID[animation.id] == nil {
                 imagesByID[animation.id] = animation
             }
+
+            let spriteAtlas: ResolvedSpriteAtlas?
+            if let descriptor = manifest.spriteAtlas,
+               let url = try? existingAssetURL(descriptor.file, in: rootURL) {
+                var animationsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.AnimationDescriptor] = [:]
+                for animation in descriptor.animations where animationsByID[animation.id] == nil {
+                    animationsByID[animation.id] = animation
+                }
+                var bindingsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.BindingDescriptor] = [:]
+                for binding in descriptor.bindings where bindingsByID[binding.id] == nil {
+                    bindingsByID[binding.id] = binding
+                }
+                var lookDirectionsByKey: [String: PetAssetManifest.SpriteAtlasDescriptor.LookDirectionDescriptor] = [:]
+                for direction in descriptor.lookDirections ?? [] {
+                    let key = PetLookDirection(
+                        index: Int((direction.degrees / PetLookDirection.stepDegrees).rounded())
+                    ).assetKey
+                    lookDirectionsByKey[key] = direction
+                }
+                let actions = (descriptor.actions ?? []).compactMap { action -> PetImageAction? in
+                    guard bindingsByID[action.id] != nil else { return nil }
+                    return PetImageAction(
+                        id: action.id,
+                        zhHansTitle: action.title.zhHans,
+                        englishTitle: action.title.en,
+                        resultingPosture: action.resultingPosture ?? .stand,
+                        mayRunAutonomously: action.autonomous ?? false
+                    )
+                }
+                spriteAtlas = ResolvedSpriteAtlas(
+                    url: url,
+                    descriptor: descriptor,
+                    animationsByID: animationsByID,
+                    bindingsByID: bindingsByID,
+                    lookDirectionsByKey: lookDirectionsByKey,
+                    actions: actions
+                )
+            } else {
+                spriteAtlas = nil
+            }
+
+            let supportsDirectionalLook = spriteAtlas?.lookDirectionsByKey.count == PetLookDirection.count
+            let supportsImagesByDefault = !imagesByID.isEmpty || spriteAtlas != nil
             let capabilities = PetPackCapabilities(
-                supportsImageMode: manifest.capabilities?.imageMode ?? !imagesByID.isEmpty,
-                supportsVideoMode: manifest.capabilities?.videoMode ?? !clipsByID.isEmpty
+                supportsImageMode: manifest.capabilities?.imageMode ?? supportsImagesByDefault,
+                supportsVideoMode: manifest.capabilities?.videoMode ?? !clipsByID.isEmpty,
+                supportsDirectionalLook: supportsDirectionalLook
             )
             return LoadedCatalog(
                 rootURL: rootURL.standardizedFileURL,
                 petID: manifest.pet?.id ?? "legacy-pet",
                 capabilities: capabilities,
                 clipsByID: clipsByID,
-                imagesByID: imagesByID
+                imagesByID: imagesByID,
+                spriteAtlas: spriteAtlas
             )
         }
         return nil
     }()
 
     static var capabilities: PetPackCapabilities {
-        loaded?.capabilities ?? PetPackCapabilities(supportsImageMode: false, supportsVideoMode: true)
+        loaded?.capabilities ?? PetPackCapabilities(
+            supportsImageMode: false,
+            supportsVideoMode: true,
+            supportsDirectionalLook: false
+        )
     }
 
     static var petID: String { loaded?.petID ?? "legacy-pet" }
+    static var imageActions: [PetImageAction] { loaded?.spriteAtlas?.actions ?? [] }
 
     static func loops(for id: String, fallback: Bool) -> Bool {
         loaded?.clipsByID[id]?.loop ?? fallback
@@ -113,8 +328,7 @@ enum PetAssetCatalog {
         if let loaded {
             let relativePath = loaded.clipsByID[id]?.file ?? "Clips/\(fallbackFileName).mov"
             let candidate = try safeAssetURL(relativePath, in: loaded.rootURL)
-            guard
-                  FileManager.default.fileExists(atPath: candidate.path) else {
+            guard FileManager.default.fileExists(atPath: candidate.path) else {
                 throw PetAppError.missingAsset(relativePath)
             }
             return candidate
@@ -129,25 +343,145 @@ enum PetAssetCatalog {
     }
 
     static func imageAnimation(for id: String) throws -> PetImageAnimation {
-        guard let loaded, let descriptor = loaded.imagesByID[id] else {
+        guard let loaded else {
             throw PetAppError.missingAsset("image animation: \(id)")
         }
 
-        let files = try descriptor.files.map { try existingAssetURL($0, in: loaded.rootURL) }
-        guard !files.isEmpty else { throw PetAppError.missingAsset("image animation: \(id)") }
-        let rightFiles = try descriptor.rightFiles.map { paths in
-            try paths.map { try existingAssetURL($0, in: loaded.rootURL) }
+        if let atlas = loaded.spriteAtlas {
+            if let binding = atlas.bindingsByID[id] {
+                return try spriteAnimation(for: binding, in: atlas)
+            }
+            let directionPrefix = "stand.look.direction."
+            if id.hasPrefix(directionPrefix) {
+                let key = String(id.dropFirst(directionPrefix.count))
+                return try lookAnimation(for: key, in: atlas, id: id)
+            }
+        }
+
+        guard let descriptor = loaded.imagesByID[id] else {
+            throw PetAppError.missingAsset("image animation: \(id)")
+        }
+        let frames = try descriptor.files.map {
+            PetImageFrameReference.file(try existingAssetURL($0, in: loaded.rootURL))
+        }
+        guard !frames.isEmpty else { throw PetAppError.missingAsset("image animation: \(id)") }
+        let rightFrames = try descriptor.rightFiles.map { paths in
+            try paths.map { PetImageFrameReference.file(try existingAssetURL($0, in: loaded.rootURL)) }
         }
         let frameDuration = max(1.0 / 60.0, descriptor.frameDuration ?? 0.12)
-        let duration = max(frameDuration, descriptor.duration ?? frameDuration * Double(files.count))
+        let duration = max(frameDuration, descriptor.duration ?? frameDuration * Double(frames.count))
         return PetImageAnimation(
             id: id,
-            files: files,
-            rightFiles: rightFiles,
+            frames: frames,
+            rightFrames: rightFrames,
             loops: descriptor.loop,
             motion: descriptor.motion,
-            frameDuration: frameDuration,
-            duration: duration
+            frameDurations: Array(repeating: frameDuration, count: frames.count),
+            duration: duration,
+            frameBlendFraction: 0.44
+        )
+    }
+
+    private static func spriteAnimation(
+        for binding: PetAssetManifest.SpriteAtlasDescriptor.BindingDescriptor,
+        in atlas: ResolvedSpriteAtlas
+    ) throws -> PetImageAnimation {
+        guard let animation = atlas.animationsByID[binding.animation] else {
+            throw PetAppError.missingAsset("sprite animation: \(binding.animation)")
+        }
+        let leftIndices = binding.frameIndices ?? Array(0..<animation.frameCount)
+        let leftFrames = try spriteFrames(indices: leftIndices, animation: animation, atlas: atlas)
+        let rightFrames: [PetImageFrameReference]?
+        if let rightAnimationID = binding.rightAnimation {
+            guard let rightAnimation = atlas.animationsByID[rightAnimationID] else {
+                throw PetAppError.missingAsset("sprite animation: \(rightAnimationID)")
+            }
+            let rightIndices = binding.rightFrameIndices ?? binding.frameIndices ?? Array(0..<rightAnimation.frameCount)
+            guard rightIndices.count == leftIndices.count else {
+                throw PetAppError.missingAsset("sprite frame count: \(binding.id) right animation")
+            }
+            rightFrames = try spriteFrames(indices: rightIndices, animation: rightAnimation, atlas: atlas)
+        } else {
+            rightFrames = nil
+        }
+
+        let scale = max(0.05, binding.frameDurationScale ?? 1)
+        let durations = try leftIndices.map { index -> TimeInterval in
+            guard animation.frameDurations.indices.contains(index) else {
+                throw PetAppError.missingAsset("sprite frame duration: \(animation.id)[\(index)]")
+            }
+            return max(1.0 / 120.0, animation.frameDurations[index] * scale)
+        }
+        let loops = binding.loop ?? animation.loop
+        return PetImageAnimation(
+            id: binding.id,
+            frames: leftFrames,
+            rightFrames: rightFrames,
+            loops: loops,
+            motion: binding.motion ?? animation.motion,
+            frameDurations: durations,
+            duration: max(1.0 / 60.0, durations.reduce(0, +)),
+            frameBlendFraction: max(
+                0,
+                min(0.48, binding.frameBlendFraction ?? animation.frameBlendFraction ?? 0)
+            )
+        )
+    }
+
+    private static func spriteFrames(
+        indices: [Int],
+        animation: PetAssetManifest.SpriteAtlasDescriptor.AnimationDescriptor,
+        atlas: ResolvedSpriteAtlas
+    ) throws -> [PetImageFrameReference] {
+        let layout = atlas.descriptor.layout
+        guard animation.rowIndex >= 0, animation.rowIndex < layout.rows else {
+            throw PetAppError.missingAsset("sprite row: \(animation.rowIndex)")
+        }
+        return try indices.map { index in
+            guard index >= 0, index < animation.frameCount, index < layout.columns else {
+                throw PetAppError.missingAsset("sprite frame: \(animation.id)[\(index)]")
+            }
+            return spriteFrame(row: animation.rowIndex, column: index, atlas: atlas)
+        }
+    }
+
+    private static func lookAnimation(
+        for key: String,
+        in atlas: ResolvedSpriteAtlas,
+        id: String
+    ) throws -> PetImageAnimation {
+        guard let direction = atlas.lookDirectionsByKey[key] else {
+            throw PetAppError.missingAsset("look direction: \(key)")
+        }
+        return PetImageAnimation(
+            id: id,
+            frames: [spriteFrame(row: direction.rowIndex, column: direction.columnIndex, atlas: atlas)],
+            rightFrames: nil,
+            loops: true,
+            motion: .none,
+            frameDurations: [1],
+            duration: 1,
+            frameBlendFraction: 0
+        )
+    }
+
+    private static func spriteFrame(
+        row: Int,
+        column: Int,
+        atlas: ResolvedSpriteAtlas
+    ) -> PetImageFrameReference {
+        let layout = atlas.descriptor.layout
+        let rendering = atlas.descriptor.rendering
+        return PetImageFrameReference(
+            url: atlas.url,
+            crop: PetPixelRect(
+                x: column * layout.cellWidth,
+                y: row * layout.cellHeight,
+                width: layout.cellWidth,
+                height: layout.cellHeight
+            ),
+            renderCanvas: PetPixelSize(width: rendering.canvasWidth, height: rendering.canvasHeight),
+            bottomPadding: max(0, rendering.bottomPadding ?? 0)
         )
     }
 
@@ -160,6 +494,9 @@ enum PetAssetCatalog {
     }
 
     private static func safeAssetURL(_ relativePath: String, in rootURL: URL) throws -> URL {
+        guard !relativePath.hasPrefix("/") else {
+            throw PetAppError.missingAsset(relativePath)
+        }
         let candidate = rootURL.appendingPathComponent(relativePath).standardizedFileURL
         let rootPrefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
         guard candidate.path.hasPrefix(rootPrefix) else {
@@ -208,7 +545,7 @@ enum PetAssetCatalog {
     }
 }
 
-enum PetPosture {
+enum PetPosture: String, Decodable {
     case stand
     case sit
     case lie
@@ -295,6 +632,24 @@ enum PetClips {
             fallbackFileName: "image-views/\(view.assetName)",
             fallbackLoops: true,
             resultingPosture: .stand
+        )
+    }
+
+    static func lookDirection(_ direction: PetLookDirection) -> PetClip {
+        PetClip(
+            id: "stand.look.direction.\(direction.assetKey)",
+            fallbackFileName: "sprite-look/\(direction.assetKey)",
+            fallbackLoops: true,
+            resultingPosture: .stand
+        )
+    }
+
+    static func imageAction(_ action: PetImageAction) -> PetClip {
+        PetClip(
+            id: action.id,
+            fallbackFileName: "sprite-actions/\(action.id)",
+            fallbackLoops: false,
+            resultingPosture: action.resultingPosture
         )
     }
 

@@ -31,7 +31,11 @@ Pet Pack 把“这是哪只动物”“有哪些素材表示”和“应用如�
 
 - `capabilities.imageMode` 与 `capabilities.videoMode` 明确声明可用表示，至少一个为 `true`。
 - 每种已启用的表示都必须覆盖同一组 27 个语义槽位：17 个姿态/移动动作、9 个站立视角和 1 个完整转身演示。
-- 图片规格：960×540 RGBA PNG，必须已有透明背景，禁止运行时 chromakey。`imageAnimations` 为每个语义 ID 声明 `files`、可选 `rightFiles`、循环属性、时长和程序化 `motion`。
+- 图片表示可以由 `imageAnimations`、`spriteAtlas` 或两者混合组成；同一语义 ID 同时存在时图集绑定优先，旧 PNG 作为兼容回退。
+- 独立图片规格：960×540 RGBA PNG，必须已有透明背景，禁止运行时 chromakey。`imageAnimations` 为语义 ID 声明 `files`、可选 `rightFiles`、循环属性、时长和程序化 `motion`。
+- Codex v2 图集规格：透明无损 WebP、1536×2288、8 列×11 行、每格 192×208、`spriteVersionNumber: 2`。`animations` 声明行、有效帧数、逐帧时长、循环和短溶解比例；`bindings` 将任意语义 ID 映射到动画，可覆盖帧子集、左右真实行、播放速度和 motion。
+- `lookDirections` 必须完整声明从 0° 起每 22.5° 一个的 16 个方向。0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左；运行时沿相邻格最短路径切换。
+- `actions` 可将图集绑定发布为双语菜单动作，并可声明是否允许自动行为使用。动作标题、帧时长、菜单数量和语义映射均属于素材包，不在 Swift 中按某只宠物硬编码。
 - 视频规格：960×540、24 fps、HEVC with Alpha、`hvc1`、无音轨。`clips` 为每个语义 ID 声明相对路径与循环属性。
 - 同时具备两种表示时默认使用视频，用户可即时切换；纯图片包强制图片模式并将视频开关置灰，纯视频包反之。
 - 统一姿态端口：`stand`、`sit`、`lie`、`sleep`。
@@ -42,7 +46,8 @@ Pet Pack 把“这是哪只动物”“有哪些素材表示”和“应用如�
 ```text
 MyPet.furballpet/
 ├── manifest.json
-├── Images/                          # imageMode=true 时必需
+├── Sprites/MyPet/spritesheet.webp   # 推荐的 Codex v2 图片表示
+├── Images/                          # 独立 PNG 回退，可选
 │   ├── stand/
 │   ├── sit/
 │   ├── lie/
@@ -61,10 +66,11 @@ MyPet.furballpet/
 
 ### 当前已落地的部分
 
-- 应用会按标准动作 ID 从 `manifest.json` 解析 PNG 动画和视频片段，并在一个行为状态机下切换渲染器。
-- 图片模式具备呼吸、睡眠起伏、姿态弹性、转头序列和速度相关移动节奏；右向优先使用 `rightFiles`，缺失时才镜像。
+- 应用会按标准动作 ID 从 `manifest.json` 解析图集动画、PNG 动画和视频片段，并在一个行为状态机下切换渲染器。
+- 图集只解码一次，单元格按需铺到统一 16:9 小画布并缓存为 Metal 纹理；支持可变逐帧时长、每动作短溶解比例、真实左右步态行和程序化 motion 的混合。
+- 图片模式具备同画风的站、坐、趴、睡、醒、真实相位走跑、六类可爱动作和 16 方向视线跟随；右向优先使用真实 `rightAnimation`，缺失时才镜像。
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` 可在不重新编译的情况下运行一个外部包，适合制作和测试工具。
-- `Scripts/validate-pet-pack.swift <pack>` 会按能力检查 27 个语义动作、路径安全、循环语义、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。
+- `Scripts/validate-pet-pack.swift <pack>` 会按能力解析 PNG 与图集绑定的并集，检查 27 个语义动作、路径安全、循环语义、图集结构/Alpha/方向、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。纯图集包不必伪造 PNG 或空视频。
 
 这是通用宠物的底层合同，但还不是完整的普通用户生产器。下一阶段是在 App 中加入 Pet Pack 导入/切换菜单，并将身份板生成、AI 提供商适配器、自动重试和 QA 报告组成独立制作向导。在视频 AI 仍会偶发换脸或改变花纹的情况下，“身份板一次确认”不应被取消。
 
@@ -99,7 +105,11 @@ Green screen is an implementation detail, not a user requirement. A provider may
 
 - `capabilities.imageMode` and `capabilities.videoMode` declare available representations; at least one is true.
 - Every enabled representation covers the same 27 semantic slots: 17 posture/locomotion actions, nine standing views, and one complete look-around demonstration.
-- Image assets are transparent 960×540 RGBA PNGs with no runtime chroma key. Each `imageAnimations` entry declares `files`, optional `rightFiles`, looping, duration, and procedural `motion`.
+- An image representation may use `imageAnimations`, `spriteAtlas`, or a hybrid. When both resolve the same semantic ID, the atlas binding wins and the standalone PNG remains a compatibility fallback.
+- Standalone images are transparent 960×540 RGBA PNGs with no runtime chroma key. Each `imageAnimations` entry declares `files`, optional `rightFiles`, looping, duration, and procedural `motion`.
+- A Codex v2 atlas is a transparent lossless WebP at 1536×2288 with 8 columns × 11 rows, 192×208 cells, and `spriteVersionNumber: 2`. `animations` declares rows, valid frame counts, per-frame timing, loops, and short blend fractions. `bindings` maps arbitrary semantic IDs to animations and may override frame subsets, true left/right rows, playback speed, and motion.
+- `lookDirections` contains all 16 directions from 0° in 22.5° steps. Zero is up, 90° is screen-right, 180° is down, and 270° is screen-left. Runtime transitions along the shortest adjacent-cell path.
+- `actions` exposes atlas bindings as localized menu actions and may opt individual actions into autonomous behavior. Titles, timing, action count, and semantic mapping belong to the pack rather than pet-specific Swift code.
 - Video assets are 960×540, 24 fps, HEVC with Alpha, `hvc1`, and no audio. Each `clips` entry declares a relative file and loop behavior.
 - Dual-mode packs default to video and can switch instantly. Image-only packs force image mode and disable the video toggle; video-only packs do the inverse.
 - Four posture ports: stand, sit, lie, and sleep.
@@ -107,13 +117,22 @@ Green screen is an implementation detail, not a user requirement. A provider may
 - Color ports use black, tan, and light-fur anchors without background pixels.
 - Runtime behavior depends on semantic IDs in `manifest.json`, not filenames, species, or generation provider.
 
+```text
+MyPet.furballpet/
+├── manifest.json
+├── Sprites/MyPet/spritesheet.webp   # Recommended Codex v2 image representation
+├── Images/                          # Optional standalone-PNG fallback
+└── Clips/                           # Required only when videoMode=true
+```
+
 Source photos, chroma footage, and generation logs stay in a private source project rather than the user-facing `.furballpet` runtime package.
 
 ### Implemented foundation
 
-- Runtime resolves both PNG animation descriptors and video clips by semantic ID under one behavior state machine.
-- Image mode implements breathing, quiet sleep, springy posture changes, look sequences, and speed-specific locomotion rhythm. Right-facing art prefers `rightFiles` and mirrors only as a fallback.
+- Runtime resolves atlas animations, PNG animation descriptors, and video clips by semantic ID under one behavior state machine.
+- The atlas decodes once; requested cells are placed on a shared 16:9 render canvas and cached as Metal textures. Variable frame durations, per-animation blend fractions, true left/right gait rows, and procedural motion can coexist.
+- Image mode now provides one-style stand, sit, lie, sleep, wake, phased locomotion, six cute actions, and 16-direction gaze. Right-facing art prefers `rightAnimation` and mirrors only as a fallback.
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` runs an unpacked external pack without recompilation for production and QA workflows.
-- `Scripts/validate-pet-pack.swift <pack>` validates enabled capabilities, all 27 semantic actions, safe paths, loop semantics, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency.
+- `Scripts/validate-pet-pack.swift <pack>` resolves the union of PNG descriptors and atlas bindings, then validates all 27 semantic actions, safe paths, loop semantics, atlas structure/alpha/directions, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency. A pure-atlas pack does not need placeholder PNGs or empty videos.
 
 This establishes the universal runtime contract, not yet the complete consumer production experience. The next phase is an in-app Pet Pack importer/switcher and a separate production wizard combining identity-board generation, provider adapters, automated retries, and a visual QA report. While video models can still change faces or markings, the single identity-board approval remains a necessary quality gate.

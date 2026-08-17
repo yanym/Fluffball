@@ -333,9 +333,13 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func setVisualMode(_ mode: PetVisualMode) throws {
+    func setVisualMode(_ mode: PetVisualMode, replaying replayClip: PetClip? = nil) throws {
         guard visualMode != mode else { return }
         visualMode = mode
+        if let replayClip {
+            try play(replayClip)
+            return
+        }
         guard let request = lastPlayRequest else { return }
         try play(request.clip, fadeDuration: request.fadeDuration, completion: request.completion)
     }
