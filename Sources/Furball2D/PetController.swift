@@ -105,6 +105,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var statusItemHealthTimer: Timer?
     private var treatChaseTimer: Timer?
     private var hoverActionTimer: Timer?
+    private var mindTimer: Timer?
     private var startupVisibilityGeneration = 0
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
@@ -152,6 +153,9 @@ final class PetController: NSObject, NSMenuDelegate {
     private var lastHoverActionTime: TimeInterval = 0
     private var autonomousActionFacingUntil: TimeInterval = 0
     private var restFacingPreparedEpoch: Int?
+    private var mindPetID = ""
+    private var petMind = PetMindSnapshot.default
+    private var lastMindTickTime: TimeInterval = 0
     private let behaviorTimeScale: Double = ProcessInfo.processInfo.environment["FURBALL_FAST_BEHAVIOR"] == "1" ? 0.08 : 1
 
     private var petScale: CGFloat {
@@ -233,6 +237,14 @@ final class PetController: NSObject, NSMenuDelegate {
         super.init()
 
         posture = startingPosture
+        mindPetID = PetAssetCatalog.petID
+        petMind = PetMindStore.load(petID: mindPetID)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(petMindDidChange(_:)),
+            name: .petMindDidChange,
+            object: nil
+        )
         panel.contentView = renderer.view
         configureInput()
         configureMenu()
@@ -259,6 +271,7 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         }
         startStatusItemHealthCheck()
+        startMindTracking()
         startFacingTracking()
         if freeRoamEnabled {
             beginFreeRoaming()
@@ -368,6 +381,7 @@ final class PetController: NSObject, NSMenuDelegate {
         behaviorQAReportWritten = true
         let contentRect = renderer.visibleContentRect()
         let elapsed = behaviorQAStartedAt.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
+        let treatMemoryRecorded = petMind.memories.contains { $0.kind == .treat }
         let passed = behaviorQAOutcome == "completed"
             && treatTarget == nil
             && treatChaseTimer == nil
@@ -376,6 +390,7 @@ final class PetController: NSObject, NSMenuDelegate {
             && panel.isVisible
             && contentRect != nil
             && statusItem?.button != nil
+            && treatMemoryRecorded
         let report: [String: Any] = [
             "pass": passed,
             "scenario": "throw-treat-reach-consume-stop",
@@ -387,7 +402,8 @@ final class PetController: NSObject, NSMenuDelegate {
             "treatTargetCleared": treatTarget == nil,
             "treatWindowHidden": !desktopTreat.isVisible,
             "treatTimerStopped": treatChaseTimer == nil,
-            "locomotionStopped": locomotionMode == .none
+            "locomotionStopped": locomotionMode == .none,
+            "treatMemoryRecorded": treatMemoryRecorded
         ]
         do {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -720,8 +736,24 @@ final class PetController: NSObject, NSMenuDelegate {
            renderer.visualMode == .images,
            let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.high-five" }) {
             showSpeech(appLanguage.highFiveGreeting)
+            remember(
+                .play,
+                zhHans: "我们击了个掌",
+                english: "we shared a high five",
+                salience: 0.72,
+                energy: -0.015,
+                curiosity: -0.02,
+                affinity: 0.035
+            )
             performImageAction(action)
         } else if totalDragDistance < 6 {
+            remember(
+                .affection,
+                zhHans: "你刚刚摸了摸我",
+                english: "you gave me a gentle pet",
+                salience: 0.48,
+                affinity: 0.018
+            )
             speakRandomly()
             if !followCursor, !freeRoamEnabled { advanceBehavior() }
         }
@@ -824,7 +856,8 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func scheduleNextSpeech(after delay: TimeInterval? = nil) {
         speechTimer?.invalidate()
-        let nextDelay = delay ?? Double.random(in: 18...34)
+        let affection = petMind.traits.affection
+        let nextDelay = delay ?? Double.random(in: (22 - affection * 5)...(39 - affection * 7))
         speechTimer = Timer.scheduledTimer(withTimeInterval: nextDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -836,10 +869,85 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func speakRandomly() {
         guard panel.isVisible else { return }
-        let messages = appLanguage.speechMessages(for: posture)
+        let baseMessages = appLanguage.speechMessages(for: posture)
+        let contextual = petMind.contextualSpeech(for: appLanguage)
+        let contextChance = 0.24 + petMind.traits.affection * 0.18 + petMind.state.affinity * 0.12
+        let messages = !contextual.isEmpty && Double.random(in: 0...1) < contextChance
+            ? contextual
+            : baseMessages
         let candidates = messages.filter { !recentSpeechMessages.contains($0) }
         guard let message = (candidates.isEmpty ? messages : candidates).randomElement() else { return }
         showSpeech(message)
+    }
+
+    @objc private func petMindDidChange(_ notification: Notification) {
+        guard let petID = notification.userInfo?["petID"] as? String,
+              petID == mindPetID else { return }
+        petMind = PetMindStore.load(petID: petID)
+    }
+
+    private func startMindTracking() {
+        mindTimer?.invalidate()
+        lastMindTickTime = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateMindState() }
+        }
+        mindTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func updateMindState() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsedMinutes = min(60, max(0, now - lastMindTickTime)) / 60
+        lastMindTickTime = now
+        guard elapsedMinutes > 0 else { return }
+
+        let isMoving = locomotionMode != .none || patrolTimer != nil || freeRoamEnabled
+        let energyRate: Double
+        if posture == .sleep {
+            energyRate = 0.020 + petMind.traits.composure * 0.008
+        } else if isMoving {
+            energyRate = -(0.010 + (1 - petMind.traits.vitality) * 0.008)
+        } else {
+            energyRate = -(0.0025 + petMind.traits.vitality * 0.0015)
+        }
+        let curiosityRate = 0.004 + petMind.traits.curiosity * 0.006
+        let hasRecentAffection = petMind.memories.contains {
+            $0.kind == .affection && Date().timeIntervalSince($0.date) < 20 * 60
+        }
+        let affinityRate = hasRecentAffection ? 0 : -0.0008
+
+        petMind.state.adjust(
+            energy: energyRate * elapsedMinutes,
+            curiosity: curiosityRate * elapsedMinutes,
+            affinity: affinityRate * elapsedMinutes
+        )
+        petMind = PetMindStore.updateState(
+            petMind.state,
+            petID: mindPetID,
+            notify: true
+        )
+    }
+
+    private func remember(
+        _ kind: PetMemoryKind,
+        zhHans: String,
+        english: String,
+        salience: Double = 0.55,
+        energy: Double = 0,
+        curiosity: Double = 0,
+        affinity: Double = 0
+    ) {
+        petMind = PetMindStore.record(
+            petID: mindPetID,
+            kind: kind,
+            zhHans: zhHans,
+            english: english,
+            salience: salience,
+            energy: energy,
+            curiosity: curiosity,
+            affinity: affinity
+        )
     }
 
     private func showSpeech(_ message: String) {
@@ -1353,6 +1461,15 @@ final class PetController: NSObject, NSMenuDelegate {
                 guard let self else { return }
                 self.isTransitioning = false
                 self.playIdle(clip.resultingPosture)
+                if clip.resultingPosture == .sleep {
+                    self.remember(
+                        .rest,
+                        zhHans: "我在桌面角落安心睡了一觉",
+                        english: "I had a cozy nap in a corner of the desktop",
+                        salience: 0.35,
+                        curiosity: -0.015
+                    )
+                }
                 completion?()
             }
         } catch {
@@ -1400,9 +1517,53 @@ final class PetController: NSObject, NSMenuDelegate {
         behaviorTimer?.invalidate()
         stopPatrol()
         guard autoBehavior, !followCursor, !freeRoamEnabled else { return }
-        schedule(after: 12, epoch: epoch) { [weak self] in
+        schedule(after: personalityRestDelay, epoch: epoch) { [weak self] in
             self?.settleDown(epoch: epoch)
         }
+    }
+
+    private var personalityRestDelay: TimeInterval {
+        let traits = petMind.traits
+        let state = petMind.state
+        return 7.5
+            + state.energy * 5.5
+            + traits.vitality * 3.5
+            + traits.composure * 1.5
+    }
+
+    private func autonomousAction() -> PetImageAction? {
+        let actions = PetAssetCatalog.imageActions.filter(\.mayRunAutonomously)
+        guard !actions.isEmpty else { return nil }
+        let energeticIDs: Set<String> = [
+            "gesture.jump", "gesture.happy-dance", "gesture.tail-chase", "gesture.paw-tap"
+        ]
+        let curiousIDs: Set<String> = [
+            "gesture.review", "gesture.sniff", "gesture.head-tilt", "gesture.working"
+        ]
+        let calmIDs: Set<String> = [
+            "gesture.yawn", "gesture.stretch", "gesture.waiting", "gesture.wave"
+        ]
+        let weighted = actions.map { action -> (PetImageAction, Double) in
+            var weight = 0.35
+            if energeticIDs.contains(action.id) {
+                weight += petMind.traits.vitality * 1.2 + petMind.state.energy
+                if petMind.state.energy < 0.25 { weight *= 0.12 }
+            }
+            if curiousIDs.contains(action.id) {
+                weight += petMind.traits.curiosity + petMind.state.curiosityNeed * 1.15
+            }
+            if calmIDs.contains(action.id) {
+                weight += petMind.traits.composure + (1 - petMind.state.energy) * 0.7
+            }
+            return (action, max(0.01, weight))
+        }
+        let total = weighted.reduce(0) { $0 + $1.1 }
+        var roll = Double.random(in: 0..<total)
+        for candidate in weighted {
+            roll -= candidate.1
+            if roll <= 0 { return candidate.0 }
+        }
+        return weighted.last?.0
     }
 
     private func schedule(
@@ -1433,9 +1594,7 @@ final class PetController: NSObject, NSMenuDelegate {
             if restFacingPreparedEpoch != epoch {
                 restFacingPreparedEpoch = epoch
                 if renderer.visualMode == .images,
-                   let action = PetAssetCatalog.imageActions
-                    .filter(\.mayRunAutonomously)
-                    .randomElement() {
+                   let action = autonomousAction() {
                     performImageAction(action) { [weak self] in
                         self?.schedule(after: 1.0, epoch: epoch) { [weak self] in
                             self?.settleDown(epoch: epoch)
@@ -1486,7 +1645,11 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func scheduleWake(epoch: Int) {
-        schedule(after: Double.random(in: 35...65), epoch: epoch) { [weak self] in
+        let traits = petMind.traits
+        let state = petMind.state
+        let center = 30 + (1 - state.energy) * 26 + traits.composure * 12 - traits.vitality * 8
+        let duration = max(24, center + Double.random(in: -7...7))
+        schedule(after: duration, epoch: epoch) { [weak self] in
             self?.beginOuting(epoch: epoch)
         }
     }
@@ -1767,8 +1930,12 @@ final class PetController: NSObject, NSMenuDelegate {
         }
 
         if freeRoamTarget == nil {
+            let explorationChance = min(
+                0.62,
+                0.10 + petMind.traits.curiosity * 0.22 + petMind.state.curiosityNeed * 0.28
+            )
             if desktopInteractionsEnabled,
-               Int.random(in: 0..<4) == 0,
+               Double.random(in: 0...1) < explorationChance,
                let screen = panel.screen ?? NSScreen.main,
                let interaction = desktopInteractionService.destination(in: screen) {
                 pendingDesktopInteraction = interaction
@@ -1805,12 +1972,26 @@ final class PetController: NSObject, NSMenuDelegate {
     private func performDesktopInteraction(_ destination: DesktopInteractionService.Destination) {
         switch destination.kind {
         case .trash:
+            remember(
+                .exploration,
+                zhHans: "我认真检查了废纸篓",
+                english: "I carefully inspected the Trash",
+                salience: 0.46,
+                curiosity: -0.08
+            )
             showSpeech(appLanguage.sniffTrashSpeech)
             if let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.sniff" }) {
                 performImageAction(action)
             }
         case .desktopItem:
             guard let name = destination.itemName else { return }
+            remember(
+                .desktop,
+                zhHans: "我发现了桌面上的“\(name)”",
+                english: "I discovered “\(name)” on the desktop",
+                salience: 0.62,
+                curiosity: -0.11
+            )
             showSpeech(appLanguage.inspectDesktopItemSpeech(name))
             let inspectAction = PetAssetCatalog.imageActions.first(where: {
                 $0.id == "gesture.head-tilt" || $0.id == "gesture.review"
@@ -1955,6 +2136,15 @@ final class PetController: NSObject, NSMenuDelegate {
         treatDeadline = 0
         desktopTreat.hide()
         setLocomotionMode(.none, direction: locomotionDirection)
+        remember(
+            .treat,
+            zhHans: "你给我丢了一颗好吃的零食",
+            english: "you tossed me a delicious treat",
+            salience: 0.90,
+            energy: 0.10,
+            curiosity: -0.08,
+            affinity: 0.045
+        )
         showSpeech(appLanguage.treatFound)
         let completion: () -> Void = { [weak self] in
             self?.resumeAfterTreatChase()
@@ -2119,23 +2309,27 @@ final class PetController: NSObject, NSMenuDelegate {
     ) -> LocomotionMode {
         guard distance > deadZone else { return .none }
 
+        let desired: LocomotionMode
         switch locomotionMode {
         case .none:
-            if demand > 650 || distance > 520 * petScale { return .fastRun }
-            if demand > 260 || distance > 270 * petScale { return .slowRun }
-            return .walk
+            if demand > 650 || distance > 520 * petScale { desired = .fastRun }
+            else if demand > 260 || distance > 270 * petScale { desired = .slowRun }
+            else { desired = .walk }
         case .walk:
-            if demand > 700 || distance > 560 * petScale { return .fastRun }
-            if demand > 320 || distance > 300 * petScale { return .slowRun }
-            return .walk
+            if demand > 700 || distance > 560 * petScale { desired = .fastRun }
+            else if demand > 320 || distance > 300 * petScale { desired = .slowRun }
+            else { desired = .walk }
         case .slowRun:
-            if demand > 720 || distance > 580 * petScale { return .fastRun }
-            if demand < 175, distance < 220 * petScale { return .walk }
-            return .slowRun
+            if demand > 720 || distance > 580 * petScale { desired = .fastRun }
+            else if demand < 175, distance < 220 * petScale { desired = .walk }
+            else { desired = .slowRun }
         case .fastRun:
-            if demand < 430, distance < 390 * petScale { return .slowRun }
-            return .fastRun
+            desired = demand < 430 && distance < 390 * petScale ? .slowRun : .fastRun
         }
+
+        if petMind.state.energy < 0.18 { return .walk }
+        if petMind.state.energy < 0.38, desired == .fastRun { return .slowRun }
+        return desired
     }
 
     private func setLocomotionMode(_ newMode: LocomotionMode, direction: CGFloat) {
@@ -2461,6 +2655,14 @@ final class PetController: NSObject, NSMenuDelegate {
               let action = PetAssetCatalog.imageActions.first(where: { $0.id == actionID }) else { return }
         panel.orderFrontRegardless()
         registerUserActivity()
+        remember(
+            .play,
+            zhHans: "你让我表演了一个可爱动作",
+            english: "you asked me to perform a cute trick",
+            salience: 0.58,
+            energy: -0.012,
+            affinity: 0.012
+        )
         performImageAction(action)
     }
 
@@ -2634,6 +2836,12 @@ final class PetController: NSObject, NSMenuDelegate {
             try renderer.setVisualMode(next.kind.visualMode, replaying: PetClips.idle(for: posture))
             renderer.setMirrored(actionFacing.isMirrored)
             repositionSpeechBubble(resetSilhouette: true)
+            remember(
+                .appearance,
+                zhHans: "我换上了“\(next.title(for: .simplifiedChinese))”外观",
+                english: "I changed into my “\(next.title(for: .english))” look",
+                salience: 0.42
+            )
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(next.title(for: appLanguage)))
@@ -2675,6 +2883,8 @@ final class PetController: NSObject, NSMenuDelegate {
             try renderer.setVisualMode(nextAppearance.kind.visualMode)
             try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
             renderer.setMirrored(actionFacing.isMirrored)
+            mindPetID = nextPet.id
+            petMind = PetMindStore.load(petID: mindPetID)
             rebuildMenu()
             refreshAppearanceSettings()
             refreshAppearanceSettings()
@@ -2684,6 +2894,8 @@ final class PetController: NSObject, NSMenuDelegate {
         } catch {
             _ = PetAssetCatalog.selectPet(id: previousPet.id)
             _ = PetAssetCatalog.selectAppearance(id: previousAppearance.id)
+            mindPetID = previousPet.id
+            petMind = PetMindStore.load(petID: mindPetID)
             videoAnimationsEnabled = previousAppearance.kind == .continuousVideo
             try? renderer.setVisualMode(previousAppearance.kind.visualMode)
             try? renderer.play(PetClips.idle(for: posture), fadeDuration: 0)

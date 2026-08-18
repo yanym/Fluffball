@@ -278,6 +278,51 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var personalityHeading: String {
+        self == .simplifiedChinese ? "性格" : "PERSONALITY"
+    }
+
+    func personalityTraitTitle(_ trait: PetPersonalityTrait) -> String {
+        switch (self, trait) {
+        case (.simplifiedChinese, .vitality): "活力"
+        case (.simplifiedChinese, .curiosity): "好奇心"
+        case (.simplifiedChinese, .affection): "亲人程度"
+        case (.simplifiedChinese, .composure): "沉稳程度"
+        case (.english, .vitality): "Vitality"
+        case (.english, .curiosity): "Curiosity"
+        case (.english, .affection): "Affection"
+        case (.english, .composure): "Composure"
+        }
+    }
+
+    var currentStateHeading: String {
+        self == .simplifiedChinese ? "此刻状态" : "RIGHT NOW"
+    }
+
+    var energyStateLabel: String {
+        self == .simplifiedChinese ? "精力" : "Energy"
+    }
+
+    var curiosityStateLabel: String {
+        self == .simplifiedChinese ? "探索欲" : "Wonder"
+    }
+
+    var affinityStateLabel: String {
+        self == .simplifiedChinese ? "亲密度" : "Bond"
+    }
+
+    var shortMemoryHeading: String {
+        self == .simplifiedChinese ? "最近记得的事" : "RECENT MEMORIES"
+    }
+
+    var clearMemoriesButton: String {
+        self == .simplifiedChinese ? "清除记忆" : "Clear Memories"
+    }
+
+    var noMemoriesLabel: String {
+        self == .simplifiedChinese ? "还没有特别的回忆，和它玩一会儿吧。" : "No special memories yet. Spend a little time together."
+    }
+
     var creatorIntro: String {
         switch self {
         case .simplifiedChinese: "选择 6–12 张真实照片，生成一个包含严谨输入、双语 Skill 和验收合同的创建请求。可交给支持图片生成的 ChatGPT、Codex 或其他模型，返回结果可直接导入。"

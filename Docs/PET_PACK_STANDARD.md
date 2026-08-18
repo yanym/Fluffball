@@ -71,6 +71,7 @@ MyPet.furballpet/
 - 图片模式具备同画风的站、坐、趴、闭眼睡眠、醒来、真实相位走跑、十类可爱动作和 16 方向视线跟随；右向优先使用真实 `rightAnimation`，缺失时才镜像。
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` 可在不重新编译的情况下运行一个外部包，适合制作和测试工具。
 - App 内“宠物素材库”会验证、安装、切换、导出和可恢复地移除 `.furballpet`；Finder 双击宠物包也会进入相同验证路径。用户包安装在 `~/Library/Application Support/Furball2D/Pets/`。
+- 每个宠物 ID 拥有独立的本地性格、动态状态与短期记忆；这些用户数据不写回或污染可分享的 `.furballpet`。
 - “创建 2D 宠物”接受 6–12 张照片、宠物名称/种类和目标风格，输出照片、`REQUEST.json`、双语 Skill、动作注册表与独立验证器。当前明确不生成视频。
 - 同一宠物可拥有真实连续动画、可爱 2D 和写实 2D；Nina 是包含三种外观的内置参考包。
 - `Scripts/validate-pet-pack.swift <pack>` 会按能力解析 PNG 与图集绑定的并集，检查 27 个语义动作、路径安全、循环语义、图集结构/Alpha/方向、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。纯图集包不必伪造 PNG 或空视频。
@@ -137,6 +138,7 @@ Source photos, chroma footage, and generation logs stay in a private source proj
 - Image mode now provides one-style stand, sit, lie, closed-eye sleep, wake, phased locomotion, ten cute actions, and 16-direction gaze. Right-facing art prefers `rightAnimation` and mirrors only as a fallback.
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` runs an unpacked external pack without recompilation for production and QA workflows.
 - Pet Library validates, installs, switches, exports, and recoverably removes `.furballpet` packages. Finder-opened packages use the same validation path. User packs live under `~/Library/Application Support/Furball2D/Pets/`.
+- Each pet ID has separate local personality, dynamic state, and short-term memory data; this user state never mutates or contaminates a shareable `.furballpet`.
 - Create 2D Pet accepts 6–12 photos, name/species, and requested styles, then exports the photos, `REQUEST.json`, bilingual Skill, action registry, and standalone validator. It explicitly does not generate video.
 - One pet may expose Live Motion, Cute 2D, and Realistic 2D; Nina is the built-in three-appearance reference pack.
 - `Scripts/validate-pet-pack.swift <pack>` resolves the union of PNG descriptors and atlas bindings, then validates all 27 semantic actions, safe paths, loop semantics, atlas structure/alpha/directions, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency. A pure-atlas pack does not need placeholder PNGs or empty videos.

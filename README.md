@@ -92,6 +92,7 @@ Sources/Furball2D/Assets/
 - “外观”：在素材包实际提供的真实连续动画、可爱 2D 与写实 2D 之间切换。
 - “设置”：在一个带左侧栏的窗口中管理视觉与动画、宠物素材库和创建宠物；大小与置顶仍保留在菜单栏快捷项，仅真实连续动画显示视频混合设置。
 - “宠物素材库”：导入、导出、选择宠物；“创建 2D 宠物”接受 6–12 张照片并输出可交给图片模型的标准请求和 Skill。
+- “宠物档案”：每只宠物保存可调的活力、好奇心、亲人和沉稳性格，以及会随休息、移动和互动变化的精力、探索欲与亲密度。最近三条短期记忆可见并可随时清除。
 - “可爱动作”：图片模式下显示素材包自带动作；视频模式、移动中或过渡中自动置灰。
 - “语言 / Language”：选择简体中文或 English。
 - “现在去睡觉”：立即走完合法姿态链并睡觉。
@@ -105,7 +106,7 @@ Sources/Furball2D/Assets/
 - “在鼠标旁丢个零食”：图片宠物会走、慢跑或快跑到鼠标位置，找到后执行闻闻动作。
 - 悬停与双击：图片宠物会歪头回应，双击会击掌。
 
-无人互动约 12 秒后，狗狗会依次坐下、趴下并睡觉；睡一段时间后会偶尔自己醒来观察四周，然后再次休息。
+无人互动一段时间后，狗狗会按自己的性格与精力依次坐下、趴下并睡觉；睡多久、醒来后偏向玩耍还是探索、移动时选择走路还是跑步，都由性格与此刻状态共同影响。摸摸、击掌、零食、桌面探索、换外观和睡觉会形成最多 12 条、保留不超过 48 小时的本地短期记忆。
 
 ### 图片动画模式
 
@@ -209,6 +210,7 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - “Appearance”: switch among the representations actually supplied by the current pet: Live Motion, Cute 2D, and Realistic 2D.
 - “Settings”: one sidebar window manages Visual & Motion, Pet Library, and Create Pet. Size and window level stay as quick menu-bar controls; video blending appears only for Live Motion.
 - “Pet Library”: import, export, and select pets. Create 2D Pet accepts 6–12 photos and exports a standardized request plus Skill for an image-capable model.
+- “Pet Profile”: each pet keeps adjustable Vitality, Curiosity, Affection, and Composure traits plus dynamic Energy, Wonder, and Bond. The three newest short-term memories are visible and can be cleared at any time.
 - “Cute Actions”: shows pack-provided image actions in image mode and disables itself in video mode, while moving, or during a transition.
 - “语言 / Language”: choose Simplified Chinese or English.
 - “Sleep Now”: traverse the legal posture chain and go to sleep.
@@ -222,7 +224,7 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - “Toss a Treat by Cursor”: the image pet walks, jogs, or runs to the pointer and performs its sniff action on arrival.
 - Hover and double-click: the image pet responds with a head tilt or high five.
 
-After roughly 12 seconds without interaction, the dog sits, lies down, and sleeps. After resting, it occasionally wakes up, looks around, and later settles down again.
+After a personality-dependent idle period, the dog sits, lies down, and sleeps. Personality and current state influence sleep length, whether an outing favors play or exploration, and whether movement becomes a walk, jog, or run. Petting, high fives, treats, desktop exploration, appearance changes, and naps create up to 12 local short-term memories retained for no more than 48 hours.
 
 ### Image animation mode
 
