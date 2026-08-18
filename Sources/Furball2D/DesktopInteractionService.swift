@@ -13,12 +13,13 @@ struct DesktopInteractionService {
         let kind: Kind
         let point: NSPoint
         let itemName: String?
+        let itemURL: URL?
     }
 
     func destination(in screen: NSScreen) -> Destination? {
         let frame = screen.frame
         let visible = screen.visibleFrame
-        let desktopItems = desktopItemNames()
+        let desktopItems = desktopItems()
 
         if !desktopItems.isEmpty, Bool.random() {
             let index = Int.random(in: 0..<min(12, desktopItems.count))
@@ -28,7 +29,8 @@ struct DesktopInteractionService {
                 x: frame.maxX - 74 - CGFloat(column * 92),
                 y: frame.maxY - 76 - CGFloat(row * 82)
             )
-            return Destination(kind: .desktopItem, point: point, itemName: desktopItems[index])
+            let item = desktopItems[index]
+            return Destination(kind: .desktopItem, point: point, itemName: item.lastPathComponent, itemURL: item)
         }
 
         // Infer the Dock edge from the difference between frame and visibleFrame.
@@ -45,7 +47,7 @@ struct DesktopInteractionService {
         } else {
             trashPoint = NSPoint(x: frame.maxX - max(28, rightInset / 2), y: frame.minY + 34)
         }
-        return Destination(kind: .trash, point: trashPoint, itemName: nil)
+        return Destination(kind: .trash, point: trashPoint, itemName: nil, itemURL: nil)
     }
 
     func nudgeDesktopItem(named name: String, from appKitPoint: NSPoint, in screen: NSScreen) -> Bool {
@@ -66,13 +68,13 @@ struct DesktopInteractionService {
         return error == nil && result?.stringValue == "moved"
     }
 
-    private func desktopItemNames() -> [String] {
+    private func desktopItems() -> [URL] {
         guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first,
               let urls = try? FileManager.default.contentsOfDirectory(
                 at: desktop,
                 includingPropertiesForKeys: [.isHiddenKey],
                 options: [.skipsHiddenFiles]
               ) else { return [] }
-        return urls.map(\.lastPathComponent).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 }

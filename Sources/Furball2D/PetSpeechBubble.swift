@@ -182,8 +182,10 @@ final class PetSpeechBubble {
         let current = panel.frame
         // Deliberately softer than the pet motion. The bubble should feel
         // attached, but it must not echo every one-frame silhouette change.
-        let stiffness: CGFloat = 52
-        let damping: CGFloat = 15.5
+        // Critically damped enough to ignore silhouette noise while still
+        // following a walking pet without the old 8 Hz staircase motion.
+        let stiffness: CGFloat = 84
+        let damping: CGFloat = 19
         let accelerationX = (targetFrame.minX - current.minX) * stiffness - motionVelocity.dx * damping
         let accelerationY = (targetFrame.minY - current.minY) * stiffness - motionVelocity.dy * damping
         motionVelocity.dx += accelerationX * deltaTime
@@ -294,6 +296,7 @@ private final class SpeechBubbleView: NSView {
     }
 
     private struct Theme {
+        let gradientTop: NSColor
         let gradientBottom: NSColor
         let accentColor: NSColor
         let badgeBackground: NSColor
@@ -313,29 +316,29 @@ private final class SpeechBubbleView: NSView {
         // measured against a wider virtual area and omitted the outer glow/tail
         // insets, so a line could wrap only after layout and lose its descenders
         // or final line at the panel edge.
-        let minMessageWidth: CGFloat = 136 * displayScale
-        let maxMessageWidth: CGFloat = 230 * displayScale
+        let minMessageWidth: CGFloat = 142 * displayScale
+        let maxMessageWidth: CGFloat = 224 * displayScale
         let messageWidth = min(
             maxMessageWidth,
             max(minMessageWidth, measuredMessageWidth + 4 * displayScale)
         )
         let messageHeight = measuredMessageHeight(for: messageWidth)
 
-        let outerMargins = 22 * displayScale
-        let tailAllowance = 13 * displayScale
+        let outerMargins = 24 * displayScale
+        let tailAllowance = 10 * displayScale
         // The icon, its gap, and the trailing inset consume 54 pt. Keeping this
         // exact reserve makes the layout width equal to the width used for text
         // measurement even when a left/right tail also consumes panel space.
         let messageHorizontalPadding = 54 * displayScale
-        let contentVerticalReserve = 23 * displayScale
-        let textBreathingRoom = 4 * displayScale
+        let contentVerticalReserve = 26 * displayScale
+        let textBreathingRoom = 6 * displayScale
 
         // Reserve the tail in both axes. This keeps the panel size stable when
         // it moves from above the dog to either side and guarantees that the
         // message frame is never narrower than the width used for measurement.
         let totalW = messageWidth + outerMargins + tailAllowance + messageHorizontalPadding
         let totalH = max(
-            78 * displayScale,
+            82 * displayScale,
             messageHeight + outerMargins + tailAllowance + contentVerticalReserve + textBreathingRoom
         )
         return NSSize(width: totalW, height: totalH)
@@ -354,7 +357,7 @@ private final class SpeechBubbleView: NSView {
 
         // 对话正文
         messageLabel.alignment = .left
-        messageLabel.maximumNumberOfLines = 4
+        messageLabel.maximumNumberOfLines = 5
         messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.drawsBackground = false
         addSubview(messageLabel)
@@ -400,7 +403,7 @@ private final class SpeechBubbleView: NSView {
             tailPosition = position
             needsLayout = true
         } else {
-            tailPosition += (position - tailPosition) * 0.20
+            tailPosition += (position - tailPosition) * 0.12
         }
         needsDisplay = true
     }
@@ -409,8 +412,8 @@ private final class SpeechBubbleView: NSView {
         super.layout()
         let body = bodyRect
 
-        let padX = 14 * displayScale
-        let iconSize = 15 * displayScale
+        let padX = 15 * displayScale
+        let iconSize = 14 * displayScale
         let tagIconY = body.midY - iconSize / 2
         tagIcon.frame = NSRect(
             x: body.minX + padX,
@@ -419,8 +422,8 @@ private final class SpeechBubbleView: NSView {
             height: iconSize
         )
 
-        let msgX = tagIcon.frame.maxX + 11 * displayScale
-        let msgW = max(40, body.maxX - msgX - 14 * displayScale)
+        let msgX = body.minX + 51 * displayScale
+        let msgW = max(40, body.maxX - msgX - 17 * displayScale)
         let measuredHeight = measuredMessageHeight(for: msgW)
         let msgH = min(body.height - 16 * displayScale, max(20, measuredHeight + 3 * displayScale))
         messageLabel.frame = NSRect(
@@ -435,32 +438,49 @@ private final class SpeechBubbleView: NSView {
         super.draw(dirtyRect)
         let theme = currentTheme(for: mood)
         let body = bodyRect
-        let cornerRadius = min(body.height * 0.38, 20 * displayScale)
+        let cornerRadius = min(body.height * 0.38, 22 * displayScale)
 
         let path = buildBubblePath(body: body, radius: cornerRadius)
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.15)
-        shadow.shadowBlurRadius = 10 * displayScale
-        shadow.shadowOffset = NSSize(width: 0, height: -3 * displayScale)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.19)
+        shadow.shadowBlurRadius = 18 * displayScale
+        shadow.shadowOffset = NSSize(width: 0, height: -5 * displayScale)
         shadow.set()
-        theme.gradientBottom.setFill()
-        path.fill()
+        let gradient = NSGradient(starting: theme.gradientTop, ending: theme.gradientBottom)
+        gradient?.draw(in: path, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
         NSGraphicsContext.saveGraphicsState()
-        theme.accentColor.withAlphaComponent(0.28).setStroke()
-        path.lineWidth = 1.0 * displayScale
+        NSColor.white.withAlphaComponent(0.72).setStroke()
+        path.lineWidth = 1.25 * displayScale
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
 
+        let inner = NSBezierPath(roundedRect: body.insetBy(dx: 1.6 * displayScale, dy: 1.6 * displayScale), xRadius: cornerRadius - 1, yRadius: cornerRadius - 1)
+        theme.accentColor.withAlphaComponent(0.12).setStroke()
+        inner.lineWidth = 0.8 * displayScale
+        inner.stroke()
+
         let badge = NSBezierPath(ovalIn: NSRect(
-            x: body.minX + 8 * displayScale,
-            y: body.midY - 14 * displayScale,
-            width: 28 * displayScale,
-            height: 28 * displayScale
+            x: body.minX + 10 * displayScale,
+            y: body.midY - 15 * displayScale,
+            width: 30 * displayScale,
+            height: 30 * displayScale
         ))
         theme.badgeBackground.setFill()
         badge.fill()
+        theme.accentColor.withAlphaComponent(0.22).setStroke()
+        badge.lineWidth = 0.8 * displayScale
+        badge.stroke()
+
+        let accentPill = NSBezierPath(roundedRect: NSRect(
+            x: body.minX + 18 * displayScale,
+            y: body.maxY - 5.5 * displayScale,
+            width: min(42 * displayScale, body.width * 0.18),
+            height: 3 * displayScale
+        ), xRadius: 1.5 * displayScale, yRadius: 1.5 * displayScale)
+        theme.accentColor.withAlphaComponent(0.82).setFill()
+        accentPill.fill()
     }
 
     func playEntranceAnimation() {
@@ -494,8 +514,8 @@ private final class SpeechBubbleView: NSView {
     }
 
     private var bodyRect: NSRect {
-        let tail = 13 * displayScale
-        let margin = 11 * displayScale
+        let tail = 10 * displayScale
+        let margin = 13 * displayScale
         var rect = bounds.insetBy(dx: margin, dy: margin)
         switch tailEdge {
         case .top: rect.size.height -= tail
@@ -512,8 +532,8 @@ private final class SpeechBubbleView: NSView {
 
     private func buildBubblePath(body: NSRect, radius: CGFloat) -> NSBezierPath {
         let path = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
-        let tailW = 18 * displayScale
-        let tailH = 12 * displayScale
+        let tailW = 15 * displayScale
+        let tailH = 9 * displayScale
 
         switch tailEdge {
         case .bottom:
@@ -595,8 +615,8 @@ private final class SpeechBubbleView: NSView {
             .applying(NSImage.SymbolConfiguration(paletteColors: [theme.accentColor]))
         tagIcon.image = NSImage(systemSymbolName: theme.iconName, accessibilityDescription: nil)?.withSymbolConfiguration(config)
 
-        let messageFontSize = 13.6 * displayScale
-        let messageBaseFont = NSFont.systemFont(ofSize: messageFontSize, weight: .medium)
+        let messageFontSize = 13.8 * displayScale
+        let messageBaseFont = NSFont.systemFont(ofSize: messageFontSize, weight: .semibold)
         let roundedFont = messageBaseFont.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: messageFontSize) } ?? messageBaseFont
         messageLabel.font = roundedFont
         messageLabel.textColor = theme.textColor
@@ -606,15 +626,17 @@ private final class SpeechBubbleView: NSView {
         switch mood {
         case .stand:
             return Theme(
-                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.95, blue: 0.92, alpha: 0.96),
-                accentColor: NSColor(calibratedRed: 0.98, green: 0.44, blue: 0.30, alpha: 1),
-                badgeBackground: NSColor(calibratedRed: 1.00, green: 0.92, blue: 0.88, alpha: 0.85),
+                gradientTop: NSColor(calibratedRed: 1.00, green: 1.00, blue: 0.995, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.965, blue: 0.94, alpha: 0.97),
+                accentColor: NSColor(calibratedRed: 0.96, green: 0.38, blue: 0.25, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 1.00, green: 0.92, blue: 0.87, alpha: 0.94),
                 textColor: NSColor(calibratedRed: 0.18, green: 0.14, blue: 0.13, alpha: 1),
                 iconName: "pawprint.fill"
             )
         case .sit:
             return Theme(
-                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.94, blue: 0.97, alpha: 0.96),
+                gradientTop: NSColor(calibratedRed: 1.00, green: 1.00, blue: 1.00, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.95, blue: 0.975, alpha: 0.97),
                 accentColor: NSColor(calibratedRed: 0.94, green: 0.32, blue: 0.58, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.99, green: 0.90, blue: 0.95, alpha: 0.85),
                 textColor: NSColor(calibratedRed: 0.19, green: 0.13, blue: 0.17, alpha: 1),
@@ -622,7 +644,8 @@ private final class SpeechBubbleView: NSView {
             )
         case .lie:
             return Theme(
-                gradientBottom: NSColor(calibratedRed: 0.93, green: 0.98, blue: 0.96, alpha: 0.96),
+                gradientTop: NSColor(calibratedRed: 0.995, green: 1.00, blue: 0.995, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 0.93, green: 0.98, blue: 0.96, alpha: 0.97),
                 accentColor: NSColor(calibratedRed: 0.15, green: 0.62, blue: 0.48, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.88, green: 0.96, blue: 0.93, alpha: 0.85),
                 textColor: NSColor(calibratedRed: 0.12, green: 0.18, blue: 0.16, alpha: 1),
@@ -630,7 +653,8 @@ private final class SpeechBubbleView: NSView {
             )
         case .sleep:
             return Theme(
-                gradientBottom: NSColor(calibratedRed: 0.93, green: 0.94, blue: 0.99, alpha: 0.96),
+                gradientTop: NSColor(calibratedRed: 0.99, green: 0.99, blue: 1.00, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 0.93, green: 0.94, blue: 0.99, alpha: 0.97),
                 accentColor: NSColor(calibratedRed: 0.48, green: 0.46, blue: 0.88, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.90, green: 0.91, blue: 0.98, alpha: 0.85),
                 textColor: NSColor(calibratedRed: 0.14, green: 0.15, blue: 0.22, alpha: 1),
@@ -638,7 +662,8 @@ private final class SpeechBubbleView: NSView {
             )
         case .active:
             return Theme(
-                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.96, blue: 0.88, alpha: 0.96),
+                gradientTop: NSColor(calibratedRed: 1.00, green: 1.00, blue: 0.995, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.96, blue: 0.88, alpha: 0.97),
                 accentColor: NSColor(calibratedRed: 0.94, green: 0.55, blue: 0.08, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 1.00, green: 0.94, blue: 0.82, alpha: 0.85),
                 textColor: NSColor(calibratedRed: 0.20, green: 0.16, blue: 0.10, alpha: 1),

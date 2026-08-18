@@ -4,14 +4,14 @@
     "id": "furball-demo-dog",
     "name": "Nina",
     "species": "dog",
-    "assetVersion": 4
+    "assetVersion": 5
   },
   "capabilities": {
     "imageMode": true,
     "videoMode": true
   },
   "formatVersion": 11,
-  "canvas": { "width": 1280, "height": 720, "fps": 60 },
+  "canvas": { "width": 1280, "height": 720, "fps": 120 },
   "imageCanvas": {
     "width": 960,
     "height": 540,
@@ -205,13 +205,13 @@
     { "id": "lie.to.sleep", "view": "left-profile", "file": "Clips/left-profile/lie-to-sleep.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/lie-to-sleep.mp4" },
     { "id": "sleep.idle", "view": "left-profile", "file": "Clips/left-profile/sleep-idle.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/sleep-idle.mp4" },
     { "id": "sleep.to.stand", "view": "left-profile", "file": "Clips/left-profile/sleep-to-stand.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/sleep-to-stand.mp4" },
-    { "id": "walk.start", "view": "left-profile", "file": "Clips/left-profile/walk-start.mov", "loop": false, "translationDelay": 0.32, "translationRamp": 0.36, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "walk.start", "view": "left-profile", "file": "Clips/left-profile/walk-start.mov", "loop": false, "translationDelay": 0.12, "translationRamp": 0.18, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
     { "id": "walk.loop", "view": "left-profile", "file": "Clips/left-profile/walk-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
     { "id": "walk.stop", "view": "left-profile", "file": "Clips/left-profile/walk-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-walk-to-stand.mp4" },
-    { "id": "slow-run.start", "view": "left-profile", "file": "Clips/left-profile/slow-run-start.mov", "loop": false, "translationDelay": 0.16, "translationRamp": 0.26, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "slow-run.start", "view": "left-profile", "file": "Clips/left-profile/slow-run-start.mov", "loop": false, "translationDelay": 0.07, "translationRamp": 0.13, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
     { "id": "slow-run.loop", "view": "left-profile", "file": "Clips/left-profile/slow-run-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
     { "id": "slow-run.stop", "view": "left-profile", "file": "Clips/left-profile/slow-run-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-slow-run-to-stand.mp4" },
-    { "id": "fast-run.start", "view": "left-profile", "file": "Clips/left-profile/fast-run-start.mov", "loop": false, "translationDelay": 0.32, "translationRamp": 0.18, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" },
+    { "id": "fast-run.start", "view": "left-profile", "file": "Clips/left-profile/fast-run-start.mov", "loop": false, "translationDelay": 0.10, "translationRamp": 0.10, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" },
     { "id": "fast-run.loop", "view": "left-profile", "file": "Clips/left-profile/fast-run-loop.mov", "loop": true, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" },
     { "id": "fast-run.stop", "view": "left-profile", "file": "Clips/left-profile/fast-run-stop.mov", "loop": false, "source": "Assets/SourceVideos/left-profile/stand-to-fast-run-to-stand.mp4" }
   ]

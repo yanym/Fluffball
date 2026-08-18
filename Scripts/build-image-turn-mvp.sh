@@ -7,6 +7,7 @@ KEYFRAME_DIR="$PROJECT_DIR/Assets/ImageTurnMVP/normalized"
 OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile"
 OUTPUT_PATH="$OUTPUT_DIR/look-around-images.mov"
 FACING_OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views"
+TARGET_FPS=120
 
 # 图片视角来自多次独立生成，曝光和白平衡差异比几何差异更容易在短淡化中被看见。
 # 以 left-profile 为参考，分别用黑毛、棕毛和白毛统计值建立单调 PCHIP 曲线。
@@ -81,7 +82,7 @@ mkdir -p "$OUTPUT_DIR" "$FACING_OUTPUT_DIR"
 for keyframe_name in "${required_keyframes[@]}"; do
   color_grade="$(image_color_filter "$keyframe_name")"
   ffmpeg -y -v warning \
-    -loop 1 -framerate 60 -t 1.00 -i "$KEYFRAME_DIR/$keyframe_name.png" \
+    -loop 1 -framerate "$TARGET_FPS" -t 1.00 -i "$KEYFRAME_DIR/$keyframe_name.png" \
     -vf "format=rgba,$color_grade,scale=1280:720:flags=lanczos+accurate_rnd,format=bgra" -an \
     -c:v hevc_videotoolbox -alpha_quality 0.95 -q:v 75 -tag:v hvc1 \
     "$FACING_OUTPUT_DIR/$keyframe_name.mov"
@@ -100,23 +101,23 @@ grade_right="$(image_color_filter right-profile)"
 # 这不是 AI 视频生成：只把 9 张透明 PNG 按角度排序，并用 0.07 秒短淡化
 # 组成一次往返转身。首尾都使用 stand-idle 的左侧面端口，因此运行时可以平稳接回待机。
 ffmpeg -y -v warning \
-  -loop 1 -framerate 60 -t 0.36 -i "$KEYFRAME_DIR/left-profile.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-left.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-left.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-center-left.png" \
-  -loop 1 -framerate 60 -t 0.55 -i "$KEYFRAME_DIR/front.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-center-right.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-right.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-right.png" \
-  -loop 1 -framerate 60 -t 0.45 -i "$KEYFRAME_DIR/right-profile.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-right.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-right.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-center-right.png" \
-  -loop 1 -framerate 60 -t 0.50 -i "$KEYFRAME_DIR/front.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-center-left.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-left.png" \
-  -loop 1 -framerate 60 -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-left.png" \
-  -loop 1 -framerate 60 -t 0.36 -i "$KEYFRAME_DIR/left-profile.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.36 -i "$KEYFRAME_DIR/left-profile.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-center-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.55 -i "$KEYFRAME_DIR/front.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-center-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.45 -i "$KEYFRAME_DIR/right-profile.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-center-right.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.50 -i "$KEYFRAME_DIR/front.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-center-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-three-quarter-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-left.png" \
+  -loop 1 -framerate "$TARGET_FPS" -t 0.36 -i "$KEYFRAME_DIR/left-profile.png" \
   -filter_complex "\
     [0:v]format=rgba,$grade_left,setpts=PTS-STARTPTS[k0];\
     [1:v]format=rgba,$grade_near_profile_left,setpts=PTS-STARTPTS[k1];\
@@ -151,7 +152,7 @@ ffmpeg -y -v warning \
     [x13][k14]xfade=transition=fade:duration=0.07:offset=2.88[x14];\
     [x14][k15]xfade=transition=fade:duration=0.07:offset=3.01[x15];\
     [x15][k16]xfade=transition=fade:duration=0.07:offset=3.14,\
-    fps=60,scale=1280:720:flags=lanczos+accurate_rnd,format=bgra[out]" \
+    fps=$TARGET_FPS,scale=1280:720:flags=lanczos+accurate_rnd,format=bgra[out]" \
   -map "[out]" -an \
   -c:v hevc_videotoolbox -alpha_quality 0.95 -q:v 75 -tag:v hvc1 \
   "$OUTPUT_PATH"

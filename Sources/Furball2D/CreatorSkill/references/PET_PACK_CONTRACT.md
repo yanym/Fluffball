@@ -12,7 +12,7 @@ This file is authoritative for assets produced by `furball-pet-creator`. 本文�
 - `capabilities.imageMode`: `true`
 - `capabilities.videoMode`: `false`
 - Production sprite atlas: lossless WebP with alpha, exactly 3072×4576
-- Layout: 8×11, 384×416 cells, `assetScale: 2` (192×208 is accepted only for legacy imports)
+- Layout: 8×11, 384×416 cells, `assetScale: 2`; creator output must never use the 192×208 legacy form
 - Transparent pixels: RGBA must be 0,0,0,0
 - Paths: relative, forward slashes, no `..`, no absolute paths, no symlinks
 - Maximum import size: 2,000 files and 800 MB
@@ -134,3 +134,4 @@ Never loop awake and sleeping cells together. `sleep.idle` may use one closed-ey
 6. Sleep never oscillates between open and closed eyes.
 7. Pack passes the included validator without warnings.
 8. Contact sheets are reviewed at simulated 60%, 100%, and 140% app size.
+9. `QA/clarity.json` certifies native 384×416 generation, lossless output, no registration enlargement above 1.25×, native-scale eye/fur/paw inspection, and no accepted blur, halo, ringing, stair-step, color-fringe, or compression defects.

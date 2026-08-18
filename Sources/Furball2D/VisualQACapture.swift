@@ -7,6 +7,9 @@ enum VisualQACapture {
               let directory = ProcessInfo.processInfo.environment["FURBALL_QA_CAPTURE_DIR"],
               !directory.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            view.window?.displayIfNeeded()
+            view.layoutSubtreeIfNeeded()
+            view.displayIfNeeded()
             let bounds = view.bounds
             guard bounds.width > 0, bounds.height > 0,
                   let bitmap = view.bitmapImageRepForCachingDisplay(in: bounds) else { return }

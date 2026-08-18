@@ -316,7 +316,8 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         view.framebufferOnly = true
         view.enableSetNeedsDisplay = false
         view.isPaused = false
-        view.preferredFramesPerSecond = 60
+        let displayFPS = NSScreen.main?.maximumFramesPerSecond ?? 60
+        view.preferredFramesPerSecond = min(120, max(60, displayFPS))
         view.layer?.isOpaque = false
         view.wantsLayer = true
     }

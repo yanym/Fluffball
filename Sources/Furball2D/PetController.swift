@@ -2,7 +2,6 @@ import AppKit
 
 @MainActor
 final class PetController: NSObject, NSMenuDelegate {
-    private static let sizeValueLabelTag = 7101
     private static let basePetSize = NSSize(width: 520, height: 292.5)
     private static let minimumScale: CGFloat = 0.6
     private static let maximumScale: CGFloat = 1.4
@@ -19,6 +18,9 @@ final class PetController: NSObject, NSMenuDelegate {
         static let videoAnimations = "videoAnimationsEnabled"
         static let desktopInteractions = "desktopInteractions"
         static let allowIconRearrangement = "allowDesktopIconRearrangement"
+        static let alwaysOnTop = "alwaysOnTop"
+        static let speechBubbles = "speechBubblesEnabled"
+        static let talkativeness = "petTalkativeness"
     }
 
     private static var videoAnimationsPreferenceKey: String {
@@ -61,18 +63,18 @@ final class PetController: NSObject, NSMenuDelegate {
         var startTranslationDelay: TimeInterval {
             switch self {
             case .none: 0
-            case .walk: 0.32
-            case .slowRun: 0.16
-            case .fastRun: 0.32
+            case .walk: 0.12
+            case .slowRun: 0.07
+            case .fastRun: 0.10
             }
         }
 
         var startTranslationRampDuration: TimeInterval {
             switch self {
             case .none: 0
-            case .walk: 0.36
-            case .slowRun: 0.26
-            case .fastRun: 0.18
+            case .walk: 0.18
+            case .slowRun: 0.13
+            case .fastRun: 0.10
             }
         }
     }
@@ -83,6 +85,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let speechBubble = PetSpeechBubble()
     private let desktopTreat = DesktopTreat()
+    private let desktopCarriedItem = DesktopCarriedItem()
     private let desktopInteractionService = DesktopInteractionService()
     private var settingsWindowController: UnifiedSettingsWindowController?
 
@@ -106,6 +109,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var treatChaseTimer: Timer?
     private var hoverActionTimer: Timer?
     private var mindTimer: Timer?
+    private var desktopInteractionTimer: Timer?
     private var startupVisibilityGeneration = 0
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
@@ -139,6 +143,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var cursorMotionReadyTime: TimeInterval = 0
     private var freeRoamTarget: NSPoint?
     private var pendingDesktopInteraction: DesktopInteractionService.Destination?
+    private var desktopInteractionInProgress = false
     private var freeRoamPauseUntil: TimeInterval = 0
     private var lastFreeRoamSampleTime: TimeInterval = 0
     private var treatTarget: NSPoint?
@@ -190,6 +195,14 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(allowDesktopIconRearrangement, forKey: PreferenceKey.allowIconRearrangement) }
     }
 
+    private var speechBubblesEnabled: Bool {
+        didSet { UserDefaults.standard.set(speechBubblesEnabled, forKey: PreferenceKey.speechBubbles) }
+    }
+
+    private var talkativeness: Double {
+        didSet { UserDefaults.standard.set(talkativeness, forKey: PreferenceKey.talkativeness) }
+    }
+
     private var videoAnimationsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(
@@ -221,6 +234,13 @@ final class PetController: NSObject, NSMenuDelegate {
             ? true
             : defaults.bool(forKey: PreferenceKey.desktopInteractions)
         allowDesktopIconRearrangement = defaults.bool(forKey: PreferenceKey.allowIconRearrangement)
+        speechBubblesEnabled = defaults.object(forKey: PreferenceKey.speechBubbles) == nil
+            ? true
+            : defaults.bool(forKey: PreferenceKey.speechBubbles)
+        let savedTalkativeness = defaults.object(forKey: PreferenceKey.talkativeness) == nil
+            ? 0.55
+            : defaults.double(forKey: PreferenceKey.talkativeness)
+        talkativeness = min(1, max(0, savedTalkativeness))
         // Appearance selection is the source of truth. The old Boolean is
         // retained only so existing installs keep their previous preference.
         videoAnimationsEnabled = PetAssetCatalog.activeAppearance.kind == .continuousVideo
@@ -234,6 +254,10 @@ final class PetController: NSObject, NSMenuDelegate {
             visualMode: videoAnimationsEnabled ? .video : .images
         )
         panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
+        let alwaysOnTop = defaults.object(forKey: PreferenceKey.alwaysOnTop) == nil
+            ? true
+            : defaults.bool(forKey: PreferenceKey.alwaysOnTop)
+        panel.level = alwaysOnTop ? .floating : .normal
         super.init()
 
         posture = startingPosture
@@ -654,119 +678,14 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: appLanguage.visibilityMenu(isVisible: panel.isVisible), action: #selector(toggleVisibility), keyEquivalent: "")
         menu.addItem(.separator())
 
-        menu.addItem(makeAppearanceMenuItem())
         menu.addItem(
             withTitle: appLanguage.settingsMenu,
             action: #selector(showVisualSettings),
             keyEquivalent: ","
         )
         menu.addItem(.separator())
-
-        let passItem = menu.addItem(withTitle: appLanguage.passThroughMenu, action: #selector(togglePassThrough), keyEquivalent: "")
-        passItem.state = fullPassThrough ? .on : .off
-        let autoItem = menu.addItem(withTitle: appLanguage.autoBehaviorMenu, action: #selector(toggleAutoBehavior), keyEquivalent: "")
-        autoItem.state = autoBehavior ? .on : .off
-        let roamItem = menu.addItem(withTitle: appLanguage.freeRoamMenu, action: #selector(toggleFreeRoaming), keyEquivalent: "")
-        roamItem.state = freeRoamEnabled ? .on : .off
-        let followItem = menu.addItem(withTitle: appLanguage.followCursorMenu, action: #selector(toggleCursorFollowing), keyEquivalent: "")
-        followItem.state = followCursor ? .on : .off
-        let facingItem = menu.addItem(
-            withTitle: usesDirectionalLook ? appLanguage.imageFacingMenu : appLanguage.legacyImageFacingMenu,
-            action: #selector(toggleImageFacing),
-            keyEquivalent: ""
-        )
-        facingItem.state = imageFacingEnabled ? .on : .off
-        if PetAssetCatalog.activeAppearance.kind == .continuousVideo {
-            let fadeItem = menu.addItem(withTitle: appLanguage.crossfadeMenu, action: #selector(toggleCrossfade), keyEquivalent: "")
-            fadeItem.state = renderer.crossfadeEnabled ? .on : .off
-        }
-        let levelItem = menu.addItem(withTitle: appLanguage.alwaysOnTopMenu, action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
-        levelItem.state = panel.level == .floating ? .on : .off
-
-        menu.addItem(makeSizeSliderItem())
-        menu.addItem(makeLanguageMenuItem())
-
-        menu.addItem(.separator())
         menu.addItem(withTitle: appLanguage.quitMenu, action: #selector(quit), keyEquivalent: "q")
         for item in menu.items where item.action != nil { item.target = self }
-    }
-
-    private func makeSizeSliderItem() -> NSMenuItem {
-        let item = NSMenuItem(title: appLanguage.sizeMenu, action: nil, keyEquivalent: "")
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 228, height: 52))
-
-        let titleLabel = NSTextField(labelWithString: appLanguage.sizeMenu)
-        titleLabel.frame = NSRect(x: 13, y: 29, width: 130, height: 18)
-        titleLabel.font = .menuFont(ofSize: 13)
-        container.addSubview(titleLabel)
-
-        let valueLabel = NSTextField(labelWithString: scaleLabel(petScale))
-        valueLabel.frame = NSRect(x: 157, y: 29, width: 58, height: 18)
-        valueLabel.font = .menuFont(ofSize: 12)
-        valueLabel.textColor = .secondaryLabelColor
-        valueLabel.alignment = .right
-        valueLabel.tag = Self.sizeValueLabelTag
-        container.addSubview(valueLabel)
-
-        let slider = NSSlider(
-            value: Double(petScale),
-            minValue: Double(Self.minimumScale),
-            maxValue: Double(Self.maximumScale),
-            target: self,
-            action: #selector(sizeSliderChanged(_:))
-        )
-        slider.frame = NSRect(x: 12, y: 4, width: 204, height: 24)
-        slider.isContinuous = true
-        slider.allowsTickMarkValuesOnly = false
-        slider.toolTip = appLanguage.sizeTooltip
-        container.addSubview(slider)
-
-        item.view = container
-        return item
-    }
-
-    private func makeLanguageMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: appLanguage.languageMenu, action: nil, keyEquivalent: "")
-        let languageMenu = NSMenu(title: appLanguage.languageMenu)
-
-        for language in AppLanguage.allCases {
-            let languageItem = NSMenuItem(
-                title: language.displayName,
-                action: #selector(selectLanguage(_:)),
-                keyEquivalent: ""
-            )
-            languageItem.target = self
-            languageItem.representedObject = language.rawValue
-            languageItem.state = language == appLanguage ? .on : .off
-            languageMenu.addItem(languageItem)
-        }
-
-        item.submenu = languageMenu
-        return item
-    }
-
-    private func makeAppearanceMenuItem() -> NSMenuItem {
-        let root = NSMenuItem(title: appLanguage.appearanceMenu, action: nil, keyEquivalent: "")
-        let appearanceMenu = NSMenu(title: appLanguage.appearanceMenu)
-        let activeID = PetAssetCatalog.activeAppearance.id
-        let canSwitch = !isTransitioning && locomotionMode == .none
-
-        for appearance in PetAssetCatalog.availableAppearances {
-            let item = NSMenuItem(
-                title: appearance.title(for: appLanguage),
-                action: #selector(selectAppearanceFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = appearance.id
-            item.state = appearance.id == activeID ? .on : .off
-            item.isEnabled = canSwitch
-            item.toolTip = appearance.subtitle(for: appLanguage)
-            item.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
-            appearanceMenu.addItem(item)
-        }
-        root.submenu = appearanceMenu
-        return root
     }
 
     private func makeCuteActionsMenuItem() -> NSMenuItem {
@@ -792,10 +711,6 @@ final class PetController: NSObject, NSMenuDelegate {
         root.submenu = actionMenu
         root.isEnabled = actionsAreAvailable
         return root
-    }
-
-    private func scaleLabel(_ scale: CGFloat) -> String {
-        "\(Int((scale * 100).rounded()))%"
     }
 
     private func mouseDown(_ event: NSEvent) {
@@ -949,8 +864,10 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func scheduleNextSpeech(after delay: TimeInterval? = nil) {
         speechTimer?.invalidate()
+        guard speechBubblesEnabled, talkativeness > 0.01 else { return }
         let affection = petMind.traits.affection
-        let nextDelay = delay ?? Double.random(in: (22 - affection * 5)...(39 - affection * 7))
+        let frequencyScale = 1.65 - talkativeness * 1.10
+        let nextDelay = delay ?? Double.random(in: (22 - affection * 5)...(39 - affection * 7)) * frequencyScale
         speechTimer = Timer.scheduledTimer(withTimeInterval: nextDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -1044,7 +961,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func showSpeech(_ message: String) {
-        guard panel.isVisible else { return }
+        guard panel.isVisible, speechBubblesEnabled else { return }
         recentSpeechMessages.removeAll(where: { $0 == message })
         recentSpeechMessages.append(message)
         if recentSpeechMessages.count > 4 { recentSpeechMessages.removeFirst() }
@@ -1080,7 +997,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func startSpeechFollowing() {
         speechFollowTimer?.invalidate()
-        let timer = Timer(timeInterval: 1.0 / 8.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.repositionSpeechBubble()
             }
@@ -1111,8 +1028,8 @@ final class PetController: NSObject, NSMenuDelegate {
         if reset || smoothedSpeechLocalFrame == nil {
             smoothedSpeechLocalFrame = measured
         } else if refresh, let current = smoothedSpeechLocalFrame {
-            let response: CGFloat = isTransitioning ? 0.10 : 0.16
-            let deadZone = 2.2 * petScale
+            let response: CGFloat = isTransitioning ? 0.08 : 0.20
+            let deadZone = 4.0 * petScale
             func filtered(_ old: CGFloat, _ new: CGFloat) -> CGFloat {
                 let delta = new - old
                 guard abs(delta) > deadZone else { return old }
@@ -1865,10 +1782,10 @@ final class PetController: NSObject, NSMenuDelegate {
         isUsingImageFacing = false
         lastCursorLocation = NSEvent.mouseLocation
         lastCursorSampleTime = ProcessInfo.processInfo.systemUptime
-        cursorMotionReadyTime = lastCursorSampleTime + 0.10
+        cursorMotionReadyTime = lastCursorSampleTime
         smoothedCursorSpeed = 0
 
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateCursorFollowing()
             }
@@ -1931,13 +1848,13 @@ final class PetController: NSObject, NSMenuDelegate {
         let cursor = NSEvent.mouseLocation
         let cursorDelta = hypot(cursor.x - lastCursorLocation.x, cursor.y - lastCursorLocation.y)
         let instantaneousCursorSpeed = cursorDelta / deltaTime
-        smoothedCursorSpeed += (instantaneousCursorSpeed - smoothedCursorSpeed) * min(1, deltaTime * 7)
+        smoothedCursorSpeed += (instantaneousCursorSpeed - smoothedCursorSpeed) * min(1, deltaTime * 24)
         lastCursorLocation = cursor
         lastCursorSampleTime = now
 
-        let deadZone = 76 * petScale
+        let deadZone = 58 * petScale
         let distance = hypot(cursor.x - panel.frame.midX, cursor.y - panel.frame.midY)
-        let demand = max(smoothedCursorSpeed, max(0, distance - deadZone) * 1.1)
+        let demand = max(smoothedCursorSpeed, max(0, distance - deadZone) * 1.35)
         updateMovement(
             toward: cursor,
             demand: demand,
@@ -1977,7 +1894,7 @@ final class PetController: NSObject, NSMenuDelegate {
         guard freeRoamEnabled else { return }
         isUsingImageFacing = false
         lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateFreeRoaming()
             }
@@ -1988,6 +1905,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func stopFreeRoaming() {
+        cancelDesktopItemInteraction()
         freeRoamTimer?.invalidate()
         freeRoamTimer = nil
         freeRoamTarget = nil
@@ -2007,6 +1925,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func updateFreeRoaming() {
         guard freeRoamEnabled, panel.isVisible, !isDragging else { return }
+        if desktopInteractionInProgress { return }
         guard posture == .stand, !isTransitioning else {
             if !isTransitioning { continueToStandForMovement() }
             return
@@ -2077,7 +1996,9 @@ final class PetController: NSObject, NSMenuDelegate {
                 performImageAction(action)
             }
         case .desktopItem:
-            guard let name = destination.itemName else { return }
+            guard let name = destination.itemName, let url = destination.itemURL,
+                  !desktopInteractionInProgress else { return }
+            desktopInteractionInProgress = true
             remember(
                 .desktop,
                 zhHans: "我发现了桌面上的“\(name)”",
@@ -2089,33 +2010,152 @@ final class PetController: NSObject, NSMenuDelegate {
             let inspectAction = PetAssetCatalog.imageActions.first(where: {
                 $0.id == "gesture.head-tilt" || $0.id == "gesture.review"
             })
-            let mayMove = allowDesktopIconRearrangement
-                && ProcessInfo.processInfo.environment["FURBALL_DESKTOP_INTERACTION_DRY_RUN"] != "1"
-            let carryAndMove: () -> Void = { [weak self] in
-                guard let self else { return }
-                guard mayMove, let screen = self.panel.screen ?? NSScreen.main else { return }
-                self.showSpeech(self.appLanguage.carryingDesktopItemSpeech(name))
-                let moveFile: () -> Void = { [weak self] in
-                    guard let self else { return }
-                    let moved = self.desktopInteractionService.nudgeDesktopItem(
-                        named: name,
-                        from: destination.point,
-                        in: screen
-                    )
-                    self.showSpeech(self.appLanguage.movedDesktopItemSpeech(name, succeeded: moved))
-                }
-                if let carryAction = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.working" }) {
-                    self.performImageAction(carryAction, completion: moveFile)
-                } else {
-                    moveFile()
-                }
+            let beginCarry: () -> Void = { [weak self] in
+                self?.beginDesktopItemCarry(destination: destination, url: url, name: name)
             }
-            if let inspectAction {
-                performImageAction(inspectAction, completion: carryAndMove)
+            if let inspectAction, renderer.visualMode == .images {
+                performImageAction(inspectAction, completion: beginCarry)
             } else {
-                carryAndMove()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in
+                    self?.beginDesktopItemCarry(destination: destination, url: url, name: name)
+                }
             }
         }
+    }
+
+    private func beginDesktopItemCarry(
+        destination: DesktopInteractionService.Destination,
+        url: URL,
+        name: String
+    ) {
+        guard desktopInteractionInProgress,
+              let screen = panel.screen ?? NSScreen.main else {
+            cancelDesktopItemInteraction()
+            return
+        }
+        showSpeech(appLanguage.carryingDesktopItemSpeech(name))
+        let startOrigin = panel.frame.origin
+        let visible = screen.visibleFrame
+        let horizontalRoomRight = visible.maxX - panel.frame.maxX
+        let horizontalRoomLeft = panel.frame.minX - visible.minX
+        let direction: CGFloat = horizontalRoomRight >= horizontalRoomLeft ? 1 : -1
+        actionFacing = direction > 0 ? .right : .left
+        locomotionDirection = direction
+        renderer.setMirrored(actionFacing.isMirrored)
+
+        let travel = min(150 * petScale, max(78 * petScale, max(horizontalRoomRight, horizontalRoomLeft) * 0.34))
+        let proposedEnd = NSPoint(
+            x: startOrigin.x + direction * travel,
+            y: startOrigin.y + CGFloat.random(in: (-22 * petScale)...(22 * petScale))
+        )
+        let endOrigin = clampedOrigin(proposedEnd)
+        desktopCarriedItem.show(
+            url: url,
+            near: destination.point,
+            level: panel.level,
+            petScale: petScale
+        )
+
+        desktopInteractionTimer?.invalidate()
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let biteDuration: TimeInterval = 0.52
+        let pawPlantDelay: TimeInterval = renderer.visualMode == .video ? 0.10 : 0.035
+        let travelDuration: TimeInterval = 1.34
+        var locomotionStarted = false
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.desktopInteractionInProgress else {
+                    timer.invalidate()
+                    return
+                }
+                let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+                if elapsed < biteDuration {
+                    let progress = CGFloat(elapsed / biteDuration)
+                    self.desktopCarriedItem.update(
+                        anchor: self.desktopCarryMouthPoint(direction: direction),
+                        phase: progress,
+                        biting: true
+                    )
+                    return
+                }
+                if !locomotionStarted {
+                    locomotionStarted = true
+                    self.setLocomotionMode(.walk, direction: direction)
+                }
+                let walkingElapsed = elapsed - biteDuration
+                if walkingElapsed < pawPlantDelay {
+                    self.desktopCarriedItem.update(
+                        anchor: self.desktopCarryMouthPoint(direction: direction),
+                        phase: 0,
+                        biting: false
+                    )
+                    return
+                }
+                let linear = min(1, max(0, (walkingElapsed - pawPlantDelay) / travelDuration))
+                let eased = linear * linear * (3 - 2 * linear)
+                let origin = NSPoint(
+                    x: startOrigin.x + (endOrigin.x - startOrigin.x) * eased,
+                    y: startOrigin.y + (endOrigin.y - startOrigin.y) * eased
+                )
+                self.panel.setFrameOrigin(origin)
+                self.desktopCarriedItem.update(
+                    anchor: self.desktopCarryMouthPoint(direction: direction),
+                    phase: CGFloat(linear),
+                    biting: false
+                )
+                self.repositionSpeechBubble(refreshSilhouette: false)
+                if linear >= 1 {
+                    timer.invalidate()
+                    self.finishDesktopItemCarry(name: name)
+                }
+            }
+        }
+        desktopInteractionTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func desktopCarryMouthPoint(direction: CGFloat) -> NSPoint {
+        let local = renderer.visibleContentRect() ?? renderer.view.bounds
+        let x = direction > 0
+            ? panel.frame.minX + local.maxX - local.width * 0.08
+            : panel.frame.minX + local.minX + local.width * 0.08
+        let y = panel.frame.minY + local.minY + local.height * 0.57
+        return NSPoint(x: x, y: y)
+    }
+
+    private func finishDesktopItemCarry(name: String) {
+        desktopInteractionTimer?.invalidate()
+        desktopInteractionTimer = nil
+        setLocomotionMode(.none, direction: locomotionDirection)
+        let mayMoveFinderItem = allowDesktopIconRearrangement
+            && ProcessInfo.processInfo.environment["FURBALL_DESKTOP_INTERACTION_DRY_RUN"] != "1"
+        let moved: Bool
+        if mayMoveFinderItem, let screen = panel.screen ?? NSScreen.main {
+            moved = desktopInteractionService.nudgeDesktopItem(
+                named: name,
+                from: desktopCarriedItem.center,
+                in: screen
+            )
+        } else {
+            moved = false
+        }
+        desktopCarriedItem.hide()
+        desktopInteractionInProgress = false
+        freeRoamPauseUntil = ProcessInfo.processInfo.systemUptime + 2.4
+        if mayMoveFinderItem {
+            showSpeech(appLanguage.movedDesktopItemSpeech(name, succeeded: moved))
+        } else {
+            showSpeech(appLanguage == .simplifiedChinese
+                ? "嘿嘿，我叼着“\(name)”散了一小圈步，又乖乖放回去啦。"
+                : "Hehe—I carried “\(name)” for a tiny walk, then put it safely back.")
+        }
+    }
+
+    private func cancelDesktopItemInteraction() {
+        desktopInteractionTimer?.invalidate()
+        desktopInteractionTimer = nil
+        desktopCarriedItem.hide(animated: false)
+        desktopInteractionInProgress = false
     }
 
     @discardableResult
@@ -2323,7 +2363,7 @@ final class PetController: NSObject, NSMenuDelegate {
             actionFacing = locomotionDirection > 0 ? .right : .left
         }
 
-        let canChangeMode = now - lastLocomotionChangeTime >= 0.70
+        let canChangeMode = now - lastLocomotionChangeTime >= 0.28
             || desiredMode == .none
             || locomotionMode == .none
         if desiredMode == locomotionMode {
@@ -2334,7 +2374,7 @@ final class PetController: NSObject, NSMenuDelegate {
         } else if pendingLocomotionMode != desiredMode {
             pendingLocomotionMode = desiredMode
             pendingLocomotionSince = now
-        } else if canChangeMode, now - pendingLocomotionSince >= 0.18 {
+        } else if canChangeMode, now - pendingLocomotionSince >= 0.075 {
             pendingLocomotionMode = nil
             setLocomotionMode(desiredMode, direction: locomotionDirection)
         }
@@ -2353,7 +2393,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 0.01,
                 renderer.visualMode == .video
                     ? locomotionMode.startTranslationRampDuration
-                    : 0.14
+                    : 0.07
             )
             let linearProgress = min(1, max(0, (now - locomotionTranslationStartTime) / rampDuration))
             translationProgress = CGFloat(linearProgress * linearProgress * (3 - 2 * linearProgress))
@@ -2370,7 +2410,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 y: deltaY / distance * targetSpeed
             )
         }
-        let velocityResponse = locomotionMode == .none ? 6.5 : 4.2
+        let velocityResponse = locomotionMode == .none ? 18.0 : 12.0
         let response = min(1, deltaTime * velocityResponse)
         locomotionVelocity.x += (targetVelocity.x - locomotionVelocity.x) * response
         locomotionVelocity.y += (targetVelocity.y - locomotionVelocity.y) * response
@@ -2797,21 +2837,19 @@ final class PetController: NSObject, NSMenuDelegate {
         requestSleep()
     }
 
-    @objc private func selectLanguage(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let language = AppLanguage(rawValue: rawValue),
-              language != appLanguage else { return }
-
+    private func changeLanguage(to language: AppLanguage) {
+        guard language != appLanguage else { return }
+        let reopenSettings = settingsWindowController?.window?.isVisible == true
+        settingsWindowController?.close()
+        settingsWindowController = nil
         appLanguage = language
         statusItem?.button?.toolTip = language.statusTooltip
         rebuildMenu()
         refreshAppearanceSettings()
         showSpeech(language.languageChanged)
-    }
-
-    @objc private func selectAppearanceFromMenu(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        _ = switchAppearance(to: id)
+        if reopenSettings {
+            DispatchQueue.main.async { [weak self] in self?.showVisualSettings() }
+        }
     }
 
     @objc private func showVisualSettings() {
@@ -2847,12 +2885,65 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.toggleImageFacing()
             }
             controller.onDesktopInteractionsChanged = { [weak self] enabled in
-                self?.desktopInteractionsEnabled = enabled
-                self?.refreshAppearanceSettings()
+                guard let self else { return }
+                self.desktopInteractionsEnabled = enabled
+                if !enabled {
+                    self.cancelDesktopItemInteraction()
+                    self.setLocomotionMode(.none, direction: self.locomotionDirection)
+                }
+                self.refreshAppearanceSettings()
             }
             controller.onIconRearrangementChanged = { [weak self] enabled in
                 self?.allowDesktopIconRearrangement = enabled
                 self?.refreshAppearanceSettings()
+            }
+            controller.onAlwaysOnTopChanged = { [weak self] enabled in
+                guard let self else { return }
+                self.panel.level = enabled ? .floating : .normal
+                UserDefaults.standard.set(enabled, forKey: PreferenceKey.alwaysOnTop)
+                self.speechBubble.setLevel(self.panel.level)
+                self.refreshAppearanceSettings()
+            }
+            controller.onPetScaleChanged = { [weak self] scale in
+                self?.setScale(scale)
+                self?.refreshAppearanceSettings()
+            }
+            controller.onPassThroughChanged = { [weak self] enabled in
+                guard let self else { return }
+                self.fullPassThrough = enabled
+                self.updateClickThrough()
+                self.refreshAppearanceSettings()
+            }
+            controller.onAutoBehaviorChanged = { [weak self] enabled in
+                guard let self, self.autoBehavior != enabled else { return }
+                self.toggleAutoBehavior()
+                self.refreshAppearanceSettings()
+            }
+            controller.onLanguageChanged = { [weak self] language in
+                self?.changeLanguage(to: language)
+            }
+            controller.onSpeechBubblesChanged = { [weak self] enabled in
+                guard let self else { return }
+                self.speechBubblesEnabled = enabled
+                if enabled {
+                    self.scheduleNextSpeech(after: 0.8)
+                } else {
+                    self.speechTimer?.invalidate()
+                    self.hideSpeechBubble()
+                }
+                self.refreshAppearanceSettings()
+            }
+            controller.onTalkativenessChanged = { [weak self] value in
+                guard let self else { return }
+                self.talkativeness = min(1, max(0, value))
+                self.scheduleNextSpeech()
+            }
+            controller.onPreviewSpeech = { [weak self] in
+                guard let self else { return }
+                let preview = self.appLanguage == .simplifiedChinese
+                    ? "我在这儿呀。要不要一起看看今天的桌面？"
+                    : "I’m right here. Shall we explore the desktop together?"
+                self.showSpeech(preview)
             }
             controller.onSelectPet = { [weak self] id in
                 self?.switchPet(to: id) ?? false
@@ -2864,7 +2955,10 @@ final class PetController: NSObject, NSMenuDelegate {
             }
             settingsWindowController = controller
         }
-        controller.present(section: .appearance)
+        let qaSection = ProcessInfo.processInfo.environment["FURBALL_SETTINGS_SECTION"]
+            .flatMap(Int.init)
+            .flatMap(UnifiedSettingsWindowController.Section.init(rawValue:))
+        controller.present(section: qaSection ?? .general)
     }
 
     @objc private func showPetLibrary() {
@@ -2899,6 +2993,12 @@ final class PetController: NSObject, NSMenuDelegate {
             directionalLook: imageFacingEnabled,
             desktopInteractions: desktopInteractionsEnabled,
             allowIconRearrangement: allowDesktopIconRearrangement,
+            alwaysOnTop: panel.level == .floating,
+            petScale: petScale,
+            fullPassThrough: fullPassThrough,
+            autoBehavior: autoBehavior,
+            speechBubbles: speechBubblesEnabled,
+            talkativeness: talkativeness,
             canChangeAppearance: !isTransitioning && locomotionMode == .none
         )
     }
@@ -3078,23 +3178,6 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         } else {
             switchToStandIdle()
-        }
-    }
-
-    @objc private func toggleCrossfade() {
-        renderer.crossfadeEnabled.toggle()
-    }
-
-    @objc private func toggleAlwaysOnTop() {
-        panel.level = panel.level == .floating ? .normal : .floating
-        speechBubble.setLevel(panel.level)
-    }
-
-    @objc private func sizeSliderChanged(_ sender: NSSlider) {
-        let scale = CGFloat(sender.doubleValue)
-        setScale(scale)
-        if let valueLabel = sender.superview?.viewWithTag(Self.sizeValueLabelTag) as? NSTextField {
-            valueLabel.stringValue = scaleLabel(scale)
         }
     }
 

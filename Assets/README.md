@@ -56,9 +56,9 @@
 | `slow-run-start/loop/stop.mov` | 慢跑起步、相位闭合循环、停步 | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | 快跑起步、相位闭合循环、停步 | `stand-to-fast-run-to-stand.mp4` |
 
-`Sources/Furball2D/Assets/Clips/image-views/` 另含从 `left-profile.mov` 到 `right-profile.mov` 的 9 个角度，其中 `front-near-profile-*` 和 `front-near-center-*` 是新增中间视角。每个文件都是由对应透明 PNG 导出的 1280×720、60 fps 单视角循环；运行时只逐级切换相邻视角，并在进入视频动作前逐级抵达匹配朝向的左或右侧面端口。右向待机、过渡、睡眠和步态由左侧面动作视频在运行时镜像得到。
+`Sources/Furball2D/Assets/Clips/image-views/` 另含从 `left-profile.mov` 到 `right-profile.mov` 的 9 个角度，其中 `front-near-profile-*` 和 `front-near-center-*` 是新增中间视角。每个文件都是由对应透明 PNG 导出的 1280×720、120 fps 单视角循环；运行时只逐级切换相邻视角，并在进入视频动作前逐级抵达匹配朝向的左或右侧面端口。右向待机、过渡、睡眠和步态由左侧面动作视频在运行时镜像得到。
 
-首次从站立进入走路、慢跑或快跑时，运行时分别等待约 0.32、0.16 和 0.32 秒再开始桌面位移，并使用平滑加速接入目标速度。这些时间来自起步片段接触表中的第一处明确步态，而不是从菜单点击时刻立即平移。
+起步片段已从第一处可见重心变化附近重新切入；首次从站立进入走路、慢跑或快跑时，运行时只分别等待约 0.12、0.07 和 0.10 秒，再用约 0.18、0.13 和 0.10 秒的平滑加速接入目标速度。这样既避免站立帧滑行，也减少鼠标追随的体感延迟。
 
 这些导出文件可以由 `Scripts/build-assets.sh` 完整重建。移动素材按各自绿幕颜色抠像，并对 start / loop / stop 的首末帧分别归一化主体高度、Alpha 中心和脚底基线；循环段使用相同落脚相位且不倒放。校正通过 1600×900 透明工作画布平滑完成，最后裁回标准画布，不会使用固定缩放值硬套整条原片。移动素材还会按源视频共享单调色彩曲线，匹配 `stand-idle` 的黑毛、棕毛和白毛锚点；9 个图片视角也在导出时分别匹配同一参考。可用 `Scripts/audit-png-color.swift` 对透明 PNG 代表帧复测。切点、端口参数、循环策略、色彩参考和画布参数记录在脚本与 `Sources/Furball2D/Assets/manifest.json` 中。
 
@@ -133,9 +133,9 @@ The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4
 | `slow-run-start/loop/stop.mov` | Jog start, phase-closed loop, and stop | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | Run start, phase-closed loop, and stop | `stand-to-fast-run-to-stand.mp4` |
 
-`Sources/Furball2D/Assets/Clips/image-views/` additionally contains nine angles from `left-profile.mov` through `right-profile.mov`; the `front-near-profile-*` and `front-near-center-*` files are the added intermediate views. Each is a 1280×720, 60 fps loop exported from its matching transparent PNG. At runtime the app changes only to an adjacent view and reaches the left- or right-profile port matching the next video action. Right-facing idle, transition, sleep, and gait footage is produced by mirroring the left-profile clips at runtime.
+`Sources/Furball2D/Assets/Clips/image-views/` additionally contains nine angles from `left-profile.mov` through `right-profile.mov`; the `front-near-profile-*` and `front-near-center-*` files are the added intermediate views. Each is a 1280×720, 120 fps loop exported from its matching transparent PNG. At runtime the app changes only to an adjacent view and reaches the left- or right-profile port matching the next video action. Right-facing idle, transition, sleep, and gait footage is produced by mirroring the left-profile clips at runtime.
 
-On a fresh transition from standing to walking, jogging, or running, runtime translation waits approximately 0.32, 0.16, or 0.32 seconds respectively, then ramps smoothly to the target speed. These offsets come from the first clear gait motion in each start-clip contact sheet rather than translating immediately when the menu action occurs.
+The start clips now begin near their first visible weight shift. On a fresh transition from standing to walking, jogging, or running, runtime translation waits only about 0.12, 0.07, or 0.10 seconds and ramps in over roughly 0.18, 0.13, or 0.10 seconds. This preserves planted-paw contact without making cursor response feel delayed.
 
 `Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Every locomotion source also shares one monotonic grading curve across start / loop / stop, matching the black, tan, and white fur anchors from `stand-idle`; all nine image views independently target the same reference during export. Use `Scripts/audit-png-color.swift` to re-audit representative transparent PNG frames. Cut points, port parameters, color references, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/manifest.json`.
 

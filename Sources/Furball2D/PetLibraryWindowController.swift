@@ -117,12 +117,16 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         segmented.selectedSegment = 0
         libraryPage.isHidden = false
         creatorPage.isHidden = true
+        libraryPage.layoutSubtreeIfNeeded()
+        VisualQACapture.schedule(view: libraryPage, name: "pet-library-embedded")
     }
 
     func showCreatorEmbedded() {
         segmented.selectedSegment = 1
         libraryPage.isHidden = true
         creatorPage.isHidden = false
+        creatorPage.layoutSubtreeIfNeeded()
+        VisualQACapture.schedule(view: creatorPage, name: "pet-creator-embedded")
     }
 
     /// Transfers the library/creator page into the unified Settings window.
@@ -256,7 +260,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             personalityHeading, personalitySummary, personalityStack,
             stateHeading, stateStack,
             memoryHeader, memoryStack,
-            NSView(), buttonRow
+            buttonRow
         ])
         detailsStack.orientation = .vertical
         detailsStack.alignment = .leading
@@ -266,7 +270,17 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         detailsStack.setCustomSpacing(15, after: personalityStack)
         detailsStack.setCustomSpacing(15, after: stateStack)
         detailsStack.translatesAutoresizingMaskIntoConstraints = false
-        details.addSubview(detailsStack)
+        let detailsDocument = NSView()
+        detailsDocument.translatesAutoresizingMaskIntoConstraints = false
+        detailsDocument.addSubview(detailsStack)
+        let detailsScroll = NSScrollView()
+        detailsScroll.documentView = detailsDocument
+        detailsScroll.hasVerticalScroller = true
+        detailsScroll.autohidesScrollers = true
+        detailsScroll.drawsBackground = false
+        detailsScroll.borderType = .noBorder
+        detailsScroll.translatesAutoresizingMaskIntoConstraints = false
+        details.addSubview(detailsScroll)
 
         libraryPage.addSubview(sidebar)
         libraryPage.addSubview(details)
@@ -286,10 +300,15 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             details.trailingAnchor.constraint(equalTo: libraryPage.trailingAnchor),
             details.topAnchor.constraint(equalTo: libraryPage.topAnchor),
             details.bottomAnchor.constraint(equalTo: libraryPage.bottomAnchor),
-            detailsStack.leadingAnchor.constraint(equalTo: details.leadingAnchor, constant: 34),
-            detailsStack.trailingAnchor.constraint(equalTo: details.trailingAnchor, constant: -34),
-            detailsStack.topAnchor.constraint(equalTo: details.topAnchor, constant: 32),
-            detailsStack.bottomAnchor.constraint(equalTo: details.bottomAnchor, constant: -24),
+            detailsScroll.leadingAnchor.constraint(equalTo: details.leadingAnchor),
+            detailsScroll.trailingAnchor.constraint(equalTo: details.trailingAnchor),
+            detailsScroll.topAnchor.constraint(equalTo: details.topAnchor),
+            detailsScroll.bottomAnchor.constraint(equalTo: details.bottomAnchor),
+            detailsDocument.widthAnchor.constraint(equalTo: detailsScroll.contentView.widthAnchor),
+            detailsStack.leadingAnchor.constraint(equalTo: detailsDocument.leadingAnchor, constant: 34),
+            detailsStack.trailingAnchor.constraint(equalTo: detailsDocument.trailingAnchor, constant: -34),
+            detailsStack.topAnchor.constraint(equalTo: detailsDocument.topAnchor, constant: 32),
+            detailsStack.bottomAnchor.constraint(equalTo: detailsDocument.bottomAnchor, constant: -28),
             appearanceStack.widthAnchor.constraint(equalTo: detailsStack.widthAnchor),
             personalitySummary.widthAnchor.constraint(equalTo: detailsStack.widthAnchor),
             personalityStack.widthAnchor.constraint(equalTo: detailsStack.widthAnchor),

@@ -12,7 +12,7 @@ Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠�
 - 根据姿态随机显示可爱对话；气泡会按宠物大小缩放、跟随动作，并依据当前图片或视频的 Alpha 轮廓自动避开身体。
 - 菜单中的“语言 / Language”可即时切换简体中文或 English，并记住选择。
 - 宠物大小支持 60%–140% 无级调节。
-- “外观”菜单可在真实连续动画、可爱 2D 和写实 2D 之间即时切换；统一“设置”窗口用左侧栏整合视觉与动画、宠物素材库和创建宠物，视频专用的柔和过渡不会出现在图片模式中。
+- “设置”窗口使用左侧栏直接提供通用、外观、行为、桌面互动、对话、宠物素材库和创建宠物；顶栏菜单只保留即时动作入口，视频专用的柔和过渡不会出现在图片模式中。
 - “宠物素材库”可切换多只宠物、导入/导出经过验证的 `.furballpet` 包，并能从 6–12 张真实照片导出标准创建请求或单独下载双语创建 Skill。
 - 图片模式优先读取 8×11、每格 384×416 的 2× 高清 v2 透明 WebP 图集，以可变逐帧时长播放真实步态、眨眼和 16 个菜单动作；旧的 192×208 图集与 960×540 PNG 只作为兼容回退。
 - 透明区域自动穿透鼠标，也可开启完全穿透。
@@ -48,7 +48,7 @@ dist/Furball2D.zip
 
 应用图标源文件保存在 `Support/AppIcon.png`。需要替换图标时，放入新的正方形图片并运行 `./Scripts/build-app-icon.sh`；打包脚本会将生成的多尺寸 `AppIcon.icns` 写入应用包。
 
-当前安装包包含 1280×720、60 fps 的 HEVC with Alpha 视频，以及可爱与写实两张 3072×4576 无损透明 WebP 高清图集。原始 24 fps 动作在抠像前使用双向运动补偿插帧；图集从完整高清动作行重新切格，不放大旧的 192×208 运行时格子。
+当前安装包包含 1280×720、120 fps 的 HEVC with Alpha 视频，以及可爱与写实两张 3072×4576 无损透明 WebP 高清图集。原始 24 fps 动作在抠像前使用双向运动补偿插帧；图集从完整高清动作行重新切格，不放大旧的 192×208 运行时格子。
 
 面向用户的 Pet Pack 创建 Skill 随安装包一起发布，也保存在 [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill)。它严格定义照片输入、两种图片风格、11 行图集、27 个标准语义槽位、16 方向、睡眠 flow、Alpha/身份连续性 QA 和导入步骤；每次增加动作都必须同步更新其中的 `ACTION_REGISTRY_VERSION`。
 
@@ -79,7 +79,7 @@ Sources/Furball2D/Assets/
 └── manifest.json                    # 能力、图片动作、视频动作与循环属性
 ```
 
-源动作链统一使用 `left-profile` 视角，右向动作由运行时镜像得到。素材预处理输出为 1280×720、60 fps、HEVC with Alpha。站立、坐姿和趴卧待机使用首尾去重的正放/倒放循环；睡眠只截取低动作呼吸窗口；过渡和移动片段会在透明工作画布上平滑校正主体尺度、Alpha 中心与脚底锚点。
+源动作链统一使用 `left-profile` 视角，右向动作由运行时镜像得到。素材预处理输出为 1280×720、120 fps、HEVC with Alpha。站立、坐姿和趴卧待机使用首尾去重的正放/倒放循环；睡眠只截取低动作呼吸窗口；过渡和移动片段会在透明工作画布上平滑校正主体尺度、Alpha 中心与脚底锚点。
 
 完整旧文件名映射、备用素材与重复文件说明见 [Assets/README.md](Assets/README.md)。生成新动作时优先使用 [generation-ready 参考图说明](Assets/SourceImagesForAIVideo/README.md)，后续 Agent 在替换视频前必须阅读 [AGENTS.md](AGENTS.md)。
 
@@ -90,7 +90,7 @@ Sources/Furball2D/Assets/
 - 右键狗狗或点击菜单栏爪印：打开设置。
 - “宠物大小”：连续调节 60%–140%。
 - “外观”：在素材包实际提供的真实连续动画、可爱 2D 与写实 2D 之间切换。
-- “设置”：在一个带左侧栏的窗口中管理视觉与动画、宠物素材库和创建宠物；大小与置顶仍保留在菜单栏快捷项，仅真实连续动画显示视频混合设置。
+- “设置”：左侧栏直接管理通用、外观、行为、桌面互动、对话、宠物素材库和创建宠物；宠物大小与始终置顶也只在这里设置，仅真实连续动画显示视频混合设置。
 - “宠物素材库”：导入、导出、选择宠物；“创建 2D 宠物”接受 6–12 张照片，可调用本机已登录的 Codex 完成图片生成、逐项验证和自动导入，也可只导出给任意图片模型使用的标准请求与 Skill。
 - “宠物档案”：每只宠物保存可调的活力、好奇心、亲人和沉稳性格，以及会随休息、移动和互动变化的精力、探索欲与亲密度。最近三条短期记忆可见并可随时清除。
 - “可爱动作”：图片模式下显示素材包自带动作；视频模式、移动中或过渡中自动置灰。
@@ -100,7 +100,7 @@ Sources/Furball2D/Assets/
 - “跟随鼠标看向 16 个方向”：站立待机时同时使用鼠标的横向和纵向位置，每次只走一个相邻方向；进入走跑动作前再沿最短路径抵达对应左右侧面端口。
 - “追随鼠标（全方向走 / 跑）”：让狗狗沿二维方向追随鼠标，近距离走路、中距离慢跑、远距离或快速移动时快跑。
 - “自由漫游（全桌面）”：持续在当前桌面内随机走动；与“追随鼠标”互斥，关闭后恢复原先的自动作息。
-- “漫游时观察桌面物品”：允许图片宠物访问废纸篓和桌面文件；“允许叼动桌面图标”默认关闭，开启后会实际改变 Finder 桌面排列。
+- “桌面物品互动”：允许图片宠物发现桌面文件、做出撕咬动作、叼起真实文件图标的视觉副本并走一小段再放下；独立的“允许实际移动 Finder 图标”默认关闭，只有开启后才会改变桌面排列。
 - “自动作息（睡觉 / 巡游）”：无人互动时自行睡觉、醒来和进行一次短巡游；自由漫游期间会暂时挂起。
 - “柔和动作过渡”：启用或关闭短 Crossfade，方便比较动作边界。
 - “在鼠标旁丢个零食”：图片宠物会走、慢跑或快跑到鼠标位置，找到后执行闻闻动作。
@@ -110,7 +110,7 @@ Sources/Furball2D/Assets/
 
 ### 图片动画模式
 
-图片模式不是把 PNG 再编码成一秒视频。`PetImageAnimator` 支持两种帧源：Codex v2 图集单元格和旧版独立 PNG。图集由 `manifest.json` 声明行、帧数、每帧时长、循环、短溶解比例、左右真实步态、27 个语义绑定、16 个方向以及双语自定义动作。运行时一次解码 WebP，将使用到的格子铺到统一 16:9 小画布并缓存 Metal 纹理；真实走跑行不再叠加程序化 squash/stretch，桌面位移只保留 0.14 秒速度渐入。
+图片模式不是把 PNG 再编码成一秒视频。`PetImageAnimator` 支持两种帧源：Codex v2 图集单元格和旧版独立 PNG。图集由 `manifest.json` 声明行、帧数、每帧时长、循环、短溶解比例、左右真实步态、27 个语义绑定、16 个方向以及双语自定义动作。运行时一次解码 WebP，将使用到的格子铺到统一 16:9 小画布并缓存 Metal 纹理；真实走跑行不再叠加程序化 squash/stretch，桌面位移只保留约 0.07 秒速度渐入。
 
 可爱与写实图集保留 `spriteVersionNumber: 2` 的 8×11 语义布局，并使用 `assetScale: 2`：3072×4576、384×416 单元格；最后两行仍是完整 16 方向。旧 1× 图集只作为导入兼容路径。
 
@@ -130,7 +130,7 @@ Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 
 - Posture-aware cute dialogue; the speech bubble scales with the pet, follows its motion, and avoids the active image or video alpha silhouette.
 - Runtime Simplified Chinese or English selection under “语言 / Language”, persisted between launches.
 - Continuous pet sizing from 60% to 140%.
-- An Appearance submenu switches among Live Motion, Cute 2D, and Realistic 2D. One sidebar Settings window combines Visual & Motion, Pet Library, and Create Pet; video blending is absent in image mode.
+- Settings uses a sidebar with General, Appearance, Behavior, Desktop Interaction, Dialogue, Pet Library, and Create Pet pages. The menu-bar item now keeps only immediate actions, and video blending is absent in image mode.
 - Pet Library selects multiple pets, imports and exports validated `.furballpet` packages, and creates a standardized model request or downloadable bilingual Skill from 6–12 real photos.
 - Image mode prefers an 8×11 Codex v2 transparent WebP atlas with variable frame durations and real gait phases, blink, wave, jump, hopeful wait, search, review, and disappointed actions. Legacy 960×540 PNG sequences remain a compatibility fallback. There is no runtime keying or video decoding.
 - Alpha-aware mouse click-through, with an optional full pass-through mode.
@@ -138,7 +138,7 @@ Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 
 - Offline black/tan/white fur anchor matching keeps separate generation batches from becoming abruptly warmer or brighter during locomotion and view changes.
 - Real walk, jog, and run footage moves the pet in any desktop direction. Cursor-follow mode selects a gait from two-dimensional distance and cursor speed.
 - Free Roam chooses safe two-dimensional destinations across the current desktop, pauses briefly after each arrival, and then continues exploring.
-- While roaming, an image pet may sniff Trash or ask about a Desktop item. If the user explicitly enables Finder icon movement, it performs a carry gesture and nudges the nearby icon slightly.
+- With Desktop Item Interaction enabled, an image pet can discover a Desktop file, bite it, carry a live visual copy of its actual icon for a short walk, and set it back down. The separate Finder rearrangement permission remains off by default and is the only option that changes the real Desktop layout.
 - Cursor gaze uses 16 evenly spaced directions at 22.5° intervals. Eyes lead, then the head, neck, ears, and ruff follow; the idle pet walks the shortest adjacent-direction path instead of snapping across the circle.
 - A manifest-driven “Cute Actions” submenu exposes 16 actions, including Wave, Happy Jump, Head Tilt, Sniff, High Five, Stretch, Sneeze, Paw Tap, Happy Dance, Yawn, and Chase Tail. A custom pack can add or rename actions without changing Swift.
 - Image pets respond to the pointer: a short hover produces a curious head tilt, a double-click gives a high five, and Toss a Treat makes the pet walk/run in two dimensions to the cursor and sniff the treat.
@@ -166,7 +166,7 @@ dist/Furball2D.zip
 
 The app-icon source is stored at `Support/AppIcon.png`. To replace it, provide another square image and run `./Scripts/build-app-icon.sh`; the packaging script embeds the generated multi-resolution `AppIcon.icns` in the app bundle.
 
-The current package includes 1280×720/60 fps HEVC-with-alpha video plus separate Cute and Realistic 3072×4576 lossless transparent WebP atlases. Source 24 fps motion is bidirectionally motion-interpolated before keying, while atlas cells are rebuilt from complete high-resolution action rows instead of enlarging old runtime cells.
+The current package includes 1280×720/120 fps HEVC-with-alpha video plus separate Cute and Realistic 3072×4576 lossless transparent WebP atlases. Source 24 fps motion is bidirectionally motion-interpolated before keying, while atlas cells are rebuilt from complete high-resolution action rows instead of enlarging old runtime cells.
 
 The distributable Pet Pack creation Skill ships inside the app and lives at [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill). It strictly defines photo input, both image styles, the 11-row atlas, 27 semantic slots, 16 directions, sleep flow, identity/alpha QA, and import steps. Every action addition must update its `ACTION_REGISTRY_VERSION`.
 
@@ -197,7 +197,7 @@ Sources/Furball2D/Assets/
 └── manifest.json                    # Capabilities plus image/video action metadata
 ```
 
-The source action chain uses a consistent `left-profile` view; right-facing actions are produced by runtime mirroring. Preprocessed assets are 1280×720 at 60 fps in HEVC with Alpha. Stand, sit, and lie idles use endpoint-deduplicated forward/reverse loops. Sleep uses only a low-motion breathing window. Transition and locomotion clips are smoothly corrected on a transparent work canvas for subject scale, alpha center, and ground anchor.
+The source action chain uses a consistent `left-profile` view; right-facing actions are produced by runtime mirroring. Preprocessed assets are 1280×720 at 120 fps in HEVC with Alpha. Stand, sit, and lie idles use endpoint-deduplicated forward/reverse loops. Sleep uses only a low-motion breathing window. Transition and locomotion clips are smoothly corrected on a transparent work canvas for subject scale, alpha center, and ground anchor.
 
 See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate footage, and duplicate records. When generating new actions, start with the [generation-ready reference guide](Assets/SourceImagesForAIVideo/README.md). Any Agent replacing video assets must first read [AGENTS.md](AGENTS.md).
 
@@ -208,7 +208,7 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - Right-click the dog or click the menu-bar paw: open settings.
 - “Pet Size”: continuously adjust the pet from 60% to 140%.
 - “Appearance”: switch among the representations actually supplied by the current pet: Live Motion, Cute 2D, and Realistic 2D.
-- “Settings”: one sidebar window manages Visual & Motion, Pet Library, and Create Pet. Size and window level stay as quick menu-bar controls; video blending appears only for Live Motion.
+- “Settings”: the sidebar directly manages General, Appearance, Behavior, Desktop Interaction, Dialogue, Pet Library, and Create Pet. Pet size and window level live here instead of in the menu-bar item; video blending appears only for Live Motion.
 - “Pet Library”: import, export, and select pets. Create 2D Pet accepts 6–12 photos, can use a signed-in local Codex to generate images, validate every contract, and import automatically, or can export the standard request and Skill for any image-capable model.
 - “Pet Profile”: each pet keeps adjustable Vitality, Curiosity, Affection, and Composure traits plus dynamic Energy, Wonder, and Bond. The three newest short-term memories are visible and can be cleared at any time.
 - “Cute Actions”: shows pack-provided image actions in image mode and disables itself in video mode, while moving, or during a transition.
@@ -228,7 +228,7 @@ After a personality-dependent idle period, the dog sits, lies down, and sleeps. 
 
 ### Image animation mode
 
-Image mode does not re-encode PNGs as one-second videos. `PetImageAnimator` accepts Codex v2 atlas cells and legacy standalone PNGs. `manifest.json` declares rows, frame counts, per-frame durations, loops, short blend fractions, true left/right gait rows, all 27 semantic bindings, 16 look directions, and localized custom actions. The runtime decodes the WebP once, places requested cells on a shared 16:9 render canvas, and caches Metal textures. Real gait rows no longer receive procedural squash/stretch; desktop translation retains only the 0.14-second image-mode acceleration ramp.
+Image mode does not re-encode PNGs as one-second videos. `PetImageAnimator` accepts Codex v2 atlas cells and legacy standalone PNGs. `manifest.json` declares rows, frame counts, per-frame durations, loops, short blend fractions, true left/right gait rows, all 27 semantic bindings, 16 look directions, and localized custom actions. The runtime decodes the WebP once, places requested cells on a shared 16:9 render canvas, and caches Metal textures. Real gait rows no longer receive procedural squash/stretch; desktop translation retains only an approximately 0.07-second image-mode acceleration ramp.
 
 Both built-in image atlases retain the v2 8×11 semantic layout at `assetScale: 2`: 3072×4576 with 384×416 cells. The final two rows contain all 16 gaze directions. The legacy 1× form remains accepted for imports but is no longer the production default.
 

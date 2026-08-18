@@ -66,8 +66,8 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
     layout = atlas.get("layout", {})
     scale = atlas.get("assetScale", 2)
     expected = {"columns": 8, "rows": 11, "cellWidth": 192 * scale, "cellHeight": 208 * scale}
-    if scale not in (1, 2) or layout != expected:
-        fail("atlas layout must be 8x11 with 384x416 cells for production (192x208 legacy is accepted)")
+    if scale != 2 or layout != expected:
+        fail("creator output must use assetScale 2: 8x11 with native 384x416 cells")
     file = atlas.get("file")
     if not isinstance(file, str):
         fail("spriteAtlas.file is required")
@@ -108,6 +108,25 @@ def main() -> None:
     capabilities = manifest.get("capabilities", {})
     if capabilities.get("imageMode") is not True or capabilities.get("videoMode") is not False:
         fail("creator output must be imageMode=true and videoMode=false")
+
+    clarity_path = root / "QA" / "clarity.json"
+    if not clarity_path.is_file():
+        fail("QA/clarity.json is required")
+    clarity = json.loads(clarity_path.read_text("utf-8"))
+    required_clarity = {
+        "nativeCellWidth": 384,
+        "nativeCellHeight": 416,
+        "sourceRowsGeneratedNatively": True,
+        "losslessAtlas": True,
+        "reviewedAtNativeScale": True,
+    }
+    for key, expected in required_clarity.items():
+        if clarity.get(key) != expected:
+            fail(f"QA/clarity.json: {key} must be {expected!r}")
+    if float(clarity.get("maximumRegistrationUpscale", 99)) > 1.25:
+        fail("QA/clarity.json: maximumRegistrationUpscale must be <= 1.25")
+    if clarity.get("rejectedArtifacts") != []:
+        fail("QA/clarity.json: rejectedArtifacts must be an empty array after repair")
 
     semantic: set[str] = set()
     atlas_files: set[str] = set()

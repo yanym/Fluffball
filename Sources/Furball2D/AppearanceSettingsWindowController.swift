@@ -10,11 +10,25 @@ struct AppearanceSettingsSnapshot {
     let directionalLook: Bool
     let desktopInteractions: Bool
     let allowIconRearrangement: Bool
+    let alwaysOnTop: Bool
+    let petScale: CGFloat
+    let fullPassThrough: Bool
+    let autoBehavior: Bool
+    let speechBubbles: Bool
+    let talkativeness: Double
     let canChangeAppearance: Bool
 }
 
 @MainActor
 final class AppearanceSettingsWindowController: NSWindowController, NSWindowDelegate {
+    enum Page: CaseIterable {
+        case general
+        case appearance
+        case behavior
+        case interaction
+        case speech
+    }
+
     var onAppearanceSelected: ((String) -> Bool)?
     var onCrossfadeChanged: ((Bool) -> Void)?
     var onFollowCursorChanged: ((Bool) -> Void)?
@@ -22,28 +36,37 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onDirectionalLookChanged: ((Bool) -> Void)?
     var onDesktopInteractionsChanged: ((Bool) -> Void)?
     var onIconRearrangementChanged: ((Bool) -> Void)?
+    var onAlwaysOnTopChanged: ((Bool) -> Void)?
+    var onPetScaleChanged: ((CGFloat) -> Void)?
+    var onPassThroughChanged: ((Bool) -> Void)?
+    var onAutoBehaviorChanged: ((Bool) -> Void)?
+    var onLanguageChanged: ((AppLanguage) -> Void)?
+    var onSpeechBubblesChanged: ((Bool) -> Void)?
+    var onTalkativenessChanged: ((Double) -> Void)?
+    var onPreviewSpeech: (() -> Void)?
 
     private var snapshot: AppearanceSettingsSnapshot
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let subtitleLabel = NSTextField(wrappingLabelWithString: "")
-    private let appearanceSectionLabel = NSTextField(labelWithString: "")
-    private let behaviorSectionLabel = NSTextField(labelWithString: "")
-    private let videoSectionLabel = NSTextField(labelWithString: "")
+    private var pages: [Page: NSView] = [:]
+    private var selectedPage: Page = .general
     private let imageModeNote = NSTextField(wrappingLabelWithString: "")
     private let appearanceStack = NSStackView()
-    private let videoOptionsStack = NSStackView()
     private let crossfadeSwitch = NSSwitch()
+    private weak var crossfadeRow: NSView?
     private let followSwitch = NSSwitch()
     private let roamSwitch = NSSwitch()
     private let lookSwitch = NSSwitch()
     private let desktopInteractionsSwitch = NSSwitch()
     private let iconRearrangementSwitch = NSSwitch()
-    private let crossfadeLabel = NSTextField(labelWithString: "")
-    private let followLabel = NSTextField(labelWithString: "")
-    private let roamLabel = NSTextField(labelWithString: "")
-    private let lookLabel = NSTextField(labelWithString: "")
-    private let desktopInteractionsLabel = NSTextField(labelWithString: "")
-    private let iconRearrangementLabel = NSTextField(labelWithString: "")
+    private let alwaysOnTopSwitch = NSSwitch()
+    private let passThroughSwitch = NSSwitch()
+    private let autoBehaviorSwitch = NSSwitch()
+    private let speechBubblesSwitch = NSSwitch()
+    private let petSizeSlider = NSSlider()
+    private let petSizeValue = NSTextField(labelWithString: "")
+    private let talkativenessSlider = NSSlider()
+    private let talkativenessValue = NSTextField(labelWithString: "")
+    private let languagePopup = NSPopUpButton()
+    private let previewSpeechButton = NSButton()
 
     init(snapshot: AppearanceSettingsSnapshot) {
         self.snapshot = snapshot
@@ -83,6 +106,11 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         VisualQACapture.schedule(view: window.contentView, name: "visual-settings")
     }
 
+    func show(page: Page) {
+        selectedPage = page
+        for (candidate, view) in pages { view.isHidden = candidate != page }
+    }
+
     /// Transfers the settings page into the unified Settings window while the
     /// controller continues to own its controls and callbacks.
     func contentViewForEmbedding() -> NSView {
@@ -101,100 +129,144 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         root.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = root
 
-        let main = makeMainContent()
-        root.addSubview(main)
-
-        NSLayoutConstraint.activate([
-            main.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            main.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            main.topAnchor.constraint(equalTo: root.topAnchor),
-            main.bottomAnchor.constraint(equalTo: root.bottomAnchor)
-        ])
+        for page in Page.allCases {
+            let view = makePage(page)
+            pages[page] = view
+            root.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+                view.topAnchor.constraint(equalTo: root.topAnchor),
+                view.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+            ])
+        }
+        show(page: selectedPage)
     }
 
-    private func makeMainContent() -> NSView {
+    private func makePage(_ page: Page) -> NSView {
         let main = NSView()
         main.translatesAutoresizingMaskIntoConstraints = false
+        let language = snapshot.language
+        let title = NSTextField(labelWithString: pageTitle(page, language: language))
+        title.font = .systemFont(ofSize: 27, weight: .bold)
+        let subtitle = NSTextField(wrappingLabelWithString: pageSubtitle(page, language: language))
+        subtitle.font = .systemFont(ofSize: 13)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.maximumNumberOfLines = 3
 
-        titleLabel.font = .systemFont(ofSize: 27, weight: .bold)
-        subtitleLabel.font = .systemFont(ofSize: 13)
-        subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.maximumNumberOfLines = 2
+        let body: NSView
+        switch page {
+        case .general: body = makeGeneralBox(language: language)
+        case .appearance: body = makeAppearanceContent(language: language)
+        case .behavior: body = makeBehaviorBox(language: language)
+        case .interaction: body = makeInteractionBox(language: language)
+        case .speech: body = makeSpeechBox(language: language)
+        }
 
-        appearanceSectionLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        behaviorSectionLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        videoSectionLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-
-        appearanceStack.orientation = .horizontal
-        appearanceStack.alignment = .top
-        appearanceStack.distribution = .fillEqually
-        appearanceStack.spacing = 10
-
-        let interactionBox = makeInteractionBox()
-
-        videoOptionsStack.orientation = .vertical
-        videoOptionsStack.spacing = 8
-        videoOptionsStack.alignment = .leading
-        videoOptionsStack.addArrangedSubview(videoSectionLabel)
-        videoOptionsStack.addArrangedSubview(makeToggleRow(label: crossfadeLabel, toggle: crossfadeSwitch))
-
-        imageModeNote.font = .systemFont(ofSize: 12)
-        imageModeNote.textColor = .tertiaryLabelColor
-        imageModeNote.maximumNumberOfLines = 2
-
-        let stack = NSStackView(views: [
-            titleLabel,
-            subtitleLabel,
-            appearanceSectionLabel,
-            appearanceStack,
-            behaviorSectionLabel,
-            interactionBox,
-            videoOptionsStack,
-            imageModeNote
-        ])
+        let stack = NSStackView(views: [title, subtitle, body])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
-        stack.setCustomSpacing(4, after: titleLabel)
-        stack.setCustomSpacing(20, after: subtitleLabel)
-        stack.setCustomSpacing(7, after: appearanceSectionLabel)
-        stack.setCustomSpacing(18, after: appearanceStack)
-        stack.setCustomSpacing(7, after: behaviorSectionLabel)
-        stack.setCustomSpacing(18, after: interactionBox)
+        stack.spacing = 20
+        stack.setCustomSpacing(5, after: title)
         stack.translatesAutoresizingMaskIntoConstraints = false
         main.addSubview(stack)
-
-        appearanceStack.translatesAutoresizingMaskIntoConstraints = false
-        interactionBox.translatesAutoresizingMaskIntoConstraints = false
+        body.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 30),
-            stack.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -30),
-            stack.topAnchor.constraint(equalTo: main.topAnchor, constant: 50),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: main.bottomAnchor, constant: -20),
-            appearanceStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            appearanceStack.heightAnchor.constraint(equalToConstant: 100),
-            interactionBox.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            stack.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 34),
+            stack.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -34),
+            stack.topAnchor.constraint(equalTo: main.topAnchor, constant: 52),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: main.bottomAnchor, constant: -28),
+            body.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         return main
     }
 
-    private func makeInteractionBox() -> NSView {
+    private func makeGeneralBox(language: AppLanguage) -> NSView {
+        languagePopup.removeAllItems()
+        AppLanguage.allCases.forEach { languagePopup.addItem(withTitle: $0.displayName) }
+        languagePopup.target = self
+        languagePopup.action = #selector(languageChanged(_:))
+        petSizeSlider.minValue = 0.6
+        petSizeSlider.maxValue = 1.4
+        petSizeSlider.isContinuous = true
+        petSizeSlider.target = self
+        petSizeSlider.action = #selector(petSizeChanged(_:))
+        let rows = NSStackView(views: [
+            makeValueRow(title: language == .simplifiedChinese ? "语言" : "Language", control: languagePopup),
+            separator(),
+            makeSliderRow(title: language == .simplifiedChinese ? "宠物大小" : "Pet Size", slider: petSizeSlider, value: petSizeValue),
+            separator(),
+            makeToggleRow(title: language == .simplifiedChinese ? "始终置顶" : "Always on Top", toggle: alwaysOnTopSwitch, action: #selector(alwaysOnTopChanged(_:))),
+            separator(),
+            makeToggleRow(title: language == .simplifiedChinese ? "完全鼠标穿透" : "Click Through Completely", toggle: passThroughSwitch, action: #selector(passThroughChanged(_:))),
+            separator(),
+            makeToggleRow(title: language == .simplifiedChinese ? "自动作息与活动" : "Autonomous Routine", toggle: autoBehaviorSwitch, action: #selector(autoBehaviorChanged(_:)))
+        ])
+        return boxed(rows)
+    }
+
+    private func makeAppearanceContent(language: AppLanguage) -> NSView {
+        appearanceStack.orientation = .horizontal
+        appearanceStack.alignment = .top
+        appearanceStack.distribution = .fillEqually
+        appearanceStack.spacing = 10
+        imageModeNote.font = .systemFont(ofSize: 12)
+        imageModeNote.textColor = .tertiaryLabelColor
+        imageModeNote.maximumNumberOfLines = 2
+        let crossfadeRow = makeToggleRow(title: language.crossfadeMenu, toggle: crossfadeSwitch, action: #selector(crossfadeChanged(_:)))
+        self.crossfadeRow = crossfadeRow
+        let stack = NSStackView(views: [appearanceStack, crossfadeRow, imageModeNote])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        appearanceStack.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        appearanceStack.heightAnchor.constraint(equalToConstant: 116).isActive = true
+        crossfadeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        return stack
+    }
+
+    private func makeBehaviorBox(language: AppLanguage) -> NSView {
+        let rows = NSStackView(views: [
+            makeToggleRow(title: language.followCursorMenu, toggle: followSwitch, action: #selector(followChanged(_:))),
+            separator(),
+            makeToggleRow(title: language.freeRoamMenu, toggle: roamSwitch, action: #selector(roamChanged(_:))),
+            separator(),
+            makeToggleRow(title: language.imageFacingMenu, toggle: lookSwitch, action: #selector(lookChanged(_:)))
+        ])
+        return boxed(rows)
+    }
+
+    private func makeInteractionBox(language: AppLanguage) -> NSView {
         let box = settingsBox()
         let content = NSStackView(views: [
-            makeToggleRow(label: followLabel, toggle: followSwitch),
+            makeToggleRow(title: language == .simplifiedChinese ? "和桌面物品玩耍、撕咬与叼取" : "Play, bite, and carry desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
             separator(),
-            makeToggleRow(label: roamLabel, toggle: roamSwitch),
-            separator(),
-            makeToggleRow(label: lookLabel, toggle: lookSwitch),
-            separator(),
-            makeToggleRow(label: desktopInteractionsLabel, toggle: desktopInteractionsSwitch),
-            separator(),
-            makeToggleRow(label: iconRearrangementLabel, toggle: iconRearrangementSwitch)
+            makeToggleRow(title: language.iconRearrangementSetting, toggle: iconRearrangementSwitch, action: #selector(iconRearrangementChanged(_:)))
         ])
         content.orientation = .vertical
         content.spacing = 7
         pin(content, inside: box)
         return box
+    }
+
+    private func makeSpeechBox(language: AppLanguage) -> NSView {
+        talkativenessSlider.minValue = 0
+        talkativenessSlider.maxValue = 1
+        talkativenessSlider.isContinuous = true
+        talkativenessSlider.target = self
+        talkativenessSlider.action = #selector(talkativenessChanged(_:))
+        previewSpeechButton.title = language == .simplifiedChinese ? "预览新气泡" : "Preview Bubble"
+        previewSpeechButton.bezelStyle = .rounded
+        previewSpeechButton.target = self
+        previewSpeechButton.action = #selector(previewSpeech)
+        let rows = NSStackView(views: [
+            makeToggleRow(title: language == .simplifiedChinese ? "显示宠物对话" : "Show Pet Speech", toggle: speechBubblesSwitch, action: #selector(speechBubblesChanged(_:))),
+            separator(),
+            makeSliderRow(title: language == .simplifiedChinese ? "话痨程度" : "Talkativeness", slider: talkativenessSlider, value: talkativenessValue),
+            separator(),
+            makeValueRow(title: language == .simplifiedChinese ? "气泡样式与跟随效果" : "Bubble Style & Motion", control: previewSpeechButton)
+        ])
+        return boxed(rows)
     }
 
     private func settingsBox() -> NSView {
@@ -224,31 +296,84 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         ])
     }
 
-    private func makeToggleRow(label: NSTextField, toggle: NSSwitch) -> NSStackView {
+    private func makeToggleRow(title: String, toggle: NSSwitch, action: Selector) -> NSStackView {
+        let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13, weight: .medium)
         toggle.controlSize = .small
         toggle.target = self
+        toggle.action = action
         let stack = NSStackView(views: [label, NSView(), toggle])
         stack.orientation = .horizontal
         stack.distribution = .fill
         return stack
     }
 
+    private func makeValueRow(title: String, control: NSView) -> NSStackView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        let row = NSStackView(views: [label, NSView(), control])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        return row
+    }
+
+    private func makeSliderRow(title: String, slider: NSSlider, value: NSTextField) -> NSStackView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        value.textColor = .secondaryLabelColor
+        value.alignment = .right
+        value.setContentHuggingPriority(.required, for: .horizontal)
+        slider.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        let row = NSStackView(views: [label, NSView(), slider, value])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        return row
+    }
+
+    private func boxed(_ rows: NSStackView) -> NSView {
+        rows.orientation = .vertical
+        rows.spacing = 10
+        let box = settingsBox()
+        pin(rows, inside: box)
+        return box
+    }
+
+    private func pageTitle(_ page: Page, language: AppLanguage) -> String {
+        switch (page, language) {
+        case (.general, .simplifiedChinese): "常规"
+        case (.general, .english): "General"
+        case (.appearance, .simplifiedChinese): "外观与动画"
+        case (.appearance, .english): "Appearance & Animation"
+        case (.behavior, .simplifiedChinese): "行为"
+        case (.behavior, .english): "Behavior"
+        case (.interaction, .simplifiedChinese): "桌面互动"
+        case (.interaction, .english): "Desktop Interaction"
+        case (.speech, .simplifiedChinese): "对话"
+        case (.speech, .english): "Speech"
+        }
+    }
+
+    private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
+        switch (page, language) {
+        case (.general, .simplifiedChinese): "调整窗口、尺寸和应用语言。"
+        case (.general, .english): "Adjust window behavior, size, and app language."
+        case (.appearance, .simplifiedChinese): "选择素材外观；连续动画可单独控制自然转场。"
+        case (.appearance, .english): "Choose an asset appearance and tune transitions for continuous video."
+        case (.behavior, .simplifiedChinese): "决定它如何观察、跟随和自主探索桌面。"
+        case (.behavior, .english): "Choose how your pet watches, follows, and explores."
+        case (.interaction, .simplifiedChinese): "让它发现文件、轻轻撕咬并叼着走一小段。真正移动 Finder 图标仍需单独授权。"
+        case (.interaction, .english): "Let it discover, nibble, and carry files briefly. Moving Finder icons remains a separate opt-in."
+        case (.speech, .simplifiedChinese): "控制说话频率，并预览更克制、更精致的新气泡。"
+        case (.speech, .english): "Control speaking frequency and preview the calmer, polished bubble."
+        }
+    }
+
     private func applySnapshot() {
         guard isWindowLoaded else { return }
         let language = snapshot.language
-        titleLabel.stringValue = language.visualSettingsTitle
-        subtitleLabel.stringValue = language.visualSettingsSubtitle
-        appearanceSectionLabel.stringValue = language.appearanceSectionTitle
-        behaviorSectionLabel.stringValue = language.behaviorSectionTitle
-        videoSectionLabel.stringValue = language.videoOptionsTitle
         imageModeNote.stringValue = language.videoOptionsUnavailable
-        crossfadeLabel.stringValue = language.crossfadeMenu
-        followLabel.stringValue = language.followCursorMenu
-        roamLabel.stringValue = language.freeRoamMenu
-        lookLabel.stringValue = language.imageFacingMenu
-        desktopInteractionsLabel.stringValue = language.desktopInteractionsSetting
-        iconRearrangementLabel.stringValue = language.iconRearrangementSetting
         appearanceStack.arrangedSubviews.forEach {
             appearanceStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -272,6 +397,12 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                         directionalLook: self.snapshot.directionalLook,
                         desktopInteractions: self.snapshot.desktopInteractions,
                         allowIconRearrangement: self.snapshot.allowIconRearrangement,
+                        alwaysOnTop: self.snapshot.alwaysOnTop,
+                        petScale: self.snapshot.petScale,
+                        fullPassThrough: self.snapshot.fullPassThrough,
+                        autoBehavior: self.snapshot.autoBehavior,
+                        speechBubbles: self.snapshot.speechBubbles,
+                        talkativeness: self.snapshot.talkativeness,
                         canChangeAppearance: self.snapshot.canChangeAppearance
                     )
                     self.applySnapshot()
@@ -287,6 +418,17 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         desktopInteractionsSwitch.state = snapshot.desktopInteractions ? .on : .off
         iconRearrangementSwitch.state = snapshot.allowIconRearrangement ? .on : .off
         iconRearrangementSwitch.isEnabled = snapshot.desktopInteractions
+        alwaysOnTopSwitch.state = snapshot.alwaysOnTop ? .on : .off
+        passThroughSwitch.state = snapshot.fullPassThrough ? .on : .off
+        autoBehaviorSwitch.state = snapshot.autoBehavior ? .on : .off
+        speechBubblesSwitch.state = snapshot.speechBubbles ? .on : .off
+        petSizeSlider.doubleValue = Double(snapshot.petScale)
+        petSizeValue.stringValue = "\(Int((snapshot.petScale * 100).rounded()))%"
+        talkativenessSlider.doubleValue = snapshot.talkativeness
+        talkativenessValue.stringValue = "\(Int((snapshot.talkativeness * 100).rounded()))%"
+        talkativenessSlider.isEnabled = snapshot.speechBubbles
+        previewSpeechButton.isEnabled = snapshot.speechBubbles
+        languagePopup.selectItem(at: AppLanguage.allCases.firstIndex(of: language) ?? 0)
 
         crossfadeSwitch.target = self
         crossfadeSwitch.action = #selector(crossfadeChanged(_:))
@@ -304,7 +446,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         let isVideo = snapshot.appearances.first(where: {
             $0.id == snapshot.selectedAppearanceID
         })?.kind == .continuousVideo
-        videoOptionsStack.isHidden = !isVideo
+        crossfadeRow?.isHidden = !isVideo
         imageModeNote.isHidden = isVideo
     }
 
@@ -336,6 +478,29 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     @objc private func iconRearrangementChanged(_ sender: NSSwitch) {
         onIconRearrangementChanged?(sender.state == .on)
     }
+
+    @objc private func alwaysOnTopChanged(_ sender: NSSwitch) { onAlwaysOnTopChanged?(sender.state == .on) }
+    @objc private func passThroughChanged(_ sender: NSSwitch) { onPassThroughChanged?(sender.state == .on) }
+    @objc private func autoBehaviorChanged(_ sender: NSSwitch) { onAutoBehaviorChanged?(sender.state == .on) }
+    @objc private func petSizeChanged(_ sender: NSSlider) {
+        petSizeValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
+        onPetScaleChanged?(CGFloat(sender.doubleValue))
+    }
+    @objc private func languageChanged(_ sender: NSPopUpButton) {
+        guard sender.indexOfSelectedItem >= 0 else { return }
+        onLanguageChanged?(AppLanguage.allCases[sender.indexOfSelectedItem])
+    }
+    @objc private func speechBubblesChanged(_ sender: NSSwitch) {
+        let enabled = sender.state == .on
+        talkativenessSlider.isEnabled = enabled
+        previewSpeechButton.isEnabled = enabled
+        onSpeechBubblesChanged?(enabled)
+    }
+    @objc private func talkativenessChanged(_ sender: NSSlider) {
+        talkativenessValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
+        onTalkativenessChanged?(sender.doubleValue)
+    }
+    @objc private func previewSpeech() { onPreviewSpeech?() }
 
 }
 

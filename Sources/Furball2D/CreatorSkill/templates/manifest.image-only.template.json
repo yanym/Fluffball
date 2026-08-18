@@ -10,7 +10,7 @@
     "imageMode": true,
     "videoMode": false
   },
-  "formatVersion": 10,
+  "formatVersion": 11,
   "canvas": {
     "width": 960,
     "height": 540,

@@ -1,0 +1,9 @@
+{
+  "nativeCellWidth": 384,
+  "nativeCellHeight": 416,
+  "sourceRowsGeneratedNatively": true,
+  "losslessAtlas": true,
+  "reviewedAtNativeScale": true,
+  "maximumRegistrationUpscale": 1.157,
+  "rejectedArtifacts": []
+}

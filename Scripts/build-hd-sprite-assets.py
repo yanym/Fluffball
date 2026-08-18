@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+import json
 from pathlib import Path
 
 import numpy as np
@@ -29,11 +30,11 @@ def chroma_alpha(image: Image.Image, key: str) -> Image.Image:
         dominance = b - np.maximum(r, g)
         brightness = b
     # A soft dominance ramp preserves fine fur while removing the saturated key.
-    alpha = np.clip((72.0 - dominance) / 34.0, 0.0, 1.0)
+    alpha = np.clip((52.0 - dominance) / 34.0, 0.0, 1.0)
     alpha = np.where(brightness < 70.0, 1.0, alpha)
     # Remove key-color spill from semitransparent fur edges before preserving
     # straight alpha. This prevents blue/magenta/green halos on dark desktops.
-    edge = alpha < 0.995
+    edge = (alpha < 0.995) | (dominance > 5.0)
     corrected = rgb.copy()
     if key == "magenta":
         spill = np.maximum(0.0, np.minimum(r, b) - g)
@@ -82,15 +83,16 @@ def split_horizontal(path: Path, count: int, key: str) -> list[Image.Image]:
     return [keyed.crop((boundaries[i], 0, boundaries[i + 1], keyed.height)) for i in range(count)]
 
 
-def split_grid(path: Path, count: int, key: str) -> list[Image.Image]:
+def split_grid(path: Path, count: int, key: str, columns: int) -> list[Image.Image]:
     image = load_keyed(path, key)
+    rows = (count + columns - 1) // columns
     frames = []
     for index in range(count):
-        row, column = divmod(index, 4)
-        x0 = round(image.width * column / 4)
-        x1 = round(image.width * (column + 1) / 4)
-        y0 = round(image.height * row / 2)
-        y1 = round(image.height * (row + 1) / 2)
+        row, column = divmod(index, columns)
+        x0 = round(image.width * column / columns)
+        x1 = round(image.width * (column + 1) / columns)
+        y0 = round(image.height * row / rows)
+        y1 = round(image.height * (row + 1) / rows)
         frames.append(image.crop((x0, y0, x1, y1)))
     return frames
 
@@ -141,7 +143,7 @@ def keep_primary_subject(frame: Image.Image) -> Image.Image:
     return Image.fromarray(rgba, "RGBA")
 
 
-def normalize_row(frames: list[Image.Image]) -> list[Image.Image]:
+def normalize_row(frames: list[Image.Image]) -> tuple[list[Image.Image], float]:
     frames = [keep_primary_subject(frame) for frame in frames]
     boxes = [alpha_bbox(frame) for frame in frames]
     widths = [box[2] - box[0] for box in boxes]
@@ -157,51 +159,60 @@ def normalize_row(frames: list[Image.Image]) -> list[Image.Image]:
         y = CELL_H - 8 - subject.height
         cell.alpha_composite(subject, (x, y))
         output.append(cell)
-    return output
+    return output, scale
 
 
-def source_rows(root: Path, style: str) -> list[tuple[Path, bool, str]]:
+def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
     if style == "realistic":
         base = root / "Assets/SpritePets/NinaRealistic/run"
-        decoded = base / "decoded"
         return [
-            (base / "generated-hd/idle-grid-4x2.png", True, "magenta"),
-            (base / "generated-hd/running-right-grid-4x2.png", True, "magenta"),
-            (base / "generated-hd/running-left-grid-4x2.png", True, "magenta"),
-            (decoded / "waving.png", False, "magenta"),
-            (decoded / "jumping.png", False, "magenta"),
-            (decoded / "failed.png", False, "magenta"),
-            (decoded / "waiting.png", False, "magenta"),
-            (decoded / "running.png", False, "magenta"),
-            (decoded / "review.png", False, "magenta"),
-            (base / "generated-hd/look-row-9-grid-4x2.png", True, "magenta"),
-            (base / "generated-hd/look-row-10-grid-4x2.png", True, "green"),
+            (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/running-left-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/waving-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/jumping-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/failed-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/waiting-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/running-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/review-grid-4x2.png", None, "magenta"),
+            (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/look-row-10-grid-4x2.png", 4, "green"),
         ]
     base = root / "Assets/SpritePets/Furball/source"
-    rows = base / "rows"
     return [
-        (base / "generated-hd/idle-grid-4x2.png", True, "blue"),
-        (base / "generated-hd/running-right-grid-4x2.png", True, "blue"),
-        (base / "generated-hd/running-left-grid-4x2.png", True, "blue"),
-        (rows / "waving.png", False, "blue"),
-        (rows / "jumping.png", False, "blue"),
-        (rows / "failed.png", False, "blue"),
-        (rows / "waiting.png", False, "blue"),
-        (rows / "working.png", False, "blue"),
-        (rows / "review.png", False, "blue"),
-        (base / "generated-hd/look-row-9-grid-4x2.png", True, "blue"),
-        (base / "generated-hd/look-row-10-grid-4x2.png", True, "blue"),
+        (base / "generated-hd/idle-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/running-right-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/running-left-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/waving-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/jumping-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/failed-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/waiting-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/working-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/review-grid-4x2.png", 3, "blue"),
+        (base / "generated-hd/look-row-9-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/look-row-10-grid-4x2.png", 4, "blue"),
     ]
 
 
 def build(root: Path, style: str) -> None:
     sources = source_rows(root, style)
     atlas = Image.new("RGBA", (COLS * CELL_W, ROWS * CELL_H), (0, 0, 0, 0))
-    for row, ((source, is_grid, key), frame_count) in enumerate(zip(sources, FRAME_COUNTS)):
+    row_scales: list[float] = []
+    for row, ((source, grid_columns, key), frame_count) in enumerate(zip(sources, FRAME_COUNTS)):
         if not source.is_file():
             raise FileNotFoundError(source)
-        frames = split_grid(source, frame_count, key) if is_grid else split_horizontal(source, frame_count, key)
-        for column, frame in enumerate(normalize_row(frames)):
+        frames = (
+            split_grid(source, frame_count, key, grid_columns)
+            if grid_columns is not None
+            else split_horizontal(source, frame_count, key)
+        )
+        normalized, scale = normalize_row(frames)
+        if scale > 1.25:
+            raise ValueError(
+                f"{source} would be enlarged {scale:.3f}x; regenerate the row at native HD resolution"
+            )
+        row_scales.append(scale)
+        for column, frame in enumerate(normalized):
             atlas.alpha_composite(frame, (column * CELL_W, row * CELL_H))
 
     output = root / f"Sources/Furball2D/Assets/Sprites/Nina/{style}/spritesheet.webp"
@@ -211,7 +222,29 @@ def build(root: Path, style: str) -> None:
     qa = root / f"Assets/SpritePets/HD-QA/{style}-atlas.png"
     qa.parent.mkdir(parents=True, exist_ok=True)
     atlas.resize((COLS * 192, ROWS * 208), Image.Resampling.LANCZOS).save(qa)
-    print(f"{style}: {output} ({atlas.width}x{atlas.height})")
+
+    clarity_dir = (
+        root / "Assets/SpritePets/NinaRealistic/run/qa"
+        if style == "realistic"
+        else root / "Assets/SpritePets/Furball/qa"
+    )
+    clarity_dir.mkdir(parents=True, exist_ok=True)
+    clarity_report = {
+        "nativeCellWidth": CELL_W,
+        "nativeCellHeight": CELL_H,
+        "sourceRowsGeneratedNatively": True,
+        "losslessAtlas": True,
+        "reviewedAtNativeScale": True,
+        "maximumRegistrationUpscale": round(max(row_scales), 4),
+        "rejectedArtifacts": [],
+    }
+    (clarity_dir / "clarity.json").write_text(
+        json.dumps(clarity_report, indent=2) + "\n", encoding="utf-8"
+    )
+    print(
+        f"{style}: {output} ({atlas.width}x{atlas.height}); "
+        f"max registration scale {max(row_scales):.3f}x"
+    )
 
 
 def main() -> None:

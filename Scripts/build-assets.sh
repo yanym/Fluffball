@@ -13,15 +13,16 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# 商业版连续动画以 1280×720、60 fps 输出。原始 AI 视频是 24 fps，运动补帧必须
+# 连续动画以 1280×720、120 fps 输出，在 ProMotion 屏幕上保持与窗口位移同频。
+# 原始 AI 视频是 24 fps，运动补帧必须
 # 放在绿幕抠像之前：此时背景稳定、轮廓完整，光流不会在透明毛发边缘制造破洞。
 # 片尾克隆 0.10 秒只用于给双向光流提供未来帧，随后会裁回动作原始时长。
 TARGET_WIDTH=1280
 TARGET_HEIGHT=720
-TARGET_FPS=60
+TARGET_FPS=120
 SOURCE_CLEANUP="delogo=x=1122:y=538:w=96:h=96"
 FINISH_FILTERS="chromakey=0x3f985b:0.075:0.025,despill=green:mix=0.30:expand=0.05,unsharp=5:5:0.25:3:3:0,scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:flags=lanczos+accurate_rnd,format=bgra"
-ENCODE_OPTIONS=(-an -c:v hevc_videotoolbox -alpha_quality 0.95 -q:v 75 -tag:v hvc1)
+ENCODE_OPTIONS=(-an -c:v hevc_videotoolbox -alpha_quality 0.98 -q:v 82 -tag:v hvc1)
 
 motion_interpolation_filter() {
   local duration="$1"
@@ -126,7 +127,7 @@ compile_clip() {
   fi
 
   interpolate="$(motion_interpolation_filter "$duration")"
-  print "编译 60 fps 高清动作 $source_name [$start_time + $duration] → $output_name.mov"
+  print "编译 120 fps 高清动作 $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
     -vf "$SOURCE_CLEANUP,$interpolate,$FINISH_FILTERS" \
     "${ENCODE_OPTIONS[@]}" \
@@ -289,21 +290,21 @@ compile_sleep_to_stand
 # walk loop:    frame 99  → 128（约 1.208 s）
 # slow-run loop: frame 98  → 129（约 1.292 s）
 # fast-run loop: frame 66  → 80 （约 0.583 s）
-compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-start" "0.000000" "4.125000" "0x549a44" 99 \
+compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-start" "0.200000" "3.925000" "0x549a44" 94 \
   "0.929752" "0.934504" "-12.060" "8.919" "0.749" "25.332"
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-loop" "4.125000" "1.208333" "0x549a44" 29 \
   "0.930000" "0.934504" "8.637" "8.296" "26.707" "26.578"
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-stop" "5.333333" "3.166667" "0x549a44" 76 \
   "0.927764" "1.032110" "9.920" "-5.845" "28.626" "5.162"
 
-compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-start" "0.000000" "4.083333" "0x509b3e" 98 \
+compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-start" "0.125000" "3.958333" "0x509b3e" 95 \
   "0.925926" "0.942602" "-12.514" "25.974" "0.790" "27.886"
 compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-loop" "4.083333" "1.291667" "0x509b3e" 31 \
   "0.930000" "0.942602" "24.013" "-4.818" "31.667" "32.913"
 compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-stop" "5.375000" "3.125000" "0x509b3e" 75 \
   "0.937520" "0.961538" "-6.642" "-9.703" "34.411" "5.538"
 
-compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-start" "0.000000" "2.750000" "0x539648" 66 \
+compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-start" "0.250000" "2.500000" "0x539648" 60 \
   "0.929752" "0.861281" "-11.936" "-4.421" "0.749" "55.728"
 compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-loop" "2.750000" "0.583333" "0x539648" 14 \
   "0.930000" "0.889771" "-7.111" "-13.671" "42.827" "52.040"

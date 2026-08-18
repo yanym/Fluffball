@@ -50,7 +50,7 @@ If fewer than four useful viewpoints are present, more than one animal appears, 
 6. Assemble the production atlas deterministically at `assetScale: 2`: 3072×4576, 8 columns × 11 rows, 384×416 per cell. The 1536×2288 / 192×208 form is legacy compatibility only and must not be the default for a new pet. Unused cells must be transparent black (`RGBA 0,0,0,0`).
 7. Remove the solid key background, despill edges, and preserve true alpha. Do not leave RGB residue under fully transparent pixels.
 8. Build `manifest.json` using the supplied template and action registry. A complete 16-direction map satisfies the nine legacy facing semantic slots; do not add placeholder PNGs.
-9. Run `python3 scripts/validate_pet_pack.py <pack>` and correct every error. Review the contact sheet, per-row loops, and 16-direction sheet at 100% plus 60%/140% simulated display sizes.
+9. Record the native-generation and sharpness audit in `QA/clarity.json`, then run `python3 scripts/validate_pet_pack.py <pack>` and correct every error. Review the contact sheet, per-row loops, and 16-direction sheet at 100% plus 60%/140% simulated display sizes.
 10. Deliver only the validated `.furballpet` folder plus `QA/summary.md`. Intermediate prompts and identity boards remain in `QA/`, not in runtime sprite folders.
 
 ## Style requirements / 风格要求
@@ -74,6 +74,7 @@ If fewer than four useful viewpoints are present, more than one animal appears, 
 - The visible animal should use at least 70% of one cell's height or 55% of its width while keeping 8 px of transparent safety margin at 2×. Tiny subjects surrounded by empty pixels fail even when the canvas dimensions pass.
 - Inspect eyes, nose, paw edges, facial markings, and long fur at 100% native pixels. Halos, stair-stepping, waxy denoise, ringing, smeared whiskers, color fringing, and compression blocks are rejection conditions.
 - One resampling pass is allowed during deterministic registration. Any required enlargement above 1.25× means the generation source is too small and the affected whole row must be regenerated.
+- `QA/clarity.json` must state `nativeCellWidth: 384`, `nativeCellHeight: 416`, `sourceRowsGeneratedNatively: true`, `losslessAtlas: true`, `reviewedAtNativeScale: true`, `maximumRegistrationUpscale <= 1.25`, and an empty `rejectedArtifacts` array. The validator rejects a missing or weaker declaration.
 - 原始照片长边优先不低于 1600 px，至少一张完整身体身份图应达到 2000 px；模糊缩略图、强降噪图或二次放大图不能作为唯一身份依据。
 - 每个动作整行必须以足够原生分辨率生成，使切格后至少拥有 384×416 的有效像素。禁止把旧 192×208 运行时格子放大冒充高清素材。
 - 在 100% 像素下检查眼睛、鼻子、爪缘、花纹和长毛；光晕、锯齿、蜡感、锐化振铃、胡须糊掉、色边和压缩块都必须返工。
@@ -98,6 +99,7 @@ Return exactly:
 ├── Sprites/<pet-id>/realistic/spritesheet.webp   # when requested
 └── QA/
     ├── identity.json
+    ├── clarity.json
     ├── contact-sheet.png
     ├── look-directions.png
     └── summary.md

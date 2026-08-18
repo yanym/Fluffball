@@ -9,7 +9,7 @@
 1. 先匹配动作端口，再考虑 Crossfade。交叉淡化只能柔化已经接近的两帧，不能修复不同大小、不同落脚点、不同朝向或不同姿势的狗。
 2. 不要根据文件名猜动作。必须观看整段视频并建立时间轴，确认每段的真实语义、稳定区间和动作方向。
 3. 始终从用户提供的原始视频重新处理，不要放大已经抠像、压缩过的旧 `.mov`。
-4. 所有视频动作必须使用同一个画布、帧率、主体尺度和地面锚点。当前运行时标准是 1280×720、60 fps、HEVC with Alpha；24 fps 原片必须先做运动补偿插帧。
+4. 所有视频动作必须使用同一个画布、帧率、主体尺度和地面锚点。当前运行时标准是 1280×720、120 fps、HEVC with Alpha；24 fps 原片必须在绿幕抠像前做双向运动补偿插帧，禁止用重复帧伪装高帧率。
 5. “待机视频”不等于“可循环视频”。首尾姿态不一致时，直接循环一定会每隔几秒跳一下。
 6. 质量问题优先在离线素材层修复。不要把运行时 Crossfade 拉长来掩盖坏切点，写实宠物会出现双头、双爪和毛发重影。
 
@@ -32,7 +32,7 @@
 7. `actions` 可发布任意数量的双语可爱动作。当前创建 Skill 的动作注册表版本为 `2026-08-17.2`，内置动作包括 wave、jump、failed、waiting、working、review、play-bow、head-tilt、sniff 和 high-five。标题、是否自动触发和结果姿态属于素材包；图片模式菜单自动读取，视频模式自动置灰。增加动作时必须同时更新 `Sources/Furball2D/CreatorSkill/` 的合同、Skill 和验证器。
 8. 运行时看向鼠标时每次只走一个相邻方向，首次稳定约 0.15 秒，相邻冷却约 0.085–0.12 秒。进入走跑前沿最短路径抵达匹配的 90° 或 270° 侧面；移动期间不切换视线格。
 9. 方向格只在鼠标最近发生移动时接管画面；鼠标静止约 2.4 秒后必须回到完整 idle 行，不能让单张方向格永久遮住呼吸和眨眼。进入坐下等正面动作前先短暂回到 idle 端口。
-10. 鼠标跟随和自由漫游继续使用二维目标、速度迟滞和横纵边界。图集有真实起步帧时桌面位移无需等待视频的首个抬爪时间，但保留约 0.14 秒平滑加速。
+10. 鼠标跟随和自由漫游继续使用二维目标、速度迟滞和横纵边界。图集有真实起步帧时桌面位移无需等待视频的首个抬爪时间，但保留约 0.07 秒平滑加速。
 11. `capabilities.imageMode=true`；纯图片包设 `videoMode=false` 并省略 `clips`，顶层视频开关会自动关闭并置灰。纯图集包可省略 `imageAnimations`，但图集绑定与 PNG 描述的并集必须覆盖全部 27 个标准语义槽位。
 12. 交付前必须通过 `Scripts/validate-pet-pack.swift`、Codex v2 图集结构/Alpha 验收、逐行动画预览、16 方向语义与连续性检查、60%/100%/140% 实机测试和 `Scripts/package-app.sh`。指标警告必须结合正常尺寸的可见循环审阅，不得直接放宽阈值。
 
@@ -162,7 +162,7 @@ format=bgra
 
 ```text
 1280×720
-60 fps
+120 fps
 HEVC VideoToolbox with Alpha
 -alpha_quality 0.95
 -q:v 75
@@ -190,7 +190,7 @@ reverse:  N-1, N-2, ... 1
 loop:     0, 1, 2, ...
 ```
 
-必须删除转折点和循环点的重复端帧，否则会在两端多停一帧。最终统一为 60 fps。
+必须删除转折点和循环点的重复端帧，否则会在两端多停一帧。最终统一为 120 fps；低帧率源先在绿幕阶段做运动补偿，不能只用 `fps` 复制帧。
 
 往返循环只适用于幅度小、方向性不强的动作。如果宠物明显转头、抬爪、翻身或走动，倒放会被看出来，应寻找更稳定的窗口或制作真实闭环。
 
@@ -198,7 +198,7 @@ loop:     0, 1, 2, ...
 
 用户偏好是“没操作时安静睡觉”，不能把包含甩尾、换姿势或抬头的整段睡眠视频直接循环。
 
-推荐从连续睡眠视频中寻找约 0.5–1.0 秒的最低动作窗口，只保留细微胸腹呼吸；必要时放慢约 1.5–2.5 倍，再制作首尾去重的往返循环。当前素材使用 0.55 秒窗口、放慢 2.5 倍，最终约 2.7 秒、60 fps。
+推荐从连续睡眠视频中寻找约 0.5–1.0 秒的最低动作窗口，只保留细微胸腹呼吸；必要时放慢约 1.5–2.5 倍，再制作首尾去重的往返循环。当前素材使用 0.55 秒窗口、放慢 2.5 倍，最终约 2.7 秒、120 fps。
 
 ## 7. 运行时转场规则
 
@@ -209,7 +209,7 @@ loop:     0, 1, 2, ...
 3. 等新通道真正拿到第一帧后再开始淡化，不能对透明空帧淡入。
 4. 淡化开始时冻结旧通道，避免两段动作同时运动产生晃影。
 5. 每个通道先转换为预乘 Alpha，再进行混合。
-6. 使用五阶 smootherstep 权重，默认约 0.14 秒，也就是约 3–4 帧。五阶曲线在两端的
+6. 使用五阶 smootherstep 权重，默认约 0.14 秒；在 120 Hz 显示链路中约覆盖 17 个采样点。五阶曲线在两端的
    一阶和二阶导数都为零，比三阶 smoothstep 更不容易出现轻微的透明度顿挫。
 7. 动作播放完成回调与淡化完成必须是两个独立生命周期。
 
@@ -217,7 +217,7 @@ loop:     0, 1, 2, ...
 秒后再切换，并保留原有阈值迟滞；停止和重新起步可以立即响应。这个短暂确认时间能
 避免鼠标速度在阈值附近波动时反复 Crossfade。
 
-首次从站立进入移动时，不得在 `start` 片段第一帧就立即平移窗口。先用接触表或逐帧差分找出第一处明确的抬爪、重心转移或蹬地，再把这个时间记录为 `translationDelay`；延迟结束后使用约 0.18–0.36 秒的 smoothstep 速度渐入。当前走路、慢跑、快跑延迟分别约为 0.32、0.16、0.32 秒。若重新切分起步素材，必须重新测量这些值。
+首次从站立进入移动时，先把 `start` 片段切到第一处可见重心变化附近，再用短 `translationDelay` 对齐脚步。当前走路、慢跑、快跑延迟分别约为 0.12、0.07、0.10 秒，速度渐入分别约为 0.18、0.13、0.10 秒。若重新切分起步素材，必须重新测量这些值，既不能让站立帧滑行，也不能用过长等待制造鼠标延迟。
 
 通常将 Crossfade 控制在 0.10–0.16 秒。超过约 0.20–0.25 秒时，写实宠物很容易出现双眼、双头、双爪和两条尾巴。若短淡化仍然明显，返回离线素材修端口，不要继续加长。
 
@@ -332,7 +332,7 @@ This file is mandatory guidance for any Agent working on Fluffball/Furball2D. Wh
 1. Match action ports before considering a crossfade. A crossfade can soften two already similar frames; it cannot fix different subject sizes, foot positions, directions, or postures.
 2. Never infer action semantics from filenames. Watch the full video, build a timeline, and verify every stable interval and movement direction.
 3. Always rebuild from the user-provided original video. Never enlarge an older keyed or compressed `.mov`.
-4. Every video action must use the same canvas, frame rate, subject scale, and ground anchor. The runtime standard is 1280×720 at 60 fps HEVC with Alpha; interpolate 24 fps sources before keying.
+4. Every video action must use the same canvas, frame rate, subject scale, and ground anchor. The runtime standard is 1280×720 at 120 fps HEVC with Alpha. Bidirectionally motion-interpolate 24 fps sources before keying; duplicated frames do not qualify as high frame rate.
 5. An “idle video” is not automatically loopable. If the first and last poses differ, a direct loop will jump every few seconds.
 6. Fix quality problems in offline assets first. Do not hide bad cut points with a long runtime crossfade; realistic pets develop double heads, paws, and fur trails.
 
@@ -355,7 +355,7 @@ When the user explicitly rejects AI-generated video, prefer a Codex-compatible P
 7. `actions` may publish any number of localized cute actions. The current creator-Skill action registry is `2026-08-17.2`, covering wave, jump, failed, waiting, working, review, play-bow, head-tilt, sniff, and high-five. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them. Adding an action also requires updating the contract, Skill, and validator under `Sources/Furball2D/CreatorSkill/`.
 8. Cursor gaze advances one adjacent direction at a time, using roughly 0.15 seconds of initial stability and a 0.085–0.12-second adjacent cooldown. Before locomotion, take the shortest route to the matching 90° or 270° profile. Do not change look cells during movement.
 9. Direction cells take over only after recent pointer movement. After roughly 2.4 seconds of pointer stillness, return to the full idle row so one static gaze cannot permanently hide breathing and blinking. Briefly return through the idle port before a front-facing posture action such as sitting.
-10. Cursor following and free roam retain one two-dimensional target, gait hysteresis, and horizontal/vertical bounds. A sprite gait with real start frames does not need a video first-paw delay, but retains the roughly 0.14-second image-mode acceleration ramp.
+10. Cursor following and free roam retain one two-dimensional target, gait hysteresis, and horizontal/vertical bounds. A sprite gait with real start frames does not need a video first-paw delay, but retains the roughly 0.07-second image-mode acceleration ramp.
 11. Declare `capabilities.imageMode=true`. An image-only pack sets `videoMode=false` and omits `clips`, automatically forcing and disabling the top-level video toggle. A pure-atlas pack may omit `imageAnimations`, but the union of atlas bindings and PNG descriptors must cover all 27 standard semantic slots.
 12. Before delivery, pass `Scripts/validate-pet-pack.swift`, Codex v2 structure/alpha validation, per-row previews, 16-direction semantics and continuity review, 60%/100%/140% in-app checks, and `Scripts/package-app.sh`. Review metric warnings at normal display size; never silence them by relaxing a threshold.
 
@@ -478,7 +478,7 @@ Output requirements:
 
 ```text
 1280×720
-60 fps
+120 fps
 HEVC VideoToolbox with Alpha
 -alpha_quality 0.95
 -q:v 75
@@ -506,7 +506,7 @@ reverse:  N-1, N-2, ... 1
 loop:     0, 1, 2, ...
 ```
 
-Remove duplicated endpoint frames at both the turn and the loop seam. Convert the result to a consistent 60 fps only after constructing the sequence.
+Remove duplicated endpoint frames at both the turn and the loop seam. Convert the result to a consistent 120 fps only after constructing the sequence; motion-interpolate low-frame-rate chroma footage instead of merely duplicating frames with `fps`.
 
 Ping-pong is appropriate only for low-amplitude, weakly directional motion. A clear head turn, raised paw, roll, or walk will reveal reversal; find a more stable interval or construct a true closed loop instead.
 
@@ -514,7 +514,7 @@ Ping-pong is appropriate only for low-amplitude, weakly directional motion. A cl
 
 The user prefers the pet to sleep quietly when untouched. Never loop an entire sleep video containing tail sweeps, posture changes, or head lifts.
 
-Find a roughly 0.5–1.0-second lowest-motion window containing only subtle breathing. If needed, slow it by about 1.5–2.5×, then build an endpoint-deduplicated ping-pong loop. The current asset uses a 0.55-second window slowed 2.5× for a final loop of roughly 2.7 seconds at 60 fps.
+Find a roughly 0.5–1.0-second lowest-motion window containing only subtle breathing. If needed, slow it by about 1.5–2.5×, then build an endpoint-deduplicated ping-pong loop. The current asset uses a 0.55-second window slowed 2.5× for a final loop of roughly 2.7 seconds at 120 fps.
 
 ## 7. Runtime transition rules
 
@@ -525,12 +525,12 @@ Find a roughly 0.5–1.0-second lowest-motion window containing only subtle brea
 3. Begin fading only after the incoming lane has produced a real first frame; never fade toward an empty transparent frame.
 4. Freeze the outgoing lane when the fade begins so both clips do not move simultaneously and create wobble.
 5. Convert each lane to premultiplied alpha before blending.
-6. Use a fifth-order smootherstep weight over about 0.14 seconds, or three to four frames. Its first and second derivatives are zero at both endpoints, reducing subtle opacity jolts compared with cubic smoothstep.
+6. Use a fifth-order smootherstep weight over about 0.14 seconds, about 17 samples on a 120 Hz presentation path. Its first and second derivatives are zero at both endpoints, reducing subtle opacity jolts compared with cubic smoothstep.
 7. Keep clip-end callbacks and fade completion as separate lifecycles.
 
 Do not switch walk, jog, and run from a single speed sample. Require a requested speed tier to remain stable for roughly 0.15–0.25 seconds and retain threshold hysteresis. Stop and fresh start may respond immediately. This short confirmation period prevents repeated crossfades when cursor speed oscillates near a threshold.
 
-On a fresh transition from standing into locomotion, never translate the window from the first frame of the `start` clip. Use a contact sheet or frame-difference analysis to locate the first clear paw lift, weight shift, or push-off and record that time as `translationDelay`; after the delay, ramp velocity in with a roughly 0.18–0.36-second smoothstep. The current walk, jog, and run delays are approximately 0.32, 0.16, and 0.32 seconds. Re-measure them whenever a start clip is recut.
+On a fresh transition from standing into locomotion, first recut the `start` clip near the first visible weight shift, then use a short `translationDelay` to align desktop translation with the paws. Current walk, jog, and run delays are about 0.12, 0.07, and 0.10 seconds, with velocity ramps of roughly 0.18, 0.13, and 0.10 seconds. Re-measure after every recut: avoid both planted-paw sliding and a long cursor-response pause.
 
 Keep most crossfades within 0.10–0.16 seconds. Above about 0.20–0.25 seconds, realistic footage commonly shows double eyes, heads, paws, or tails. If a short fade remains obvious, repair the offline ports instead of lengthening the dissolve.
 
