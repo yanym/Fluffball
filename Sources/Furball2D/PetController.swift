@@ -126,6 +126,10 @@ final class PetController: NSObject, NSMenuDelegate {
     private var currentlyInteractive = false
     private var locomotionMode: LocomotionMode = .none
     private var locomotionVelocity = NSPoint.zero
+    /// NSWindow origins are integral on many displays. Preserve sub-point
+    /// movement between 120 Hz updates so a 76 pt/s walk does not repeatedly
+    /// round each 0.63 pt step back to the same window position.
+    private var preciseLocomotionOrigin: NSPoint?
     private var locomotionGeneration = 0
     private var locomotionDirection: CGFloat = -1
     private var actionFacing: HorizontalFacing = .left
@@ -154,6 +158,9 @@ final class PetController: NSObject, NSMenuDelegate {
     private var freeRoamTarget: NSPoint?
     private var pendingDesktopInteraction: DesktopInteractionService.Destination?
     private var desktopInteractionInProgress = false
+    private var immediateDesktopInteractionResume: (follow: Bool, roam: Bool)?
+    private var immediateInteractionQAObservedKinds: [String] = []
+    private var immediateInteractionQAMovementTicks = 0
     private var freeRoamPauseUntil: TimeInterval = 0
     private var lastFreeRoamSampleTime: TimeInterval = 0
     private var treatTarget: NSPoint?
@@ -343,6 +350,27 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.runBoundaryReflectionQA(reportPath: reportPath)
             }
         }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_APPEARANCE_SWITCH_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                self?.runAppearanceSwitchQA(reportPath: reportPath, step: 0, results: [])
+            }
+        }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                self?.inspectTrashImmediately()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self,
+                      !FileManager.default.fileExists(atPath: reportPath) else { return }
+                self.writeImmediateInteractionQAReport(
+                    path: reportPath,
+                    pass: false,
+                    reason: "watchdog-timeout"
+                )
+            }
+        }
         if let reportPath = behaviorQAReportPath, !reportPath.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { [weak self] in
                 self?.startTreatBehaviorQA()
@@ -358,6 +386,53 @@ final class PetController: NSObject, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 self?.runCodexCreatorQA(reportPath: reportPath)
             }
+        }
+    }
+
+    private func runAppearanceSwitchQA(
+        reportPath: String,
+        step: Int,
+        results: [[String: Any]]
+    ) {
+        let appearanceIDs = ["continuous-video", "cute-2d", "realistic-2d"]
+        guard step < appearanceIDs.count else {
+            let pass = results.count == appearanceIDs.count
+                && results.allSatisfy { ($0["pass"] as? Bool) == true }
+            let report: [String: Any] = [
+                "pass": pass,
+                "petID": PetAssetCatalog.petID,
+                "results": results
+            ]
+            do {
+                let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+            } catch {
+                NSLog("Furball2D appearance switch QA failed: %@", error.localizedDescription)
+            }
+            if ProcessInfo.processInfo.environment["FURBALL_APPEARANCE_SWITCH_QA_EXIT"] == "1" {
+                NSApp.terminate(nil)
+            }
+            return
+        }
+
+        let requestedID = appearanceIDs[step]
+        let changed = switchAppearance(to: requestedID)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (requestedID == "continuous-video" ? 1.15 : 0.35)) { [weak self] in
+            guard let self else { return }
+            let active = PetAssetCatalog.activeAppearance
+            let expectedMode: PetVisualMode = active.kind.visualMode
+            var nextResults = results
+            nextResults.append([
+                "requested": requestedID,
+                "active": active.id,
+                "mode": self.renderer.visualMode == .video ? "video" : "images",
+                "hasVisibleContent": self.renderer.visibleContentRect() != nil,
+                "pass": changed
+                    && active.id == requestedID
+                    && self.renderer.visualMode == expectedMode
+                    && self.renderer.visibleContentRect() != nil
+            ])
+            self.runAppearanceSwitchQA(reportPath: reportPath, step: step + 1, results: nextResults)
         }
     }
 
@@ -1945,7 +2020,9 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func continueToStandForMovement() {
-        guard (followCursor || freeRoamEnabled || treatTarget != nil), !isTransitioning else { return }
+        guard (followCursor || freeRoamEnabled || treatTarget != nil
+               || immediateDesktopInteractionResume != nil),
+              !isTransitioning else { return }
         switch posture {
         case .stand:
             return
@@ -2024,7 +2101,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func activateFreeRoaming() {
-        guard freeRoamEnabled else { return }
+        guard freeRoamEnabled || immediateDesktopInteractionResume != nil else { return }
         isUsingImageFacing = false
         lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
         let movementFPS = renderer.visualMode == .video ? 60.0 : 120.0
@@ -2058,7 +2135,11 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func updateFreeRoaming() {
-        guard freeRoamEnabled, panel.isVisible, !isDragging else { return }
+        guard freeRoamEnabled || immediateDesktopInteractionResume != nil,
+              panel.isVisible, !isDragging else { return }
+        if immediateDesktopInteractionResume != nil {
+            immediateInteractionQAMovementTicks += 1
+        }
         if desktopInteractionInProgress { return }
         guard posture == .stand, !isTransitioning else {
             if !isTransitioning { continueToStandForMovement() }
@@ -2085,7 +2166,7 @@ final class PetController: NSObject, NSMenuDelegate {
                let screen = panel.screen ?? NSScreen.main,
                let interaction = desktopInteractionService.destination(in: screen) {
                 pendingDesktopInteraction = interaction
-                freeRoamTarget = interaction.point
+                freeRoamTarget = reachablePanelCenterTarget(for: interaction.point)
             } else {
                 pendingDesktopInteraction = nil
                 freeRoamTarget = makeRandomRoamTarget()
@@ -2114,7 +2195,20 @@ final class PetController: NSObject, NSMenuDelegate {
             deltaTime: deltaTime
         )
         if collision.occurred {
-            redirectFreeRoamAfterBoundaryCollision(collision, previousTarget: target)
+            if let interaction = pendingDesktopInteraction {
+                pendingDesktopInteraction = nil
+                freeRoamTarget = nil
+                updateMovement(
+                    toward: NSPoint(x: panel.frame.midX, y: panel.frame.midY),
+                    demand: 0,
+                    deadZone: 8,
+                    now: now,
+                    deltaTime: deltaTime
+                )
+                performDesktopInteraction(interaction)
+            } else {
+                redirectFreeRoamAfterBoundaryCollision(collision, previousTarget: target)
+            }
         }
     }
 
@@ -2165,6 +2259,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private func performDesktopInteraction(_ destination: DesktopInteractionService.Destination) {
         switch destination.kind {
         case .trash:
+            recordImmediateInteractionQA(kind: "trash")
             remember(
                 .exploration,
                 text: "I carefully inspected the Trash",
@@ -2173,9 +2268,16 @@ final class PetController: NSObject, NSMenuDelegate {
             )
             showSpeech(appLanguage.sniffTrashSpeech)
             if let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.sniff" }) {
-                performImageAction(action)
+                performImageAction(action) { [weak self] in
+                    self?.finishImmediateDesktopInteractionIfNeeded()
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+                    self?.finishImmediateDesktopInteractionIfNeeded()
+                }
             }
         case .desktopItem:
+            recordImmediateInteractionQA(kind: "desktop-item")
             guard let name = destination.itemName, let url = destination.itemURL,
                   !desktopInteractionInProgress else { return }
             desktopInteractionInProgress = true
@@ -2326,6 +2428,7 @@ final class PetController: NSObject, NSMenuDelegate {
         } else {
             showSpeech("Hehe—I carried “\(name)” for a tiny walk, then put it safely back.")
         }
+        finishImmediateDesktopInteractionIfNeeded()
     }
 
     private func cancelDesktopItemInteraction() {
@@ -2333,6 +2436,126 @@ final class PetController: NSObject, NSMenuDelegate {
         desktopInteractionTimer = nil
         desktopCarriedItem.hide(animated: false)
         desktopInteractionInProgress = false
+    }
+
+    private func beginImmediateDesktopInteraction(
+        _ destination: DesktopInteractionService.Destination
+    ) {
+        panel.orderFrontRegardless()
+        showPetWindow()
+        registerUserActivity()
+        desktopInteractionsEnabled = true
+        let resumeModes = interruptCurrentActivityForProfileSwitch()
+        immediateDesktopInteractionResume = resumeModes
+        pendingDesktopInteraction = destination
+        freeRoamTarget = reachablePanelCenterTarget(for: destination.point)
+        freeRoamPauseUntil = 0
+        renderer.setMirrored(actionFacing.isMirrored)
+        do {
+            try renderer.play(PetClips.standIdle, fadeDuration: 0.05)
+        } catch {
+            immediateDesktopInteractionResume = nil
+            present(error)
+            return
+        }
+        activateFreeRoaming()
+        refreshAppearanceSettings()
+    }
+
+    private func finishImmediateDesktopInteractionIfNeeded() {
+        guard let resumeModes = immediateDesktopInteractionResume else { return }
+        immediateDesktopInteractionResume = nil
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        freeRoamTarget = nil
+        pendingDesktopInteraction = nil
+        freeRoamPauseUntil = 0
+        setLocomotionMode(.none, direction: locomotionDirection)
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_REPORT"],
+           !reportPath.isEmpty {
+            if immediateInteractionQAObservedKinds == ["trash"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                    self?.playWithDesktopItemImmediately()
+                }
+                return
+            }
+            let pass = immediateInteractionQAObservedKinds == ["trash", "desktop-item"]
+            writeImmediateInteractionQAReport(
+                path: reportPath,
+                pass: pass,
+                reason: pass ? "completed" : "unexpected-sequence"
+            )
+            return
+        }
+        if resumeModes.follow, followCursor {
+            beginCursorFollowing()
+        } else if resumeModes.roam, freeRoamEnabled {
+            beginFreeRoaming()
+        } else {
+            restartAutonomy()
+        }
+    }
+
+    private func inspectTrashImmediately() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        beginImmediateDesktopInteraction(desktopInteractionService.trashDestination(in: screen))
+    }
+
+    private func playWithDesktopItemImmediately() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        guard let destination = desktopInteractionService.desktopItemDestination(in: screen) else {
+            panel.orderFrontRegardless()
+            showSpeech("I couldn’t find a desktop item to play with yet.")
+            if let reportPath = ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_REPORT"],
+               !reportPath.isEmpty {
+                writeImmediateInteractionQAReport(
+                    path: reportPath,
+                    pass: false,
+                    reason: "no-desktop-item"
+                )
+            }
+            return
+        }
+        beginImmediateDesktopInteraction(destination)
+    }
+
+    private func recordImmediateInteractionQA(kind: String) {
+        guard ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_REPORT"] != nil,
+              !immediateInteractionQAObservedKinds.contains(kind) else { return }
+        immediateInteractionQAObservedKinds.append(kind)
+    }
+
+    private func writeImmediateInteractionQAReport(path: String, pass: Bool, reason: String) {
+        guard !FileManager.default.fileExists(atPath: path) else { return }
+        let report: [String: Any] = [
+            "pass": pass,
+            "reason": reason,
+            "observed": immediateInteractionQAObservedKinds,
+            "desktopInteractionsEnabled": desktopInteractionsEnabled,
+            "petVisible": panel.isVisible,
+            "posture": posture.rawValue,
+            "isTransitioning": isTransitioning,
+            "freeRoamEnabled": freeRoamEnabled,
+            "hasImmediateState": immediateDesktopInteractionResume != nil,
+            "hasFreeRoamTimer": freeRoamTimer?.isValid == true,
+            "hasPendingDestination": pendingDesktopInteraction != nil,
+            "movementTicks": immediateInteractionQAMovementTicks,
+            "targetX": freeRoamTarget?.x ?? NSNull(),
+            "targetY": freeRoamTarget?.y ?? NSNull(),
+            "centerX": panel.frame.midX,
+            "centerY": panel.frame.midY,
+            "velocityX": locomotionVelocity.x,
+            "velocityY": locomotionVelocity.y
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            NSLog("Furball2D immediate interaction QA failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
     }
 
     @discardableResult
@@ -2436,6 +2659,24 @@ final class PetController: NSObject, NSMenuDelegate {
             x: target.x - localContact.x + panel.frame.width / 2,
             y: target.y - localContact.y + panel.frame.height / 2
         )
+    }
+
+    private func reachablePanelCenterTarget(for desktopPoint: NSPoint) -> NSPoint {
+        var target = panelCenterTarget(bringingPetTo: desktopPoint)
+        guard let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            return target
+        }
+        let horizontal = horizontalMovementLimits(in: visibleFrame)
+        let vertical = verticalMovementLimits(in: visibleFrame)
+        target.x = min(
+            horizontal.maximum + panel.frame.width / 2,
+            max(horizontal.minimum + panel.frame.width / 2, target.x)
+        )
+        target.y = min(
+            vertical.maximum + panel.frame.height / 2,
+            max(vertical.minimum + panel.frame.height / 2, target.y)
+        )
+        return target
     }
 
     private func finishTreatChase() {
@@ -2602,7 +2843,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         let horizontalLimits = horizontalMovementLimits(in: visibleFrame)
         let verticalLimits = verticalMovementLimits(in: visibleFrame)
-        var origin = panel.frame.origin
+        var origin = preciseLocomotionOrigin ?? panel.frame.origin
         let proposedX = origin.x + locomotionVelocity.x * deltaTime
         let proposedY = origin.y + locomotionVelocity.y * deltaTime
         var collision = MovementBoundaryCollision()
@@ -2615,6 +2856,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
         if origin.x != proposedX { locomotionVelocity.x = 0 }
         if origin.y != proposedY { locomotionVelocity.y = 0 }
+        preciseLocomotionOrigin = origin
         panel.setFrameOrigin(origin)
         repositionSpeechBubble(refreshSilhouette: false)
         return collision
@@ -2663,11 +2905,13 @@ final class PetController: NSObject, NSMenuDelegate {
         lastLocomotionChangeTime = now
         if previousMode == .none, newMode != .none {
             locomotionVelocity = .zero
+            preciseLocomotionOrigin = panel.frame.origin
             let translationDelay = renderer.visualMode == .video ? newMode.startTranslationDelay : 0
             locomotionTranslationStartTime = now + translationDelay
         } else if newMode == .none {
             locomotionTranslationStartTime = 0
             locomotionVelocity = .zero
+            preciseLocomotionOrigin = nil
         }
         speechBubble.updateAppearance(mood: speechMood)
 
@@ -3071,6 +3315,12 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.allowDesktopIconRearrangement = enabled
                 self?.refreshAppearanceSettings()
             }
+            controller.onInspectTrashNow = { [weak self] in
+                self?.inspectTrashImmediately()
+            }
+            controller.onPlayWithDesktopItemNow = { [weak self] in
+                self?.playWithDesktopItemImmediately()
+            }
             controller.onAlwaysOnTopChanged = { [weak self] enabled in
                 guard let self else { return }
                 self.panel.level = enabled ? .floating : .normal
@@ -3187,8 +3437,11 @@ final class PetController: NSObject, NSMenuDelegate {
 
         do {
             videoAnimationsEnabled = next.kind == .continuousVideo
-            try renderer.setVisualMode(next.kind.visualMode)
-            try renderer.play(PetClips.standIdle, fadeDuration: 0.06)
+            try renderer.setVisualMode(
+                next.kind.visualMode,
+                replaying: PetClips.standIdle,
+                forceReload: true
+            )
             renderer.setMirrored(actionFacing.isMirrored)
             repositionSpeechBubble(resetSilhouette: true)
             remember(
@@ -3204,8 +3457,11 @@ final class PetController: NSObject, NSMenuDelegate {
         } catch {
             _ = PetAssetCatalog.selectAppearance(id: previous.id)
             videoAnimationsEnabled = previous.kind == .continuousVideo
-            try? renderer.setVisualMode(previous.kind.visualMode)
-            try? renderer.play(PetClips.standIdle, fadeDuration: 0)
+            try? renderer.setVisualMode(
+                previous.kind.visualMode,
+                replaying: PetClips.standIdle,
+                forceReload: true
+            )
             rebuildMenu()
             refreshAppearanceSettings()
             resumeAfterProfileSwitch(resumeModes)
@@ -3226,8 +3482,11 @@ final class PetController: NSObject, NSMenuDelegate {
 
         do {
             videoAnimationsEnabled = nextAppearance.kind == .continuousVideo
-            try renderer.setVisualMode(nextAppearance.kind.visualMode)
-            try renderer.play(PetClips.standIdle, fadeDuration: 0.06)
+            try renderer.setVisualMode(
+                nextAppearance.kind.visualMode,
+                replaying: PetClips.standIdle,
+                forceReload: true
+            )
             renderer.setMirrored(actionFacing.isMirrored)
             mindPetID = nextPet.id
             petMind = PetMindStore.load(petID: mindPetID)
@@ -3242,8 +3501,11 @@ final class PetController: NSObject, NSMenuDelegate {
             mindPetID = previousPet.id
             petMind = PetMindStore.load(petID: mindPetID)
             videoAnimationsEnabled = previousAppearance.kind == .continuousVideo
-            try? renderer.setVisualMode(previousAppearance.kind.visualMode)
-            try? renderer.play(PetClips.standIdle, fadeDuration: 0)
+            try? renderer.setVisualMode(
+                previousAppearance.kind.visualMode,
+                replaying: PetClips.standIdle,
+                forceReload: true
+            )
             rebuildMenu()
             refreshAppearanceSettings()
             resumeAfterProfileSwitch(resumeModes)
@@ -3272,6 +3534,7 @@ final class PetController: NSObject, NSMenuDelegate {
         facingTimer = nil
         cancelTreatChase(resume: false)
         cancelDesktopItemInteraction()
+        immediateDesktopInteractionResume = nil
         hideSpeechBubble(animated: false)
         freeRoamTarget = nil
         pendingDesktopInteraction = nil
@@ -3279,6 +3542,7 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingLocomotionMode = nil
         locomotionMode = .none
         locomotionVelocity = .zero
+        preciseLocomotionOrigin = nil
         isUsingImageFacing = false
         directionalLookIsEngaged = false
         isReturningToActionProfile = false

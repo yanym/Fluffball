@@ -17,21 +17,32 @@ struct DesktopInteractionService {
     }
 
     func destination(in screen: NSScreen) -> Destination? {
+        if Bool.random(), let item = desktopItemDestination(in: screen) { return item }
+        return trashDestination(in: screen)
+    }
+
+    func desktopItemDestination(in screen: NSScreen) -> Destination? {
+        let items = desktopItems()
+        guard !items.isEmpty else { return nil }
+        let index = Int.random(in: 0..<min(12, items.count))
+        let row = index % 7
+        let column = index / 7
+        let point = NSPoint(
+            x: screen.frame.maxX - 74 - CGFloat(column * 92),
+            y: screen.frame.maxY - 76 - CGFloat(row * 82)
+        )
+        let item = items[index]
+        return Destination(
+            kind: .desktopItem,
+            point: point,
+            itemName: item.lastPathComponent,
+            itemURL: item
+        )
+    }
+
+    func trashDestination(in screen: NSScreen) -> Destination {
         let frame = screen.frame
         let visible = screen.visibleFrame
-        let desktopItems = desktopItems()
-
-        if !desktopItems.isEmpty, Bool.random() {
-            let index = Int.random(in: 0..<min(12, desktopItems.count))
-            let row = index % 7
-            let column = index / 7
-            let point = NSPoint(
-                x: frame.maxX - 74 - CGFloat(column * 92),
-                y: frame.maxY - 76 - CGFloat(row * 82)
-            )
-            let item = desktopItems[index]
-            return Destination(kind: .desktopItem, point: point, itemName: item.lastPathComponent, itemURL: item)
-        }
 
         // Infer the Dock edge from the difference between frame and visibleFrame.
         // The Trash is at the terminal end of the Dock; this stays useful even

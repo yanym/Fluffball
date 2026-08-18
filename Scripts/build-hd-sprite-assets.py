@@ -233,10 +233,19 @@ def build(root: Path, pet: str, style: str) -> None:
         for column, frame in enumerate(normalized):
             atlas.alpha_composite(frame, (column * CELL_W, row * CELL_H))
 
+    # Pet Pack v2 reserves idle row column 6 as the neutral look/rest frame.
+    # Keep it as an exact copy of the approved first idle pose so direction
+    # blending always has a stable fallback without adding another generation.
+    neutral = atlas.crop((0, 0, CELL_W, CELL_H))
+    atlas.alpha_composite(neutral, (6 * CELL_W, 0))
+
     pet_dir = "Fortune" if pet == "fortune" else "Nina"
     output = root / f"Sources/Furball2D/Assets/Pets/{pet_dir}/Sprites/{pet_dir}/{style}/spritesheet.webp"
     output.parent.mkdir(parents=True, exist_ok=True)
     atlas.save(output, "WEBP", lossless=True, quality=100, method=6, exact=True)
+    if pet == "fortune":
+        generated_output = root / "Assets/Pets/Fortune/Generated/SpritePet/run/final-spritesheet.webp"
+        atlas.save(generated_output, "WEBP", lossless=True, quality=100, method=6, exact=True)
 
     qa = root / f"Assets/Pets/{pet_dir}/Generated/SpritePets/HD-QA/{style}-atlas.png"
     qa.parent.mkdir(parents=True, exist_ok=True)

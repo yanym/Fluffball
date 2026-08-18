@@ -33,6 +33,12 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onIconRearrangementChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onIconRearrangementChanged = onIconRearrangementChanged }
     }
+    var onInspectTrashNow: (() -> Void)? {
+        didSet { appearanceController.onInspectTrashNow = onInspectTrashNow }
+    }
+    var onPlayWithDesktopItemNow: (() -> Void)? {
+        didSet { appearanceController.onPlayWithDesktopItemNow = onPlayWithDesktopItemNow }
+    }
     var onAlwaysOnTopChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onAlwaysOnTopChanged = onAlwaysOnTopChanged }
     }
@@ -84,7 +90,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         libraryPage = libraryController.contentViewForEmbedding()
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -92,7 +98,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 900, height: 590)
+        window.minSize = NSSize(width: 920, height: 620)
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -130,7 +136,16 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         sidebar.material = .sidebar
         sidebar.blendingMode = .withinWindow
         sidebar.translatesAutoresizingMaskIntoConstraints = false
-        sidebarTitle.font = .systemFont(ofSize: 20, weight: .bold)
+        sidebarTitle.font = .systemFont(ofSize: 22, weight: .bold)
+
+        let brandIcon = NSImageView()
+        brandIcon.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)
+        brandIcon.contentTintColor = .controlAccentColor
+        brandIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 19, weight: .bold)
+        let brand = NSStackView(views: [brandIcon, sidebarTitle])
+        brand.orientation = .horizontal
+        brand.alignment = .centerY
+        brand.spacing = 9
 
         configureSidebarButton(generalButton, symbol: "gearshape", action: #selector(showGeneral))
         configureSidebarButton(appearanceButton, symbol: "sparkles.rectangle.stack", action: #selector(showAppearance))
@@ -139,15 +154,18 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         configureSidebarButton(speechButton, symbol: "bubble.left.and.bubble.right", action: #selector(showSpeech))
         configureSidebarButton(libraryButton, symbol: "square.grid.2x2", action: #selector(showLibrary))
         configureSidebarButton(creatorButton, symbol: "wand.and.stars", action: #selector(showCreator))
+        let companionLabel = sidebarSectionLabel("COMPANION")
+        let collectionLabel = sidebarSectionLabel("COLLECTION")
         let navigation = NSStackView(views: [
-            generalButton, appearanceButton, behaviorButton, interactionButton,
-            speechButton, libraryButton, creatorButton
+            companionLabel, generalButton, appearanceButton, behaviorButton,
+            interactionButton, speechButton, collectionLabel, libraryButton, creatorButton
         ])
         navigation.orientation = .vertical
         navigation.alignment = .leading
-        navigation.spacing = 5
+        navigation.spacing = 6
+        navigation.setCustomSpacing(13, after: speechButton)
 
-        for view in [sidebarTitle, navigation] {
+        for view in [brand, navigation] {
             view.translatesAutoresizingMaskIntoConstraints = false
             sidebar.addSubview(view)
         }
@@ -173,12 +191,12 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
             sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: root.topAnchor),
             sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: 214),
-            sidebarTitle.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 18),
-            sidebarTitle.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 52),
-            navigation.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 10),
-            navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
-            navigation.topAnchor.constraint(equalTo: sidebarTitle.bottomAnchor, constant: 22),
+            sidebar.widthAnchor.constraint(equalToConstant: 228),
+            brand.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 18),
+            brand.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 48),
+            navigation.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
+            navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            navigation.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 28),
             generalButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             appearanceButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             behaviorButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
@@ -194,13 +212,26 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     private func configureSidebarButton(_ button: NSButton, symbol: String, action: Selector) {
-        button.bezelStyle = .recessed
+        button.isBordered = false
+        button.bezelStyle = .inline
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         button.imagePosition = .imageLeading
         button.alignment = .left
         button.controlSize = .large
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.contentTintColor = .secondaryLabelColor
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 9
+        button.heightAnchor.constraint(equalToConstant: 38).isActive = true
         button.target = self
         button.action = action
+    }
+
+    private func sidebarSectionLabel(_ title: String) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = .tertiaryLabelColor
+        return label
     }
 
     private func applyLanguage() {
@@ -238,6 +269,31 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         speechButton.state = section == .speech ? .on : .off
         libraryButton.state = section == .library ? .on : .off
         creatorButton.state = section == .creator ? .on : .off
+        updateSidebarSelection()
+    }
+
+    private func updateSidebarSelection() {
+        let selectedButton: NSButton
+        switch selectedSection {
+        case .general: selectedButton = generalButton
+        case .appearance: selectedButton = appearanceButton
+        case .behavior: selectedButton = behaviorButton
+        case .interaction: selectedButton = interactionButton
+        case .speech: selectedButton = speechButton
+        case .library: selectedButton = libraryButton
+        case .creator: selectedButton = creatorButton
+        }
+        for button in [
+            generalButton, appearanceButton, behaviorButton, interactionButton,
+            speechButton, libraryButton, creatorButton
+        ] {
+            let isSelected = button === selectedButton
+            button.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
+            button.font = .systemFont(ofSize: 13, weight: isSelected ? .semibold : .medium)
+            button.layer?.backgroundColor = (isSelected
+                ? NSColor.controlAccentColor.withAlphaComponent(0.14)
+                : NSColor.clear).cgColor
+        }
     }
 
     @objc private func showGeneral() { select(.general) }

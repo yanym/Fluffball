@@ -380,12 +380,21 @@ enum PetAssetCatalog {
     }
 
     private static var loadedCatalogs: [LoadedCatalog] = loadCatalogs()
+    /// User selections live in memory as well as UserDefaults. This makes a
+    /// Settings click authoritative immediately, even if defaults propagation
+    /// or a renderer refresh happens in the same run-loop turn.
+    private static var explicitlySelectedPetID: String?
+    private static var explicitlySelectedAppearanceByPet: [String: String] = [:]
 
     private static var loaded: LoadedCatalog? {
         guard !loadedCatalogs.isEmpty else { return nil }
         if let forcedID = ProcessInfo.processInfo.environment["FURBALL_PET_ID"],
            let forced = loadedCatalogs.first(where: { $0.petID == forcedID }) {
             return forced
+        }
+        if let selectedID = explicitlySelectedPetID,
+           let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
+            return selected
         }
         if let selectedID = UserDefaults.standard.string(forKey: "selectedPetID"),
            let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
@@ -399,6 +408,10 @@ enum PetAssetCatalog {
         if let forcedID = ProcessInfo.processInfo.environment["FURBALL_APPEARANCE"],
            let forced = loaded.appearances.first(where: { $0.option.id == forcedID }) {
             return forced
+        }
+        if let selectedID = explicitlySelectedAppearanceByPet[loaded.petID],
+           let selected = loaded.appearances.first(where: { $0.option.id == selectedID }) {
+            return selected
         }
         let preferenceKey = "selectedAppearance.\(loaded.petID)"
         if let selectedID = UserDefaults.standard.string(forKey: preferenceKey),
@@ -466,7 +479,9 @@ enum PetAssetCatalog {
     @discardableResult
     static func selectPet(id: String) -> Bool {
         guard loadedCatalogs.contains(where: { $0.petID == id }) else { return false }
+        explicitlySelectedPetID = id
         UserDefaults.standard.set(id, forKey: "selectedPetID")
+        UserDefaults.standard.synchronize()
         return true
     }
 
@@ -478,7 +493,9 @@ enum PetAssetCatalog {
     static func selectAppearance(id: String) -> Bool {
         guard let loaded,
               loaded.appearances.contains(where: { $0.option.id == id }) else { return false }
+        explicitlySelectedAppearanceByPet[loaded.petID] = id
         UserDefaults.standard.set(id, forKey: "selectedAppearance.\(loaded.petID)")
+        UserDefaults.standard.synchronize()
         return true
     }
 

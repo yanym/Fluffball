@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "reviewedAt": "2026-08-18",
+  "scope": "Fortune directional locomotion cadence",
+  "sourceRows": ["running-left", "running-right"],
+  "identityFramesChanged": false,
+  "changes": {
+    "baseFrameDurationsSeconds": {
+      "before": [0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.22],
+      "after": [0.14, 0.14, 0.14, 0.14, 0.14, 0.14, 0.14, 0.14]
+    },
+    "frameBlendFraction": {
+      "before": 0.08,
+      "after": 0.20
+    },
+    "bindingScales": {
+      "walk": {"before": 1.18, "after": 1.15},
+      "slowRun": {"before": 0.86, "after": 0.90},
+      "fastRun": {"before": 0.62, "after": 0.76}
+    }
+  },
+  "cycleDurationsSeconds": {
+    "walk": 1.288,
+    "slowRun": 1.008,
+    "fastRun": 0.8512
+  },
+  "notes": [
+    "Removed the doubled final-frame hold that produced a visible hitch at every loop seam.",
+    "Slowed the fast gait by about 22.6 percent so Fortune's short legs no longer churn unnaturally.",
+    "Raised adjacent-frame blending while keeping the approved identity, alpha, scale, and baseline unchanged."
+  ]
+}

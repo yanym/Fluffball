@@ -36,6 +36,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onDirectionalLookChanged: ((Bool) -> Void)?
     var onDesktopInteractionsChanged: ((Bool) -> Void)?
     var onIconRearrangementChanged: ((Bool) -> Void)?
+    var onInspectTrashNow: (() -> Void)?
+    var onPlayWithDesktopItemNow: (() -> Void)?
     var onAlwaysOnTopChanged: ((Bool) -> Void)?
     var onPetScaleChanged: ((CGFloat) -> Void)?
     var onPassThroughChanged: ((Bool) -> Void)?
@@ -56,6 +58,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let lookSwitch = NSSwitch()
     private let desktopInteractionsSwitch = NSSwitch()
     private let iconRearrangementSwitch = NSSwitch()
+    private let inspectTrashButton = NSButton()
+    private let playWithItemButton = NSButton()
     private let alwaysOnTopSwitch = NSSwitch()
     private let passThroughSwitch = NSSwitch()
     private let autoBehaviorSwitch = NSSwitch()
@@ -70,7 +74,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         self.snapshot = snapshot
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 590),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -78,7 +82,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 720, height: 560)
+        window.minSize = NSSize(width: 740, height: 600)
         window.center()
 
         super.init(window: window)
@@ -145,12 +149,39 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         let main = NSView()
         main.translatesAutoresizingMaskIntoConstraints = false
         let language = snapshot.language
+        let badge = NSView()
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 13
+        badge.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
+        let badgeIcon = NSImageView()
+        badgeIcon.image = NSImage(systemSymbolName: pageSymbol(page), accessibilityDescription: nil)
+        badgeIcon.contentTintColor = .controlAccentColor
+        badgeIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        badgeIcon.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(badgeIcon)
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: 46),
+            badge.heightAnchor.constraint(equalToConstant: 46),
+            badgeIcon.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
+            badgeIcon.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+            badgeIcon.widthAnchor.constraint(equalToConstant: 24),
+            badgeIcon.heightAnchor.constraint(equalToConstant: 24)
+        ])
         let title = NSTextField(labelWithString: pageTitle(page, language: language))
-        title.font = .systemFont(ofSize: 27, weight: .bold)
+        title.font = .systemFont(ofSize: 26, weight: .bold)
         let subtitle = NSTextField(wrappingLabelWithString: pageSubtitle(page, language: language))
         subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 3
+        let heading = NSStackView(views: [title, subtitle])
+        heading.orientation = .vertical
+        heading.alignment = .leading
+        heading.spacing = 3
+        let header = NSStackView(views: [badge, heading])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 14
 
         let body: NSView
         switch page {
@@ -161,19 +192,18 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .speech: body = makeSpeechBox(language: language)
         }
 
-        let stack = NSStackView(views: [title, subtitle, body])
+        let stack = NSStackView(views: [header, body])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 20
-        stack.setCustomSpacing(5, after: title)
+        stack.spacing = 24
         stack.translatesAutoresizingMaskIntoConstraints = false
         main.addSubview(stack)
         body.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 34),
-            stack.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -34),
-            stack.topAnchor.constraint(equalTo: main.topAnchor, constant: 52),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: main.bottomAnchor, constant: -28),
+            stack.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 38),
+            stack.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -38),
+            stack.topAnchor.constraint(equalTo: main.topAnchor, constant: 48),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: main.bottomAnchor, constant: -32),
             body.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         return main
@@ -201,7 +231,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         appearanceStack.orientation = .horizontal
         appearanceStack.alignment = .top
         appearanceStack.distribution = .fillEqually
-        appearanceStack.spacing = 10
+        appearanceStack.spacing = 12
         imageModeNote.font = .systemFont(ofSize: 12)
         imageModeNote.textColor = .tertiaryLabelColor
         imageModeNote.maximumNumberOfLines = 2
@@ -212,7 +242,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         stack.alignment = .leading
         stack.spacing = 14
         appearanceStack.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        appearanceStack.heightAnchor.constraint(equalToConstant: 116).isActive = true
+        appearanceStack.heightAnchor.constraint(equalToConstant: 140).isActive = true
         crossfadeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
@@ -230,10 +260,32 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 
     private func makeInteractionBox(language: AppLanguage) -> NSView {
         let box = settingsBox()
+        let quickTitle = NSTextField(labelWithString: "Play Now")
+        quickTitle.font = .systemFont(ofSize: 12, weight: .semibold)
+        quickTitle.textColor = .secondaryLabelColor
+        inspectTrashButton.title = "Inspect Trash"
+        configureActionButton(
+            inspectTrashButton,
+            symbol: "trash.fill",
+            action: #selector(inspectTrashNow)
+        )
+        playWithItemButton.title = "Play with Desktop Item"
+        configureActionButton(
+            playWithItemButton,
+            symbol: "doc.fill.badge.plus",
+            action: #selector(playWithDesktopItemNow)
+        )
+        let quickActions = NSStackView(views: [inspectTrashButton, playWithItemButton])
+        quickActions.orientation = .horizontal
+        quickActions.distribution = .fillEqually
+        quickActions.spacing = 10
         let content = NSStackView(views: [
             makeToggleRow(title: "Play, bite, and carry desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
             separator(),
-            makeToggleRow(title: language.iconRearrangementSetting, toggle: iconRearrangementSwitch, action: #selector(iconRearrangementChanged(_:)))
+            makeToggleRow(title: language.iconRearrangementSetting, toggle: iconRearrangementSwitch, action: #selector(iconRearrangementChanged(_:))),
+            separator(),
+            quickTitle,
+            quickActions
         ])
         content.orientation = .vertical
         content.spacing = 7
@@ -264,10 +316,14 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private func settingsBox() -> NSView {
         let box = NSView()
         box.wantsLayer = true
-        box.layer?.cornerRadius = 12
-        box.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72).cgColor
+        box.layer?.cornerRadius = 16
+        box.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82).cgColor
         box.layer?.borderWidth = 1
-        box.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.42).cgColor
+        box.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.34).cgColor
+        box.layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        box.layer?.shadowOpacity = 0.16
+        box.layer?.shadowRadius = 12
+        box.layer?.shadowOffset = CGSize(width: 0, height: -3)
         return box
     }
 
@@ -281,22 +337,23 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         content.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(content)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
-            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14),
-            content.topAnchor.constraint(equalTo: box.topAnchor, constant: 10),
-            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -10)
+            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 18),
+            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -18),
+            content.topAnchor.constraint(equalTo: box.topAnchor, constant: 14),
+            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -14)
         ])
     }
 
     private func makeToggleRow(title: String, toggle: NSSwitch, action: Selector) -> NSStackView {
         let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        toggle.controlSize = .small
+        label.font = .systemFont(ofSize: 13.5, weight: .medium)
+        toggle.controlSize = .regular
         toggle.target = self
         toggle.action = action
         let stack = NSStackView(views: [label, NSView(), toggle])
         stack.orientation = .horizontal
         stack.distribution = .fill
+        stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
         return stack
     }
 
@@ -326,7 +383,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 
     private func boxed(_ rows: NSStackView) -> NSView {
         rows.orientation = .vertical
-        rows.spacing = 10
+        rows.spacing = 11
         let box = settingsBox()
         pin(rows, inside: box)
         return box
@@ -340,6 +397,27 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .interaction: "Desktop Interaction"
         case .speech: "Speech"
         }
+    }
+
+    private func pageSymbol(_ page: Page) -> String {
+        switch page {
+        case .general: "slider.horizontal.3"
+        case .appearance: "sparkles.rectangle.stack.fill"
+        case .behavior: "figure.walk.motion"
+        case .interaction: "macwindow.badge.plus"
+        case .speech: "bubble.left.and.bubble.right.fill"
+        }
+    }
+
+    private func configureActionButton(_ button: NSButton, symbol: String, action: Selector) {
+        button.bezelStyle = .rounded
+        button.controlSize = .large
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = .controlAccentColor
+        button.target = self
+        button.action = action
+        button.heightAnchor.constraint(equalToConstant: 38).isActive = true
     }
 
     private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
@@ -460,6 +538,9 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         onIconRearrangementChanged?(sender.state == .on)
     }
 
+    @objc private func inspectTrashNow() { onInspectTrashNow?() }
+    @objc private func playWithDesktopItemNow() { onPlayWithDesktopItemNow?() }
+
     @objc private func alwaysOnTopChanged(_ sender: NSSwitch) { onAlwaysOnTopChanged?(sender.state == .on) }
     @objc private func passThroughChanged(_ sender: NSSwitch) { onPassThroughChanged?(sender.state == .on) }
     @objc private func autoBehaviorChanged(_ sender: NSSwitch) { onAutoBehaviorChanged?(sender.state == .on) }
@@ -485,6 +566,9 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 final class AppearanceCardView: NSControl {
     private let optionID: String
     private let onSelect: (String) -> Void
+    private let selected: Bool
+    private var trackingAreaToken: NSTrackingArea?
+    private var hovering = false
 
     init(
         option: PetAppearanceOption,
@@ -495,52 +579,67 @@ final class AppearanceCardView: NSControl {
     ) {
         optionID = option.id
         self.onSelect = onSelect
+        selected = isSelected
         super.init(frame: .zero)
         self.isEnabled = isEnabled
         wantsLayer = true
-        layer?.cornerRadius = 12
-        layer?.borderWidth = isSelected ? 2 : 1
-        layer?.borderColor = (isSelected ? NSColor.controlAccentColor : NSColor.separatorColor)
-            .withAlphaComponent(isSelected ? 0.90 : 0.45).cgColor
-        layer?.backgroundColor = (isSelected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.10)
-            : NSColor.controlBackgroundColor.withAlphaComponent(0.72)).cgColor
+        layer?.cornerRadius = 15
+        layer?.borderWidth = isSelected ? 1.5 : 1
+        updateCardAppearance()
 
+        let iconBadge = NSView()
+        iconBadge.wantsLayer = true
+        iconBadge.layer?.cornerRadius = 11
+        iconBadge.layer?.backgroundColor = (isSelected
+            ? NSColor.controlAccentColor.withAlphaComponent(0.16)
+            : NSColor.secondaryLabelColor.withAlphaComponent(0.08)).cgColor
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: option.systemImage, accessibilityDescription: nil)
         icon.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        iconBadge.addSubview(icon)
 
         let title = NSTextField(labelWithString: option.title(for: language))
-        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.font = .systemFont(ofSize: 14, weight: .semibold)
         let subtitle = NSTextField(wrappingLabelWithString: option.subtitle(for: language))
-        subtitle.font = .systemFont(ofSize: 10.5)
+        subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 2
 
-        let radio = NSButton(radioButtonWithTitle: "", target: self, action: #selector(selectCard))
-        radio.state = isSelected ? .on : .off
-        radio.isEnabled = isEnabled
+        let status = NSImageView()
+        status.image = NSImage(
+            systemSymbolName: isSelected ? "checkmark.circle.fill" : "circle",
+            accessibilityDescription: isSelected ? "Selected" : "Not selected"
+        )
+        status.contentTintColor = isSelected ? .controlAccentColor : .tertiaryLabelColor
+        status.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
 
-        for view in [icon, title, subtitle, radio] {
+        for view in [iconBadge, title, subtitle, status] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            icon.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            icon.widthAnchor.constraint(equalToConstant: 23),
-            icon.heightAnchor.constraint(equalToConstant: 23),
-            radio.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
-            radio.topAnchor.constraint(equalTo: topAnchor, constant: 9),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            title.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 7),
+            iconBadge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            iconBadge.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            iconBadge.widthAnchor.constraint(equalToConstant: 42),
+            iconBadge.heightAnchor.constraint(equalToConstant: 42),
+            icon.centerXAnchor.constraint(equalTo: iconBadge.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: iconBadge.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.heightAnchor.constraint(equalToConstant: 24),
+            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -13),
+            status.topAnchor.constraint(equalTo: topAnchor, constant: 15),
+            status.widthAnchor.constraint(equalToConstant: 19),
+            status.heightAnchor.constraint(equalToConstant: 19),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            title.topAnchor.constraint(equalTo: iconBadge.bottomAnchor, constant: 10),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
-            subtitle.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8)
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3),
+            subtitle.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -10)
         ])
     }
 
@@ -551,6 +650,29 @@ final class AppearanceCardView: NSControl {
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
         onSelect(optionID)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaToken { removeTrackingArea(trackingAreaToken) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaToken = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        updateCardAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        updateCardAppearance()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -564,6 +686,19 @@ final class AppearanceCardView: NSControl {
     @objc private func selectCard() {
         guard isEnabled else { return }
         onSelect(optionID)
+    }
+
+    private func updateCardAppearance() {
+        let accent = NSColor.controlAccentColor
+        layer?.borderColor = (selected ? accent : NSColor.separatorColor)
+            .withAlphaComponent(selected ? 0.85 : (hovering ? 0.68 : 0.34)).cgColor
+        layer?.backgroundColor = (selected
+            ? accent.withAlphaComponent(0.11)
+            : NSColor.controlBackgroundColor.withAlphaComponent(hovering ? 0.95 : 0.74)).cgColor
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = hovering || selected ? 0.14 : 0.06
+        layer?.shadowRadius = hovering ? 10 : 6
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
     }
 }
 
