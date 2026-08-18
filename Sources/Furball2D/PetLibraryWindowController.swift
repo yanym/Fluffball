@@ -46,8 +46,13 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let realisticCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let photosLabel = NSTextField(labelWithString: "")
     private let choosePhotosButton = NSButton()
+    private let oneClickCodexButton = NSButton()
     private let createRequestButton = NSButton()
     private let downloadSkillButton = NSButton()
+    private let creationProgress = NSProgressIndicator()
+    private let creationStatus = NSTextField(wrappingLabelWithString: "")
+    private var codexCreationJob: CodexPetCreationJob?
+    private var codexCreationWasCancelled = false
 
     init(language: AppLanguage, embedded: Bool = false) {
         self.language = language
@@ -377,14 +382,23 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         choosePhotosButton.bezelStyle = .rounded
         choosePhotosButton.target = self
         choosePhotosButton.action = #selector(choosePhotos)
+        oneClickCodexButton.bezelStyle = .rounded
+        oneClickCodexButton.keyEquivalent = "\r"
+        oneClickCodexButton.target = self
+        oneClickCodexButton.action = #selector(buildWithCodex)
         createRequestButton.bezelStyle = .rounded
-        createRequestButton.keyEquivalent = "\r"
         createRequestButton.target = self
         createRequestButton.action = #selector(exportCreationRequest)
         downloadSkillButton.bezelStyle = .rounded
         downloadSkillButton.target = self
         downloadSkillButton.action = #selector(downloadCreatorSkill)
         photosLabel.textColor = .secondaryLabelColor
+        creationProgress.style = .spinning
+        creationProgress.controlSize = .small
+        creationProgress.isDisplayedWhenStopped = false
+        creationStatus.font = .systemFont(ofSize: 11.5)
+        creationStatus.textColor = .secondaryLabelColor
+        creationStatus.maximumNumberOfLines = 3
 
         let form = NSGridView(views: [
             [formLabel("pet-name"), nameField],
@@ -398,10 +412,14 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         form.column(at: 1).xPlacement = .fill
         form.column(at: 1).width = 380
 
-        let buttons = NSStackView(views: [createRequestButton, downloadSkillButton, NSView()])
+        let buttons = NSStackView(views: [oneClickCodexButton, createRequestButton, downloadSkillButton, NSView()])
         buttons.orientation = .horizontal
         buttons.spacing = 8
-        let stack = NSStackView(views: [creatorTitle, creatorIntro, form, buttons])
+        let statusRow = NSStackView(views: [creationProgress, creationStatus, NSView()])
+        statusRow.orientation = .horizontal
+        statusRow.alignment = .centerY
+        statusRow.spacing = 8
+        let stack = NSStackView(views: [creatorTitle, creatorIntro, form, buttons, statusRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 18
@@ -451,8 +469,17 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         realisticCheckbox.title = language.realisticStyleLabel
         choosePhotosButton.title = language.choosePhotosButton
         photosLabel.stringValue = language.selectedPhotosLabel(selectedPhotos.count)
+        oneClickCodexButton.title = codexCreationJob == nil
+            ? language.oneClickCodexButton
+            : language.cancelCodexCreationButton
         createRequestButton.title = language.exportCreationRequestButton
         downloadSkillButton.title = language.downloadSkillButton
+        if codexCreationJob == nil {
+            oneClickCodexButton.isEnabled = PetPackLibraryManager.codexExecutableURL != nil
+            creationStatus.stringValue = PetPackLibraryManager.codexExecutableURL == nil
+                ? language.codexNotInstalledLabel
+                : ""
+        }
         (creatorPage.viewWithIdentifier("pet-name") as? NSTextField)?.stringValue = language.petNameField
         (creatorPage.viewWithIdentifier("species") as? NSTextField)?.stringValue = language.speciesField
         (creatorPage.viewWithIdentifier("styles") as? NSTextField)?.stringValue = language.stylesField
@@ -570,8 +597,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
                 label.font = .systemFont(ofSize: 11)
                 label.textColor = .secondaryLabelColor
                 label.maximumNumberOfLines = 2
-                label.widthAnchor.constraint(equalTo: memoryStack.widthAnchor).isActive = true
                 memoryStack.addArrangedSubview(label)
+                label.widthAnchor.constraint(equalTo: memoryStack.widthAnchor).isActive = true
             }
             clearMemoriesButton.isEnabled = true
         }
@@ -701,6 +728,26 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func exportCreationRequest() {
+        guard let input = validatedCreationInput() else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = language == .simplifiedChinese ? "创建到这里" : "Create Here"
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        do {
+            let output = try PetPackLibraryManager.makeCreationRequest(
+                name: input.name,
+                species: input.species,
+                styles: input.styles,
+                photos: selectedPhotos,
+                in: directory
+            )
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } catch { show(error) }
+    }
+
+    private func validatedCreationInput() -> (name: String, species: String, styles: [String])? {
         let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let styles = [
             cuteCheckbox.state == .on ? "cute-2d" : nil,
@@ -708,25 +755,91 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         ].compactMap { $0 }
         guard !name.isEmpty, !styles.isEmpty, (6...12).contains(selectedPhotos.count) else {
             showMessage(language.invalidCreationInput)
+            return nil
+        }
+        let species = ["dog", "cat", "other"][max(0, speciesPopup.indexOfSelectedItem)]
+        return (name, species, styles)
+    }
+
+    @objc private func buildWithCodex() {
+        if let job = codexCreationJob {
+            codexCreationWasCancelled = true
+            job.process.terminate()
+            oneClickCodexButton.isEnabled = false
             return
         }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.prompt = language == .simplifiedChinese ? "创建到这里" : "Create Here"
-        guard panel.runModal() == .OK, let directory = panel.url else { return }
-        let species = ["dog", "cat", "other"][max(0, speciesPopup.indexOfSelectedItem)]
+        guard let input = validatedCreationInput() else { return }
+        let consent = NSAlert()
+        consent.alertStyle = .informational
+        consent.messageText = language.codexPhotoConsentTitle
+        consent.informativeText = language.codexPhotoConsentBody
+        consent.addButton(withTitle: language.oneClickCodexButton)
+        consent.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+        guard consent.runModal() == .alertFirstButtonReturn else { return }
+
         do {
-            let output = try PetPackLibraryManager.makeCreationRequest(
-                name: name,
-                species: species,
-                styles: styles,
-                photos: selectedPhotos,
-                in: directory
+            let job = try PetPackLibraryManager.startCodexCreation(
+                name: input.name,
+                species: input.species,
+                styles: input.styles,
+                photos: selectedPhotos
             )
-            NSWorkspace.shared.activateFileViewerSelecting([output])
-        } catch { show(error) }
+            codexCreationJob = job
+            codexCreationWasCancelled = false
+            creationProgress.startAnimation(nil)
+            creationStatus.stringValue = language.codexCreationRunningLabel
+            oneClickCodexButton.title = language.cancelCodexCreationButton
+            createRequestButton.isEnabled = false
+            downloadSkillButton.isEnabled = false
+            job.process.terminationHandler = { [weak self, weak job] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self, let job else { return }
+                        self.completeCodexCreation(job)
+                    }
+                }
+            }
+            if !job.process.isRunning {
+                completeCodexCreation(job)
+            }
+        } catch {
+            show(error)
+        }
+    }
+
+    private func completeCodexCreation(_ job: CodexPetCreationJob) {
+        guard codexCreationJob === job else { return }
+        codexCreationJob = nil
+        creationProgress.stopAnimation(nil)
+        oneClickCodexButton.title = language.oneClickCodexButton
+        oneClickCodexButton.isEnabled = PetPackLibraryManager.codexExecutableURL != nil
+        createRequestButton.isEnabled = true
+        downloadSkillButton.isEnabled = true
+        if codexCreationWasCancelled {
+            try? job.logHandle.close()
+            creationStatus.stringValue = language.codexCreationCancelledLabel
+            codexCreationWasCancelled = false
+            return
+        }
+        do {
+            let summary = try PetPackLibraryManager.finishCodexCreation(job)
+            onLibraryChanged?()
+            selectedPetID = summary.id
+            refresh(language: language)
+            creationStatus.stringValue = language.codexCreationSucceeded(summary.name)
+            showMessage(language.codexCreationSucceeded(summary.name))
+        } catch {
+            creationStatus.stringValue = error.localizedDescription
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = language == .simplifiedChinese ? "生成未完成" : "Generation Did Not Finish"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: language == .simplifiedChinese ? "查看日志" : "Show Log")
+            alert.addButton(withTitle: language == .simplifiedChinese ? "关闭" : "Close")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.activateFileViewerSelecting([job.logURL])
+            }
+        }
     }
 
     @objc private func downloadCreatorSkill() {

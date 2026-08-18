@@ -325,9 +325,43 @@ enum AppLanguage: String, CaseIterable, Sendable {
 
     var creatorIntro: String {
         switch self {
-        case .simplifiedChinese: "选择 6–12 张真实照片，生成一个包含严谨输入、双语 Skill 和验收合同的创建请求。可交给支持图片生成的 ChatGPT、Codex 或其他模型，返回结果可直接导入。"
-        case .english: "Choose 6–12 real photos. Furball creates a request containing strict inputs, a bilingual Skill, and QA contract for ChatGPT, Codex, or another image-capable model. The result imports directly."
+        case .simplifiedChinese: "选择 6–12 张真实照片。可让本机已登录的 Codex 一键生成、验证并导入，也可导出包含双语 Skill 与验收合同的标准创建请求。仅使用图片生成，不生成昂贵视频。"
+        case .english: "Choose 6–12 real photos. A signed-in local Codex can generate, validate, and import in one flow, or you can export a standard request with the bilingual Skill and QA contract. Image generation only—no expensive video."
         }
+    }
+
+    var oneClickCodexButton: String {
+        self == .simplifiedChinese ? "用 Codex 一键生成并导入" : "Build & Import with Codex"
+    }
+
+    var cancelCodexCreationButton: String {
+        self == .simplifiedChinese ? "取消生成" : "Cancel Generation"
+    }
+
+    var codexNotInstalledLabel: String {
+        self == .simplifiedChinese ? "未检测到 Codex CLI；仍可导出创建请求。" : "Codex CLI was not detected; request export is still available."
+    }
+
+    var codexCreationRunningLabel: String {
+        self == .simplifiedChinese ? "Codex 正在生成并逐项验收宠物包，这通常需要几分钟…" : "Codex is generating and validating the Pet Pack. This usually takes several minutes…"
+    }
+
+    var codexCreationCancelledLabel: String {
+        self == .simplifiedChinese ? "生成已取消；创建请求和日志仍保留在本地。" : "Generation was cancelled; the local request and log were preserved."
+    }
+
+    var codexPhotoConsentTitle: String {
+        self == .simplifiedChinese ? "允许 Codex 使用这些照片？" : "Let Codex use these photos?"
+    }
+
+    var codexPhotoConsentBody: String {
+        self == .simplifiedChinese
+            ? "Furball 会启动本机已登录的 Codex，并把所选照片交给其图片模型。你的 Codex 套餐、用量限制和 OpenAI 隐私条款适用；Furball 不保存账号或 API Key。"
+            : "Furball will launch your signed-in local Codex and provide the selected photos to its image model. Your Codex plan, usage limits, and OpenAI privacy terms apply; Furball stores no account or API key."
+    }
+
+    func codexCreationSucceeded(_ name: String) -> String {
+        self == .simplifiedChinese ? "\(name) 已生成、通过验证并导入素材库。" : "\(name) was generated, validated, and imported into your library."
     }
 
     var petNameField: String {

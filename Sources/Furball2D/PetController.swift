@@ -313,6 +313,99 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.writeBehaviorQAReport(to: reportPath)
             }
         }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_CODEX_CREATOR_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.runCodexCreatorQA(reportPath: reportPath)
+            }
+        }
+    }
+
+    private func runCodexCreatorQA(reportPath: String) {
+        guard let root = PetAssetCatalog.activePet?.rootURL,
+              let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            writeCodexCreatorQAReport(path: reportPath, values: ["pass": false, "reason": "No active Pet Pack assets"])
+            return
+        }
+        let allowed = Set(["png", "jpg", "jpeg", "webp"])
+        let photos = enumerator.compactMap { $0 as? URL }
+            .filter { allowed.contains($0.pathExtension.lowercased()) }
+            .prefix(6)
+        guard photos.count == 6 else {
+            writeCodexCreatorQAReport(path: reportPath, values: ["pass": false, "reason": "Fewer than six bundled images"])
+            return
+        }
+        do {
+            let job = try PetPackLibraryManager.startCodexCreation(
+                name: "Creator QA \(UUID().uuidString.prefix(6))",
+                species: "dog",
+                styles: ["cute-2d"],
+                photos: Array(photos)
+            )
+            job.process.terminationHandler = { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.finishCodexCreatorQA(job: job, reportPath: reportPath)
+                    }
+                }
+            }
+            if !job.process.isRunning {
+                finishCodexCreatorQA(job: job, reportPath: reportPath)
+            }
+        } catch {
+            writeCodexCreatorQAReport(path: reportPath, values: [
+                "pass": false,
+                "reason": error.localizedDescription
+            ])
+        }
+    }
+
+    private func finishCodexCreatorQA(job: CodexPetCreationJob, reportPath: String) {
+        guard !FileManager.default.fileExists(atPath: reportPath) else { return }
+        job.process.terminationHandler = nil
+        try? job.logHandle.close()
+        let requestExists = FileManager.default.fileExists(
+            atPath: job.workingDirectory.appendingPathComponent("REQUEST.json").path
+        )
+        let copiedPhotoCount = (try? FileManager.default.contentsOfDirectory(
+            at: job.workingDirectory.appendingPathComponent("ReferencePhotos", isDirectory: true),
+            includingPropertiesForKeys: nil
+        ).count) ?? 0
+        let passed = job.process.terminationStatus == 0
+            && requestExists
+            && copiedPhotoCount == 6
+            && job.expectedPackURL.pathExtension == "furballpet"
+        let jobRoot = job.workingDirectory.deletingLastPathComponent()
+        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
+            .standardizedFileURL.path + "/"
+        if jobRoot.standardizedFileURL.path.hasPrefix(jobsRoot) {
+            try? FileManager.default.removeItem(at: jobRoot)
+        }
+        writeCodexCreatorQAReport(path: reportPath, values: [
+            "pass": passed,
+            "processStatus": job.process.terminationStatus,
+            "requestCreated": requestExists,
+            "copiedPhotoCount": copiedPhotoCount,
+            "expectedPackDeclared": job.expectedPackURL.pathExtension == "furballpet"
+        ])
+    }
+
+    private func writeCodexCreatorQAReport(path: String, values: [String: Any]) {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            NSLog("Furball2D creator QA report failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_CODEX_CREATOR_QA_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
     }
 
     private func writeSmokeReport(to path: String) {

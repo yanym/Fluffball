@@ -33,6 +33,28 @@ struct ValidatedPetPack {
     let supportsVideo: Bool
 }
 
+final class CodexPetCreationJob: @unchecked Sendable {
+    let process: Process
+    let workingDirectory: URL
+    let expectedPackURL: URL
+    let logURL: URL
+    let logHandle: FileHandle
+
+    init(
+        process: Process,
+        workingDirectory: URL,
+        expectedPackURL: URL,
+        logURL: URL,
+        logHandle: FileHandle
+    ) {
+        self.process = process
+        self.workingDirectory = workingDirectory
+        self.expectedPackURL = expectedPackURL
+        self.logURL = logURL
+        self.logHandle = logHandle
+    }
+}
+
 enum PetPackLibraryManager {
     private static let requiredSemanticIDs: Set<String> = [
         "stand.idle", "stand.look.images",
@@ -258,7 +280,10 @@ enum PetPackLibraryManager {
         let slug = name.lowercased()
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        let id = slug.isEmpty ? "my-pet-\(Int(Date().timeIntervalSince1970))" : slug
+        let baseID = slug.isEmpty ? "my-pet" : slug
+        let id = PetAssetCatalog.availablePets.contains(where: { $0.id == baseID })
+            ? "\(baseID)-\(UUID().uuidString.prefix(6).lowercased())"
+            : baseID
         let root = destinationDirectory.appendingPathComponent("\(id)-creation-request", isDirectory: true)
         guard !FileManager.default.fileExists(atPath: root.path) else {
             throw PetPackLibraryError.operationFailed("\(root.lastPathComponent) already exists")
@@ -291,6 +316,129 @@ enum PetPackLibraryManager {
             try FileManager.default.copyItem(at: skill, to: root.appendingPathComponent("furball-pet-creator"))
         }
         return root
+    }
+
+    static var codexExecutableURL: URL? {
+        if let override = ProcessInfo.processInfo.environment["FURBALL_CODEX_EXECUTABLE"],
+           FileManager.default.isExecutableFile(atPath: override) {
+            return URL(fileURLWithPath: override)
+        }
+        let candidates = [
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/codex").path
+        ]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+            .map(URL.init(fileURLWithPath:))
+    }
+
+    static func startCodexCreation(
+        name: String,
+        species: String,
+        styles: [String],
+        photos: [URL]
+    ) throws -> CodexPetCreationJob {
+        guard let codexExecutableURL else {
+            throw PetPackLibraryError.operationFailed(
+                AppLanguage.stored == .simplifiedChinese
+                    ? "未找到 Codex CLI，请先安装并登录 Codex，或导出创建请求。"
+                    : "Codex CLI was not found. Install and sign in to Codex, or export a creation request instead."
+            )
+        }
+        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
+        try FileManager.default.createDirectory(at: jobsRoot, withIntermediateDirectories: true)
+        let jobRoot = jobsRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: jobRoot, withIntermediateDirectories: true)
+        var didStart = false
+        defer {
+            if !didStart { try? FileManager.default.removeItem(at: jobRoot) }
+        }
+        let requestRoot = try makeCreationRequest(
+            name: name,
+            species: species,
+            styles: styles,
+            photos: photos,
+            in: jobRoot
+        )
+        guard let requestData = try? Data(contentsOf: requestRoot.appendingPathComponent("REQUEST.json")),
+              let request = try? JSONSerialization.jsonObject(with: requestData) as? [String: Any],
+              let expectedOutput = request["expectedOutput"] as? String else {
+            throw PetPackLibraryError.operationFailed("Could not read the generated REQUEST.json")
+        }
+
+        let referencePhotos = try FileManager.default.contentsOfDirectory(
+            at: requestRoot.appendingPathComponent("ReferencePhotos", isDirectory: true),
+            includingPropertiesForKeys: nil
+        ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let logURL = requestRoot.appendingPathComponent("codex-generation.log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        let logHandle = try FileHandle(forWritingTo: logURL)
+        let process = Process()
+        process.executableURL = codexExecutableURL
+        process.currentDirectoryURL = requestRoot
+        var arguments = [
+            "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--sandbox", "workspace-write",
+            "--ask-for-approval", "never",
+            "--cd", requestRoot.path
+        ]
+        for photo in referencePhotos {
+            arguments.append(contentsOf: ["--image", photo.path])
+        }
+        arguments.append(
+            "Read REQUEST.json and the complete furball-pet-creator/SKILL.md, then execute that Skill. "
+            + "Create the import-ready \(expectedOutput) inside this working directory. "
+            + "Use image generation only, preserve the photographed pet's identity, run every bundled validator, "
+            + "and do not stop until the final Pet Pack passes validation."
+        )
+        process.arguments = arguments
+        process.standardOutput = logHandle
+        process.standardError = logHandle
+        do {
+            try process.run()
+            didStart = true
+        } catch {
+            try? logHandle.close()
+            throw PetPackLibraryError.operationFailed(error.localizedDescription)
+        }
+        return CodexPetCreationJob(
+            process: process,
+            workingDirectory: requestRoot,
+            expectedPackURL: requestRoot.appendingPathComponent(expectedOutput, isDirectory: true),
+            logURL: logURL,
+            logHandle: logHandle
+        )
+    }
+
+    static func finishCodexCreation(_ job: CodexPetCreationJob) throws -> ValidatedPetPack {
+        try? job.logHandle.close()
+        guard job.process.terminationStatus == 0 else {
+            throw PetPackLibraryError.operationFailed(
+                "Codex exited with status \(job.process.terminationStatus). See \(job.logURL.lastPathComponent)."
+            )
+        }
+        _ = try validatePack(at: job.expectedPackURL)
+        let summary: ValidatedPetPack
+        do {
+            summary = try installPack(from: job.expectedPackURL)
+        } catch PetPackLibraryError.petAlreadyExists {
+            summary = try installPack(from: job.expectedPackURL, replacingExisting: true)
+        }
+        removeCompletedCreationJob(job)
+        return summary
+    }
+
+    private static func removeCompletedCreationJob(_ job: CodexPetCreationJob) {
+        let jobRoot = job.workingDirectory.deletingLastPathComponent().standardizedFileURL
+        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
+            .standardizedFileURL.path + "/"
+        if jobRoot.path.hasPrefix(jobsRoot) {
+            try? FileManager.default.removeItem(at: jobRoot)
+        }
     }
 
     private static func inspectAtlas(

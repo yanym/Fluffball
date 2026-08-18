@@ -72,11 +72,11 @@ MyPet.furballpet/
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` 可在不重新编译的情况下运行一个外部包，适合制作和测试工具。
 - App 内“宠物素材库”会验证、安装、切换、导出和可恢复地移除 `.furballpet`；Finder 双击宠物包也会进入相同验证路径。用户包安装在 `~/Library/Application Support/Furball2D/Pets/`。
 - 每个宠物 ID 拥有独立的本地性格、动态状态与短期记忆；这些用户数据不写回或污染可分享的 `.furballpet`。
-- “创建 2D 宠物”接受 6–12 张照片、宠物名称/种类和目标风格，输出照片、`REQUEST.json`、双语 Skill、动作注册表与独立验证器。当前明确不生成视频。
+- “创建 2D 宠物”接受 6–12 张照片、宠物名称/种类和目标风格。可由本机已登录的 Codex CLI 按同一合同执行图片生成、完整验证与自动导入；也可输出照片、`REQUEST.json`、双语 Skill、动作注册表与独立验证器供其他模型使用。当前明确不生成视频。
 - 同一宠物可拥有真实连续动画、可爱 2D 和写实 2D；Nina 是包含三种外观的内置参考包。
 - `Scripts/validate-pet-pack.swift <pack>` 会按能力解析 PNG 与图集绑定的并集，检查 27 个语义动作、路径安全、循环语义、图集结构/Alpha/方向、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。纯图集包不必伪造 PNG 或空视频。
 
-当前版本已经完成普通用户可操作的图片包导入、导出、切换和创建请求工作流。生成阶段仍由用户选择的图片模型执行：随请求导出的 Skill 强制身份板、两种风格、16 方向、睡眠 flow、透明图集和 QA 合同，结果返回后可直接导入。未来若加入托管模型调用，应复用同一请求与验证合同，而不是另建不兼容格式。
+当前版本已经完成普通用户可操作的图片包导入、导出、切换和创建工作流。本机存在并已登录 Codex CLI 时，“一键生成并导入”会在隔离的创建任务目录中执行同一 Skill，生成完成后必须先通过 App 的独立 Pet Pack 验证器才会自动安装。没有 Codex 时仍可导出请求交给其他图片模型；两条路径共享身份板、两种风格、16 方向、睡眠 flow、透明图集和 QA 合同。未来若加入托管模型调用，也必须复用该合同。
 
 ---
 
@@ -139,8 +139,8 @@ Source photos, chroma footage, and generation logs stay in a private source proj
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` runs an unpacked external pack without recompilation for production and QA workflows.
 - Pet Library validates, installs, switches, exports, and recoverably removes `.furballpet` packages. Finder-opened packages use the same validation path. User packs live under `~/Library/Application Support/Furball2D/Pets/`.
 - Each pet ID has separate local personality, dynamic state, and short-term memory data; this user state never mutates or contaminates a shareable `.furballpet`.
-- Create 2D Pet accepts 6–12 photos, name/species, and requested styles, then exports the photos, `REQUEST.json`, bilingual Skill, action registry, and standalone validator. It explicitly does not generate video.
+- Create 2D Pet accepts 6–12 photos, name/species, and requested styles. A signed-in local Codex CLI can execute image generation, full validation, and automatic import under the same contract, or the app can export photos, `REQUEST.json`, bilingual Skill, action registry, and standalone validator for another model. It explicitly does not generate video.
 - One pet may expose Live Motion, Cute 2D, and Realistic 2D; Nina is the built-in three-appearance reference pack.
 - `Scripts/validate-pet-pack.swift <pack>` resolves the union of PNG descriptors and atlas bindings, then validates all 27 semantic actions, safe paths, loop semantics, atlas structure/alpha/directions, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency. A pure-atlas pack does not need placeholder PNGs or empty videos.
 
-The current release includes the consumer image-pack import, export, switching, and creation-request workflow. Generation still runs in the user’s chosen image-capable model: the exported Skill enforces an identity board, both styles, 16 directions, the sleep flow, transparent atlases, and QA contract, after which the result imports directly. A future hosted provider should reuse this request and validation contract rather than introduce an incompatible format.
+The current release includes consumer image-pack import, export, switching, and creation. When a signed-in Codex CLI is available, Build & Import runs the same Skill inside an isolated creation-job directory and installs the result only after the app’s independent Pet Pack validator succeeds. Without Codex, users can export the request to another image-capable model. Both paths share the identity board, both styles, 16 directions, sleep flow, transparent atlases, and QA contract. Any future hosted provider must reuse this contract.
