@@ -79,6 +79,14 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
+    private struct MovementBoundaryCollision {
+        /// -1 is the left/bottom wall, +1 is the right/top wall, 0 is no hit.
+        var horizontalWall: CGFloat = 0
+        var verticalWall: CGFloat = 0
+
+        var occurred: Bool { horizontalWall != 0 || verticalWall != 0 }
+    }
+
     private let panel: PetPanel
     private let renderer: PetRenderer
     private var statusItem: NSStatusItem?
@@ -105,8 +113,6 @@ final class PetController: NSObject, NSMenuDelegate {
     private var cursorFollowTimer: Timer?
     private var freeRoamTimer: Timer?
     private var facingTimer: Timer?
-    private var pendingAppearanceTimer: Timer?
-    private var pendingAppearanceID: String?
     private var statusItemHealthTimer: Timer?
     private var treatChaseTimer: Timer?
     private var hoverActionTimer: Timer?
@@ -142,6 +148,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var lastFacingChangeTime: TimeInterval = 0
     private var isUsingImageFacing = false
     private var facingTransitionGeneration = 0
+    private var profileSwitchGeneration = 0
     private var isReturningToActionProfile = false
     private var cursorMotionReadyTime: TimeInterval = 0
     private var freeRoamTarget: NSPoint?
@@ -330,6 +337,12 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.writeSmokeReport(to: reportPath)
             }
         }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_BOUNDARY_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.runBoundaryReflectionQA(reportPath: reportPath)
+            }
+        }
         if let reportPath = behaviorQAReportPath, !reportPath.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { [weak self] in
                 self?.startTreatBehaviorQA()
@@ -458,6 +471,8 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         let rect = renderer.visibleContentRect()
         let report: [String: Any] = [
+            "activePet": PetAssetCatalog.activePet?.id ?? NSNull(),
+            "availablePets": PetAssetCatalog.availablePets.map(\.id),
             "appearance": PetAssetCatalog.activeAppearance.id,
             "mode": renderer.visualMode == .video ? "video" : "images",
             "panelVisible": panel.isVisible,
@@ -475,6 +490,60 @@ final class PetController: NSObject, NSMenuDelegate {
             NSLog("Furball2D smoke report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_SMOKE_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func runBoundaryReflectionQA(reportPath: String) {
+        guard let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            writeBoundaryQAReport(path: reportPath, values: ["pass": false, "reason": "No screen"])
+            return
+        }
+        let limits = horizontalMovementLimits(in: visibleFrame)
+        var origin = panel.frame.origin
+        origin.x = limits.maximum
+        panel.setFrameOrigin(origin)
+        posture = .stand
+        isTransitioning = false
+        locomotionMode = .walk
+        locomotionTranslationStartTime = 0
+        locomotionDirection = 1
+        actionFacing = .right
+        locomotionVelocity = NSPoint(x: 120, y: 0)
+
+        let centerBefore = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let outsideTarget = NSPoint(x: centerBefore.x + 600, y: centerBefore.y)
+        let collision = updateMovement(
+            toward: outsideTarget,
+            demand: 500,
+            deadZone: 8,
+            now: ProcessInfo.processInfo.systemUptime,
+            deltaTime: 1.0 / 60.0
+        )
+        redirectFreeRoamAfterBoundaryCollision(collision, previousTarget: outsideTarget)
+        let reflectedTarget = freeRoamTarget
+        let passed = collision.horizontalWall == 1
+            && locomotionDirection < 0
+            && actionFacing == .left
+            && locomotionVelocity.x < 0
+            && (reflectedTarget?.x ?? .greatestFiniteMagnitude) < panel.frame.midX
+        writeBoundaryQAReport(path: reportPath, values: [
+            "pass": passed,
+            "hitRightWall": collision.horizontalWall == 1,
+            "reversedFacing": actionFacing == .left,
+            "reversedVelocity": locomotionVelocity.x < 0,
+            "targetMovedInside": (reflectedTarget?.x ?? .greatestFiniteMagnitude) < panel.frame.midX
+        ])
+    }
+
+    private func writeBoundaryQAReport(path: String, values: [String: Any]) {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            NSLog("Furball2D boundary QA report failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_BOUNDARY_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
         }
     }
@@ -1523,11 +1592,12 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingLocomotionMode = nil
         isUsingImageFacing = false
         isTransitioning = true
+        let profileGeneration = profileSwitchGeneration
         renderer.setMirrored(actionFacing.isMirrored)
         speechBubble.updateAppearance(mood: speechMood)
         do {
             try renderer.play(clip) { [weak self] in
-                guard let self else { return }
+                guard let self, self.profileSwitchGeneration == profileGeneration else { return }
                 self.isTransitioning = false
                 self.playIdle(clip.resultingPosture)
                 if clip.resultingPosture == .sleep {
@@ -2036,13 +2106,60 @@ final class PetController: NSObject, NSMenuDelegate {
         }
 
         let demand = max(120, distance * 0.9)
-        updateMovement(
+        let collision = updateMovement(
             toward: target,
             demand: demand,
             deadZone: deadZone,
             now: now,
             deltaTime: deltaTime
         )
+        if collision.occurred {
+            redirectFreeRoamAfterBoundaryCollision(collision, previousTarget: target)
+        }
+    }
+
+    private func redirectFreeRoamAfterBoundaryCollision(
+        _ collision: MovementBoundaryCollision,
+        previousTarget: NSPoint
+    ) {
+        guard let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else { return }
+        let horizontalLimits = horizontalMovementLimits(in: visibleFrame)
+        let verticalLimits = verticalMovementLimits(in: visibleFrame)
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let centerXLimits = (
+            minimum: horizontalLimits.minimum + panel.frame.width / 2,
+            maximum: horizontalLimits.maximum + panel.frame.width / 2
+        )
+        let centerYLimits = (
+            minimum: verticalLimits.minimum + panel.frame.height / 2,
+            maximum: verticalLimits.maximum + panel.frame.height / 2
+        )
+        let horizontalRebound = min(
+            440 * petScale,
+            max(180 * petScale, (centerXLimits.maximum - centerXLimits.minimum) * 0.48)
+        )
+        let verticalRebound = min(
+            300 * petScale,
+            max(130 * petScale, (centerYLimits.maximum - centerYLimits.minimum) * 0.42)
+        )
+
+        var target = previousTarget
+        if collision.horizontalWall != 0 {
+            target.x = center.x - collision.horizontalWall * horizontalRebound
+            locomotionVelocity.x = -collision.horizontalWall * max(42, abs(locomotionVelocity.x) * 0.45)
+            locomotionDirection = -collision.horizontalWall
+            actionFacing = locomotionDirection > 0 ? .right : .left
+            renderer.setMirrored(actionFacing.isMirrored)
+        }
+        if collision.verticalWall != 0 {
+            target.y = center.y - collision.verticalWall * verticalRebound
+            locomotionVelocity.y = -collision.verticalWall * max(34, abs(locomotionVelocity.y) * 0.45)
+        }
+        target.x = min(centerXLimits.maximum, max(centerXLimits.minimum, target.x))
+        target.y = min(centerYLimits.maximum, max(centerYLimits.minimum, target.y))
+        pendingDesktopInteraction = nil
+        freeRoamPauseUntil = 0
+        freeRoamTarget = target
     }
 
     private func performDesktopInteraction(_ destination: DesktopInteractionService.Destination) {
@@ -2405,13 +2522,14 @@ final class PetController: NSObject, NSMenuDelegate {
         return candidate
     }
 
+    @discardableResult
     private func updateMovement(
         toward target: NSPoint,
         demand: CGFloat,
         deadZone: CGFloat,
         now: TimeInterval,
         deltaTime: TimeInterval
-    ) {
+    ) -> MovementBoundaryCollision {
         let deltaX = target.x - panel.frame.midX
         let deltaY = target.y - panel.frame.midY
         let distance = hypot(deltaX, deltaY)
@@ -2448,7 +2566,7 @@ final class PetController: NSObject, NSMenuDelegate {
             translationProgress = 1
         } else if now < locomotionTranslationStartTime {
             locomotionVelocity = .zero
-            return
+            return MovementBoundaryCollision()
         } else {
             let rampDuration = max(
                 0.01,
@@ -2478,7 +2596,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
         guard hypot(locomotionVelocity.x, locomotionVelocity.y) > 0.25 else {
             locomotionVelocity = .zero
-            return
+            return MovementBoundaryCollision()
         }
 
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
@@ -2487,6 +2605,11 @@ final class PetController: NSObject, NSMenuDelegate {
         var origin = panel.frame.origin
         let proposedX = origin.x + locomotionVelocity.x * deltaTime
         let proposedY = origin.y + locomotionVelocity.y * deltaTime
+        var collision = MovementBoundaryCollision()
+        if proposedX < horizontalLimits.minimum { collision.horizontalWall = -1 }
+        else if proposedX > horizontalLimits.maximum { collision.horizontalWall = 1 }
+        if proposedY < verticalLimits.minimum { collision.verticalWall = -1 }
+        else if proposedY > verticalLimits.maximum { collision.verticalWall = 1 }
         origin.x = min(horizontalLimits.maximum, max(horizontalLimits.minimum, proposedX))
         origin.y = min(verticalLimits.maximum, max(verticalLimits.minimum, proposedY))
 
@@ -2494,6 +2617,7 @@ final class PetController: NSObject, NSMenuDelegate {
         if origin.y != proposedY { locomotionVelocity.y = 0 }
         panel.setFrameOrigin(origin)
         repositionSpeechBubble(refreshSilhouette: false)
+        return collision
     }
 
     private func desiredLocomotionMode(
@@ -2701,12 +2825,13 @@ final class PetController: NSObject, NSMenuDelegate {
         isUsingImageFacing = false
         renderer.setMirrored(false)
         isTransitioning = true
+        let profileGeneration = profileSwitchGeneration
         showSpeech(appLanguage.imageTurnGreeting)
         speechBubble.updateAppearance(mood: speechMood)
 
         do {
             try renderer.play(PetClips.lookAroundImages, fadeDuration: 0.10) { [weak self] in
-                guard let self else { return }
+                guard let self, self.profileSwitchGeneration == profileGeneration else { return }
                 self.isTransitioning = false
                 self.playIdle(.stand)
                 if resumeFollowing, self.followCursor {
@@ -2803,12 +2928,13 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingFacingView = nil
         isUsingImageFacing = false
         isTransitioning = true
+        let profileGeneration = profileSwitchGeneration
         renderer.setMirrored(false)
         speechBubble.updateAppearance(mood: speechMood)
         let clip = PetClips.imageAction(action)
         do {
             try renderer.play(clip, fadeDuration: 0.10) { [weak self] in
-                guard let self else { return }
+                guard let self, self.profileSwitchGeneration == profileGeneration else { return }
                 self.posture = clip.resultingPosture
                 self.isTransitioning = false
                 self.playIdle(clip.resultingPosture)
@@ -3052,43 +3178,17 @@ final class PetController: NSObject, NSMenuDelegate {
     @discardableResult
     private func switchAppearance(to id: String) -> Bool {
         let previous = PetAssetCatalog.activeAppearance
-        guard previous.id != id else {
-            pendingAppearanceTimer?.invalidate()
-            pendingAppearanceTimer = nil
-            pendingAppearanceID = nil
-            return true
-        }
-        if isTransitioning {
-            pendingAppearanceID = id
-            schedulePendingAppearanceSwitch()
-            return true
-        }
-        pendingAppearanceTimer?.invalidate()
-        pendingAppearanceTimer = nil
-        pendingAppearanceID = nil
+        guard previous.id != id else { return true }
         guard let next = PetAssetCatalog.availableAppearances.first(where: { $0.id == id }),
-              PetAssetCatalog.selectAppearance(id: id) else { return false }
+              PetAssetCatalog.availableAppearances.contains(where: { $0.id == id }) else { return false }
 
-        let resumeFollowing = followCursor
-        let resumeRoaming = freeRoamEnabled
-        cursorFollowTimer?.invalidate()
-        cursorFollowTimer = nil
-        freeRoamTimer?.invalidate()
-        freeRoamTimer = nil
-        freeRoamTarget = nil
-        locomotionGeneration += 1
-        locomotionMode = .none
-        locomotionVelocity = .zero
-        pendingLocomotionMode = nil
+        let resumeModes = interruptCurrentActivityForProfileSwitch()
+        guard PetAssetCatalog.selectAppearance(id: id) else { return false }
 
         do {
-            cancelTreatChase(resume: false)
-            hideSpeechBubble(animated: false)
-            isUsingImageFacing = false
-            pendingFacingView = nil
-            directionalLookIsEngaged = false
             videoAnimationsEnabled = next.kind == .continuousVideo
-            try renderer.setVisualMode(next.kind.visualMode, replaying: PetClips.idle(for: posture))
+            try renderer.setVisualMode(next.kind.visualMode)
+            try renderer.play(PetClips.standIdle, fadeDuration: 0.06)
             renderer.setMirrored(actionFacing.isMirrored)
             repositionSpeechBubble(resetSilhouette: true)
             remember(
@@ -3099,71 +3199,42 @@ final class PetController: NSObject, NSMenuDelegate {
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(next.title(for: appLanguage)))
-            if resumeFollowing {
-                beginCursorFollowing()
-            } else if resumeRoaming {
-                beginFreeRoaming()
-            }
+            resumeAfterProfileSwitch(resumeModes)
             return true
         } catch {
             _ = PetAssetCatalog.selectAppearance(id: previous.id)
             videoAnimationsEnabled = previous.kind == .continuousVideo
-            try? renderer.setVisualMode(previous.kind.visualMode, replaying: PetClips.idle(for: posture))
+            try? renderer.setVisualMode(previous.kind.visualMode)
+            try? renderer.play(PetClips.standIdle, fadeDuration: 0)
             rebuildMenu()
             refreshAppearanceSettings()
+            resumeAfterProfileSwitch(resumeModes)
             present(error)
             return false
         }
     }
 
-    private func schedulePendingAppearanceSwitch() {
-        pendingAppearanceTimer?.invalidate()
-        pendingAppearanceTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    timer.invalidate()
-                    return
-                }
-                guard !self.isTransitioning, let id = self.pendingAppearanceID else { return }
-                timer.invalidate()
-                self.pendingAppearanceTimer = nil
-                self.pendingAppearanceID = nil
-                _ = self.switchAppearance(to: id)
-            }
-        }
-    }
-
     @discardableResult
     private func switchPet(to id: String) -> Bool {
-        guard !isTransitioning, locomotionMode == .none else {
-            showSpeech(appLanguage.appearanceBusy)
-            return false
-        }
         guard let previousPet = PetAssetCatalog.activePet else { return false }
         guard previousPet.id != id else { return true }
         let previousAppearance = PetAssetCatalog.activeAppearance
+        guard PetAssetCatalog.availablePets.contains(where: { $0.id == id }) else { return false }
+        let resumeModes = interruptCurrentActivityForProfileSwitch()
         guard PetAssetCatalog.selectPet(id: id), let nextPet = PetAssetCatalog.activePet else { return false }
         let nextAppearance = PetAssetCatalog.activeAppearance
 
         do {
-            cancelTreatChase(resume: false)
-            hideSpeechBubble(animated: false)
-            behaviorEpoch += 1
-            behaviorTimer?.invalidate()
-            stopPatrol()
-            isUsingImageFacing = false
-            pendingFacingView = nil
-            directionalLookIsEngaged = false
             videoAnimationsEnabled = nextAppearance.kind == .continuousVideo
             try renderer.setVisualMode(nextAppearance.kind.visualMode)
-            try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            try renderer.play(PetClips.standIdle, fadeDuration: 0.06)
             renderer.setMirrored(actionFacing.isMirrored)
             mindPetID = nextPet.id
             petMind = PetMindStore.load(petID: mindPetID)
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(nextPet.name))
-            restartAutonomy()
+            resumeAfterProfileSwitch(resumeModes)
             return true
         } catch {
             _ = PetAssetCatalog.selectPet(id: previousPet.id)
@@ -3172,11 +3243,57 @@ final class PetController: NSObject, NSMenuDelegate {
             petMind = PetMindStore.load(petID: mindPetID)
             videoAnimationsEnabled = previousAppearance.kind == .continuousVideo
             try? renderer.setVisualMode(previousAppearance.kind.visualMode)
-            try? renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            try? renderer.play(PetClips.standIdle, fadeDuration: 0)
             rebuildMenu()
             refreshAppearanceSettings()
+            resumeAfterProfileSwitch(resumeModes)
             present(error)
             return false
+        }
+    }
+
+    /// Appearance and pet selection are user commands, so they preempt every
+    /// autonomous action instead of waiting for a transition, chase, or gait.
+    private func interruptCurrentActivityForProfileSwitch() -> (follow: Bool, roam: Bool) {
+        let resumeModes = (follow: followCursor, roam: freeRoamEnabled)
+        behaviorEpoch += 1
+        locomotionGeneration += 1
+        facingTransitionGeneration += 1
+        profileSwitchGeneration += 1
+        behaviorTimer?.invalidate()
+        behaviorTimer = nil
+        patrolTimer?.invalidate()
+        patrolTimer = nil
+        cursorFollowTimer?.invalidate()
+        cursorFollowTimer = nil
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        facingTimer?.invalidate()
+        facingTimer = nil
+        cancelTreatChase(resume: false)
+        cancelDesktopItemInteraction()
+        hideSpeechBubble(animated: false)
+        freeRoamTarget = nil
+        pendingDesktopInteraction = nil
+        pendingFacingView = nil
+        pendingLocomotionMode = nil
+        locomotionMode = .none
+        locomotionVelocity = .zero
+        isUsingImageFacing = false
+        directionalLookIsEngaged = false
+        isReturningToActionProfile = false
+        isTransitioning = false
+        posture = .stand
+        return resumeModes
+    }
+
+    private func resumeAfterProfileSwitch(_ modes: (follow: Bool, roam: Bool)) {
+        if modes.follow, followCursor {
+            beginCursorFollowing()
+        } else if modes.roam, freeRoamEnabled {
+            beginFreeRoaming()
+        } else {
+            restartAutonomy()
         }
     }
 

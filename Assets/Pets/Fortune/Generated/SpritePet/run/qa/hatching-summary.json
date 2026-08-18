@@ -1,0 +1,20 @@
+{
+  "pet": "Fortune",
+  "sourceReferenceCount": 6,
+  "identityGrounded": true,
+  "runtimeMode": "image-only",
+  "spriteVersionNumber": 2,
+  "assetScale": 2,
+  "atlasWidth": 3072,
+  "atlasHeight": 4576,
+  "cellWidth": 384,
+  "cellHeight": 416,
+  "nativeHDRowSources": true,
+  "maximumRegistrationUpscale": 1.034,
+  "groundBaselineSpreadPixels": 0,
+  "semanticSlots": 27,
+  "lookDirections": 16,
+  "customActions": 16,
+  "petPackValidation": "passed",
+  "runtimeSmokeTest": "passed"
+}

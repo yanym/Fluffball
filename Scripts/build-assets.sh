@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-SOURCE_DIR="$PROJECT_DIR/Assets/UserProvided/SourceVideos/left-profile"
-OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile"
+SOURCE_DIR="$PROJECT_DIR/Assets/Pets/Nina/UserProvided/SourceVideos/left-profile"
+OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Pets/Nina/Clips/left-profile"
 
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
   print -u2 "FFmpeg is required (brew install ffmpeg)."
@@ -249,10 +249,13 @@ compile_motion_segment() {
   local dx1="${10}"
   local dy0="${11}"
   local dy1="${12}"
+  local repetitions="${13:-1}"
   local source_path="$SOURCE_DIR/$source_name"
   local output_path="$OUTPUT_DIR/$output_name.mov"
   local normalize
   local interpolate
+  local color_grade
+  local loop_filter=""
 
   if [[ ! -f "$source_path" ]]; then
     print -u2 "Missing locomotion source: $source_path"
@@ -266,7 +269,12 @@ compile_motion_segment() {
   normalize="$(stabilize_filter 1190 670 "$duration" "$q0" "$q1" "$dx0" "$dx1" "$dy0" "$dy1")"
   color_grade="$(motion_color_filter "$source_name")"
   interpolate="$(motion_interpolation_filter "$duration")"
-  local motion_filters="$SOURCE_CLEANUP,$interpolate,chromakey=$key_color:0.078:0.025,despill=green:mix=0.32:expand=0.05,format=rgba,$color_grade,unsharp=5:5:0.25:3:3:0,$normalize,scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:flags=lanczos+accurate_rnd,format=bgra"
+  if (( repetitions > 1 )); then
+    local interpolated_frame_count
+    interpolated_frame_count="$(awk -v seconds="$duration" -v fps="$TARGET_FPS" 'BEGIN { print int(seconds * fps + 0.5) }')"
+    loop_filter=",loop=loop=$((repetitions - 1)):size=${interpolated_frame_count}:start=0,setpts=N/${TARGET_FPS}/TB"
+  fi
+  local motion_filters="$SOURCE_CLEANUP,$interpolate,chromakey=$key_color:0.078:0.025,despill=green:mix=0.32:expand=0.05,format=rgba,$color_grade,unsharp=5:5:0.25:3:3:0,$normalize,scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:flags=lanczos+accurate_rnd,format=bgra$loop_filter"
 
   print "Building locomotion $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
@@ -274,6 +282,17 @@ compile_motion_segment() {
     "${ENCODE_OPTIONS[@]}" \
     "$output_path"
 }
+
+if [[ "${FURBALL_LOCOMOTION_LOOPS_ONLY:-0}" == "1" ]]; then
+  compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-loop" "4.125000" "1.208333" "0x549a44" 29 \
+    "0.930000" "0.934504" "8.637" "8.296" "26.707" "26.578" 8
+  compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-loop" "4.083333" "1.291667" "0x509b3e" 31 \
+    "0.930000" "0.942602" "24.013" "-4.818" "31.667" "32.913" 8
+  compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-loop" "2.750000" "0.583333" "0x539648" 14 \
+    "0.930000" "0.889771" "-7.111" "-13.671" "42.827" "52.040" 16
+  print "Rebuilt the three long, phase-closed locomotion loop items."
+  exit 0
+fi
 
 compile_pingpong_idle "stand-idle.mp4" "stand-idle" "0.20" "9.40"
 compile_clip "stand-to-sit.mp4" "stand-to-sit" "0.00" "3.20"
@@ -292,21 +311,21 @@ compile_sleep_to_stand
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-start" "0.200000" "3.925000" "0x549a44" 94 \
   "0.929752" "0.934504" "-12.060" "8.919" "0.749" "25.332"
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-loop" "4.125000" "1.208333" "0x549a44" 29 \
-  "0.930000" "0.934504" "8.637" "8.296" "26.707" "26.578"
+  "0.930000" "0.934504" "8.637" "8.296" "26.707" "26.578" 8
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-stop" "5.333333" "3.166667" "0x549a44" 76 \
   "0.927764" "1.032110" "9.920" "-5.845" "28.626" "5.162"
 
 compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-start" "0.125000" "3.958333" "0x509b3e" 95 \
   "0.925926" "0.942602" "-12.514" "25.974" "0.790" "27.886"
 compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-loop" "4.083333" "1.291667" "0x509b3e" 31 \
-  "0.930000" "0.942602" "24.013" "-4.818" "31.667" "32.913"
+  "0.930000" "0.942602" "24.013" "-4.818" "31.667" "32.913" 8
 compile_motion_segment "stand-to-slow-run-to-stand.mp4" "slow-run-stop" "5.375000" "3.125000" "0x509b3e" 75 \
   "0.937520" "0.961538" "-6.642" "-9.703" "34.411" "5.538"
 
 compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-start" "0.250000" "2.500000" "0x539648" 60 \
   "0.929752" "0.861281" "-11.936" "-4.421" "0.749" "55.728"
 compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-loop" "2.750000" "0.583333" "0x539648" 14 \
-  "0.930000" "0.889771" "-7.111" "-13.671" "42.827" "52.040"
+  "0.930000" "0.889771" "-7.111" "-13.671" "42.827" "52.040" 16
 compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-stop" "3.333333" "5.166667" "0x539648" 124 \
   "0.945081" "1.022727" "-12.716" "2.779" "35.963" "-9.788"
 

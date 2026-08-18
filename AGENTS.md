@@ -13,7 +13,7 @@ This file is mandatory guidance for any Agent working on Fluffball/Furball2D. Wh
 
 ## 1.1 Identity references for new AI videos
 
-If the task includes generating a new AI pet-action video, first read `Assets/UserProvided/SourceImagesForAIVideo/README.md`. Prefer references under `Assets/Generated/AIReferenceImages/generation-ready/<pose>/<view>.png` that match the target posture and view, and use the front view to lock face shape and markings. `Assets/UserProvided/SourceImagesForAIVideo/originals/` exists only for identity verification and provenance and must not be overwritten by generated results.
+If the task includes generating a new AI pet-action video, first read `Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md`. Prefer references under `Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/<pose>/<view>.png` that match the target posture and view, and use the front view to lock face shape and markings. `Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/originals/` exists only for identity verification and provenance and must not be overwritten by generated results.
 
 A typical action uses two to four references. Do not mix opposite profile views unless the shot explicitly turns around. The output must preserve the same dog, fixed view, stable subject size, and stable ground baseline. Face replacement, coat changes, tail-length changes, or flipped left/right markings are generation failures.
 
@@ -38,9 +38,9 @@ When the user explicitly rejects AI-generated video, use a Codex-compatible Pet 
 
 If the task replaces the complete animal rather than adding one action, read `Docs/PET_PACK_STANDARD.md` first. Dogs and cats use the same 27 semantic action slots. Never add pet-specific hardcoded file paths to Swift; paths, loop properties, capabilities, and identity belong in the Pet Pack `manifest.json`. Image, video, and dual-mode packs must all pass `Scripts/validate-pet-pack.swift`; never package a validation failure.
 
-Preserve the original video. Do not immediately overwrite `Sources/Furball2D/Assets/Clips`. Archive sources under `Assets/UserProvided/SourceVideos/<view>/<action>.mp4`, then complete these checks:
+Preserve the original video. Do not immediately overwrite `Sources/Furball2D/Assets/Pets/Nina/Clips`. Archive sources under `Assets/Pets/Nina/UserProvided/SourceVideos/<view>/<action>.mp4`, then complete these checks:
 
-View directories use lowercase kebab-case, such as `left-profile`, `right-profile`, `front`, and `three-quarter-left`. If the view changes during the clip, use a directional name such as `three-quarter-to-front`. Action filenames also use kebab-case, such as `stand-idle.mp4` and `stand-to-sit.mp4`. Exports go under the matching `Sources/Furball2D/Assets/Clips/<view>/` directory; never mix views in one folder.
+View directories use lowercase kebab-case, such as `left-profile`, `right-profile`, `front`, and `three-quarter-left`. If the view changes during the clip, use a directional name such as `three-quarter-to-front`. Action filenames also use kebab-case, such as `stand-idle.mp4` and `stand-to-sit.mp4`. Exports go under the matching `Sources/Furball2D/Assets/Pets/Nina/Clips/<view>/` directory; never mix views in one folder.
 
 - Use `ffprobe` to record resolution, frame rate, duration, color format, and whether frame rate is constant.
 - Generate a contact sheet at 0.25–0.5-second intervals and inspect the complete action timeline.
@@ -273,7 +273,7 @@ After processing a new action, review all of these:
 
 - `Scripts/build-assets.sh`: sources, cut points, loop construction, and correction parameters.
 - `Assets/README.md`: view directories, legacy mappings, alternate footage, and duplicate records.
-- `Sources/Furball2D/Assets/manifest.json`: canvas, frame rate, view, filenames, sources, and loop flags.
+- `Sources/Furball2D/Assets/Pets/<PetName>/manifest.json`: canvas, frame rate, view, filenames, sources, and loop flags.
 - `Sources/Furball2D/PetClip.swift`: action IDs, filenames, and resulting postures.
 - `Sources/Furball2D/PetController.swift`: only legal posture paths may exist in the state graph.
 - `README.md`: asset requirements and user-visible behavior.

@@ -1,10 +1,10 @@
 # Fluffball
 
-[English](#english) · [中文](#中文) · [Asset catalog](Assets/README.md) · [AI video references](Assets/UserProvided/SourceImagesForAIVideo/README.md) · [Agent guide](AGENTS.md) · [Commercial release](Docs/COMMERCIAL_RELEASE.md) · [Privacy](Docs/PRIVACY.md)
+[English](#english) · [中文](#中文) · [Asset catalog](Assets/README.md) · [AI video references](Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md) · [Agent guide](AGENTS.md) · [Commercial release](Docs/COMMERCIAL_RELEASE.md) · [Privacy](Docs/PRIVACY.md)
 
 ## English
 
-Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. The macOS product is named **Furball2D**. Nina ships with three instant-switch appearances: Live Motion, Cute 2D, and Realistic 2D. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so a new pet no longer needs an expensive generated-video set.
+Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. The macOS product is named **Furball2D**. Nina ships with Live Motion, Cute 2D, and Realistic 2D; Fortune is the second bundled profile and ships with a photo-grounded Realistic 2D appearance. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so a new pet no longer needs an expensive generated-video set.
 
 ### Features
 
@@ -27,7 +27,7 @@ Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 
 - The sleep flow explicitly separates awake lying, eye-close, closed-eye breathing, and full wake-up; sleep idle never flips between awake and asleep every second.
 - While the pointer moves, the image pet steps through adjacent cells across 16 gaze directions. After roughly 2.4 seconds of stillness it returns to a breathing/blinking idle. Gestures marked `autonomous` naturally appear in the rest routine before the pet sits, sleeps, or later patrols.
 - Runtime mirroring gives the left-profile footage a right-facing counterpart, so autonomous idles, tail wags, posture transitions, and sleep retain the selected side.
-- Appearance cards remain available during cursor following and roaming. A switch safely pauses locomotion, and a request made during a one-shot action is queued until that action completes.
+- Pet and appearance cards remain available during every action. A user selection immediately interrupts locomotion, gaze, a one-shot gesture, or autonomous behavior and starts the selected profile from its stable standing port.
 - Live Motion head tracking uses five stable view anchors, a short intention dwell, and complete decoder fades instead of rapidly cycling through all nine generated views.
 - Runtime resolves assets by Pet Pack semantic action IDs, so paths and loop behavior are no longer hardcoded. Conforming dog and cat packs can reuse one behavior engine.
 
@@ -50,35 +50,29 @@ dist/Furball2D.zip
 
 The app-icon source is stored at `Support/AppIcon.png`. To replace it, provide another square image and run `./Scripts/build-app-icon.sh`; the packaging script embeds the generated multi-resolution `AppIcon.icns` in the app bundle.
 
-The current package includes 1280×720/120 fps HEVC-with-alpha video plus separate Cute and Realistic 3072×4576 lossless transparent WebP atlases. Source 24 fps motion is bidirectionally motion-interpolated before keying, while atlas cells are rebuilt from complete high-resolution action rows instead of enlarging old runtime cells.
+The current package includes Nina's 1280×720/120 fps HEVC-with-alpha video, Nina's Cute and Realistic atlases, and Fortune's Realistic atlas. Every atlas is a 3072×4576 lossless transparent WebP built from native high-resolution action rows rather than enlarged runtime cells. Nina's phase-closed gait cycles are repeated inside roughly ten-second video items to avoid frequent AVQueuePlayer decoder handoffs during walking and running.
 
 The distributable Pet Pack creation Skill ships inside the app and lives at [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill). It strictly defines photo input, both image styles, the 11-row atlas, 27 semantic slots, 16 directions, sleep flow, identity/alpha QA, and import steps. Every action addition must update its `ACTION_REGISTRY_VERSION`.
 
-See the [Pet Pack v2 specification](Docs/PET_PACK_STANDARD.md) for the dual-mode contract, 27 semantic slots, and current implementation boundaries. Run `./Scripts/validate-pet-pack.swift Sources/Furball2D/Assets` to validate capability declarations, WebP atlas structure/alpha, video format, and action completeness.
+See the [Pet Pack v2 specification](Docs/PET_PACK_STANDARD.md) for the dual-mode contract, 27 semantic slots, and current implementation boundaries. Run the validator once per folder under `Sources/Furball2D/Assets/Pets/`; `Scripts/package-app.sh` does this automatically.
 
 ### Asset layout
 
 ```text
 Assets/
-├── UserProvided/                    # Immutable user inputs; never bundled at runtime
-│   ├── SourceImagesForAIVideo/originals/
-│   └── SourceVideos/                # Original green-screen footage by view/action
-└── Generated/                       # Prepared references, generated art, and QA
-    ├── AIReferenceImages/generation-ready/
-    ├── ImageTurn/normalized/
-    └── SpritePets/{Furball,NinaRealistic,HD-QA}/
+└── Pets/
+    ├── Nina/{UserProvided,Generated}/
+    └── Fortune/{UserProvided,Generated}/
 
 Sources/Furball2D/Assets/
-├── Sprites/Nina/cute/spritesheet.webp
-├── Sprites/Nina/realistic/spritesheet.webp
-├── Clips/image-views/               # Nine HEVC-with-alpha image-view loops
-├── Clips/left-profile/              # Exported HEVC-with-alpha action clips
-└── manifest.json                    # Capabilities plus image/video action metadata
+└── Pets/
+    ├── Nina/{manifest.json,Clips,Sprites}/       # Image + Live Motion
+    └── Fortune/{manifest.json,Sprites}/         # Image-only
 ```
 
 The source action chain uses a consistent `left-profile` view; right-facing actions are produced by runtime mirroring. Preprocessed assets are 1280×720 at 120 fps in HEVC with Alpha. Stand, sit, and lie idles use endpoint-deduplicated forward/reverse loops. Sleep uses only a low-motion breathing window. Transition and locomotion clips are smoothly corrected on a transparent work canvas for subject scale, alpha center, and ground anchor.
 
-See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate footage, and duplicate records. When generating new actions, start with the [generation-ready reference guide](Assets/UserProvided/SourceImagesForAIVideo/README.md). Any Agent replacing video assets must first read [AGENTS.md](AGENTS.md).
+See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate footage, and duplicate records. When generating new actions, start with the [generation-ready reference guide](Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md). Any Agent replacing video assets must first read [AGENTS.md](AGENTS.md).
 
 ### Interaction
 
@@ -119,7 +113,7 @@ The walk, jog, and run sources are stored as `stand-to-walk-to-stand.mp4`, `stan
 
 ## 中文
 
-Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣，当前 macOS 应用产品名为 **Furball2D**。Nina 内置三种可即时切换的外观：真实连续动画、可爱 2D 图片动画和写实 2D 图片动画。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行；新宠物不再需要先生成昂贵的视频。
+Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣，当前 macOS 应用产品名为 **Furball2D**。Nina 内置真实连续动画、可爱 2D 和写实 2D；Fortune 是第二个内置宠物 profile，带有基于真实照片制作的写实 2D 外观。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行。
 
 ### 功能
 
@@ -142,7 +136,7 @@ Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠�
 - 睡眠 flow 将“醒着趴卧 → 闭眼 → 闭眼呼吸循环 → 完整醒来”拆成明确端口；睡眠待机不再每秒在睁眼和闭眼之间跳变。
 - 鼠标移动时，图片宠物按相邻格逐步看向 16 个方向；鼠标静止约 2.4 秒后自动回到会呼吸、眨眼的动态待机。标记为 `autonomous` 的可爱动作会自然穿插在休息流程中，然后宠物继续坐下、睡觉或出门巡逻。
 - 左侧面的动作视频可在运行时镜像为右侧动作，因此自主待机、摇尾巴、姿态过渡和睡眠都能保持选定的左右朝向。
-- 跟随鼠标或自由漫游时也可直接选择外观；切换会先安全暂停移动，一次性动作尚未结束时则自动排队等待。
+- 任何动作中都可直接选择宠物或外观；用户选择会立即中断移动、转头、一次性动作或自动行为，并从新 profile 的稳定站立动作开始。
 - Live Motion 的鼠标转头改为五个稳定视角锚点、短暂意图停留和完整解码淡化，不再高速轮换九个视角造成双脸闪烁。
 - 运行时通过 Pet Pack 标准动作 ID 读取素材，文件路径和循环属性不再硬编码；同规格的狗狗或猫猫素材包可复用同一行为引擎。
 
@@ -169,31 +163,25 @@ dist/Furball2D.zip
 
 面向用户的 Pet Pack 创建 Skill 随安装包一起发布，也保存在 [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill)。它严格定义照片输入、两种图片风格、11 行图集、27 个标准语义槽位、16 方向、睡眠 flow、Alpha/身份连续性 QA 和导入步骤；每次增加动作都必须同步更新其中的 `ACTION_REGISTRY_VERSION`。
 
-通用宠物素材包的多外观合同、27 个语义槽位和当前实现边界记录在 [Pet Pack v2 规范](Docs/PET_PACK_STANDARD.md)。可用 `./Scripts/validate-pet-pack.swift Sources/Furball2D/Assets` 同时验收 WebP 图集结构/Alpha、视频格式和动作完整性。
+通用宠物素材包的多外观合同、27 个语义槽位和当前实现边界记录在 [Pet Pack v2 规范](Docs/PET_PACK_STANDARD.md)。验收时对 `Sources/Furball2D/Assets/Pets/` 下的每个宠物目录分别运行 validator；`Scripts/package-app.sh` 会自动完成。
 
 ### 素材结构
 
 ```text
 Assets/
-├── UserProvided/                    # 用户提供的不可变原始素材，不参与运行时打包
-│   ├── SourceImagesForAIVideo/originals/
-│   └── SourceVideos/                # 按视角和动作归档的原始绿幕视频
-└── Generated/                       # 处理后的参考图、生成素材与 QA
-    ├── AIReferenceImages/generation-ready/
-    ├── ImageTurn/normalized/
-    └── SpritePets/{Furball,NinaRealistic,HD-QA}/
+└── Pets/
+    ├── Nina/{UserProvided,Generated}/
+    └── Fortune/{UserProvided,Generated}/
 
 Sources/Furball2D/Assets/
-├── Sprites/Nina/cute/spritesheet.webp
-├── Sprites/Nina/realistic/spritesheet.webp
-├── Clips/image-views/               # 9 个图片视角的 HEVC with Alpha 循环
-├── Clips/left-profile/              # 导出的动作 HEVC with Alpha 视频
-└── manifest.json                    # 能力、图片动作、视频动作与循环属性
+└── Pets/
+    ├── Nina/{manifest.json,Clips,Sprites}/       # 图片 + 真实连续动画
+    └── Fortune/{manifest.json,Sprites}/         # 仅图片
 ```
 
 源动作链统一使用 `left-profile` 视角，右向动作由运行时镜像得到。素材预处理输出为 1280×720、120 fps、HEVC with Alpha。站立、坐姿和趴卧待机使用首尾去重的正放/倒放循环；睡眠只截取低动作呼吸窗口；过渡和移动片段会在透明工作画布上平滑校正主体尺度、Alpha 中心与脚底锚点。
 
-完整旧文件名映射、备用素材与重复文件说明见 [Assets/README.md](Assets/README.md)。生成新动作时优先使用 [generation-ready 参考图说明](Assets/UserProvided/SourceImagesForAIVideo/README.md)，后续 Agent 在替换视频前必须阅读 [AGENTS.md](AGENTS.md)。
+完整旧文件名映射、备用素材与重复文件说明见 [Assets/README.md](Assets/README.md)。生成新动作时优先使用 [generation-ready 参考图说明](Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md)，后续 Agent 在替换视频前必须阅读 [AGENTS.md](AGENTS.md)。
 
 ### 交互
 

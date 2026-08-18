@@ -383,6 +383,10 @@ enum PetAssetCatalog {
 
     private static var loaded: LoadedCatalog? {
         guard !loadedCatalogs.isEmpty else { return nil }
+        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_PET_ID"],
+           let forced = loadedCatalogs.first(where: { $0.petID == forcedID }) {
+            return forced
+        }
         if let selectedID = UserDefaults.standard.string(forKey: "selectedPetID"),
            let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
             return selected
@@ -690,20 +694,39 @@ enum PetAssetCatalog {
             roots.append(contentsOf: installed.sorted { $0.lastPathComponent < $1.lastPathComponent })
         }
 
+        var bundledAssetContainers: [URL] = []
         if let resourceURL = Bundle.main.resourceURL {
-            roots.append(resourceURL.appendingPathComponent("Assets", isDirectory: true))
+            bundledAssetContainers.append(resourceURL.appendingPathComponent("Assets", isDirectory: true))
         }
-        roots.append(
+        bundledAssetContainers.append(
             Bundle.main.bundleURL
                 .appendingPathComponent("Furball2D_Furball2D.bundle", isDirectory: true)
                 .appendingPathComponent("Assets", isDirectory: true)
         )
         if let executableURL = Bundle.main.executableURL {
-            roots.append(
+            bundledAssetContainers.append(
                 executableURL.deletingLastPathComponent()
                     .appendingPathComponent("Furball2D_Furball2D.bundle", isDirectory: true)
                     .appendingPathComponent("Assets", isDirectory: true)
             )
+        }
+        for container in bundledAssetContainers {
+            let petsDirectory = container.appendingPathComponent("Pets", isDirectory: true)
+            if let petRoots = try? FileManager.default.contentsOfDirectory(
+                at: petsDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                roots.append(contentsOf: petRoots.sorted {
+                    let lhsPriority = $0.lastPathComponent == "Nina" ? 0 : 1
+                    let rhsPriority = $1.lastPathComponent == "Nina" ? 0 : 1
+                    return lhsPriority == rhsPriority
+                        ? $0.lastPathComponent < $1.lastPathComponent
+                        : lhsPriority < rhsPriority
+                })
+            }
+            // Keep legacy single-pack bundles loadable during migration.
+            roots.append(container)
         }
         return roots
     }

@@ -3,10 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-KEYFRAME_DIR="$PROJECT_DIR/Assets/Generated/ImageTurn/normalized"
-OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile"
+KEYFRAME_DIR="$PROJECT_DIR/Assets/Pets/Nina/Generated/ImageTurn/normalized"
+OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Pets/Nina/Clips/left-profile"
 OUTPUT_PATH="$OUTPUT_DIR/look-around-images.mov"
-FACING_OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views"
+FACING_OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Pets/Nina/Clips/image-views"
 TARGET_FPS=120
 
 # The views come from separate generations, so exposure and white-balance differences are

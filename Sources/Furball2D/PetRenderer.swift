@@ -25,14 +25,14 @@ private final class PetVideoChannel: @unchecked Sendable {
         player.automaticallyWaitsToMinimizeStalling = false
 
         let first = try makeItem()
-        first.preferredForwardBufferDuration = clip.loops ? 1.5 : 0.6
+        first.preferredForwardBufferDuration = clip.loops ? 2.5 : 0.8
         player.insert(first, after: nil)
         // Short gait loops can end before the periodic observer gets enough
         // main-run-loop time while the window is moving. Queue the first repeat
         // up front so fast-run playback never has to recover from an empty queue.
         if clip.loops {
             let next = try makeItem()
-            next.preferredForwardBufferDuration = 1.5
+            next.preferredForwardBufferDuration = 2.5
             player.insert(next, after: first)
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -142,6 +142,7 @@ private final class PetVideoChannel: @unchecked Sendable {
 
         do {
             let next = try makeItem()
+            next.preferredForwardBufferDuration = 2.5
             player.insert(next, after: player.items().last)
         } catch {
             NSLog("Furball2D loop prequeue failed: %@", error.localizedDescription)

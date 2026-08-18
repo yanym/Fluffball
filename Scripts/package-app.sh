@@ -18,7 +18,9 @@ trap cleanup_stage EXIT
 
 cd "$PROJECT_DIR"
 
-MANIFEST_PATH="$PROJECT_DIR/Sources/Furball2D/Assets/manifest.json"
+PETS_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Pets"
+NINA_PACK_DIR="$PETS_DIR/Nina"
+MANIFEST_PATH="$NINA_PACK_DIR/manifest.json"
 video_mode_enabled=false
 image_mode_enabled=false
 if grep -Eq '"videoMode"[[:space:]]*:[[:space:]]*true' "$MANIFEST_PATH"; then
@@ -39,7 +41,7 @@ typeset -a required_clips=(
 assets_missing=false
 if [[ "$video_mode_enabled" == true ]]; then
   for clip_name in "${required_clips[@]}"; do
-    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile/$clip_name.mov" ]]; then
+    if [[ ! -f "$NINA_PACK_DIR/Clips/left-profile/$clip_name.mov" ]]; then
       assets_missing=true
       break
     fi
@@ -52,7 +54,7 @@ typeset -a required_image_views=(
 )
 if [[ "$video_mode_enabled" == true ]]; then
   for view_name in "${required_image_views[@]}"; do
-    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views/$view_name.mov" ]]; then
+    if [[ ! -f "$NINA_PACK_DIR/Clips/image-views/$view_name.mov" ]]; then
       assets_missing=true
       break
     fi
@@ -68,7 +70,10 @@ fi
 
 # A Pet Pack is runtime data, not best-effort content. Reject incomplete or
 # malformed packs before compiling/signing an application that cannot recover.
-"$SCRIPT_DIR/validate-pet-pack.swift" "$PROJECT_DIR/Sources/Furball2D/Assets"
+for pack_dir in "$PETS_DIR"/*; do
+  [[ -d "$pack_dir" ]] || continue
+  "$SCRIPT_DIR/validate-pet-pack.swift" "$pack_dir"
+done
 
 # Exercise one complete interaction instead of treating compilation as product
 # QA. This catches orphan treat windows, never-ending locomotion, missing pet

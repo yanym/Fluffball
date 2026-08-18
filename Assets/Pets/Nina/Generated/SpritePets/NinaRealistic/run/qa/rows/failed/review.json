@@ -1,0 +1,150 @@
+{
+  "ok": false,
+  "frames_root": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames",
+  "states": [
+    "failed"
+  ],
+  "errors": [
+    "failed frame 02 is empty or too sparse (42 pixels)"
+  ],
+  "warnings": [
+    "failed frame 02 is much smaller than the row median (42 vs 17238)"
+  ],
+  "rows": [
+    {
+      "state": "failed",
+      "expected_frames": 8,
+      "actual_frames": 8,
+      "extraction_method": "components",
+      "ok": false,
+      "errors": [
+        "failed frame 02 is empty or too sparse (42 pixels)"
+      ],
+      "warnings": [
+        "failed frame 02 is much smaller than the row median (42 vs 17238)"
+      ],
+      "frames": [
+        {
+          "index": 0,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19727,
+          "bbox": [
+            28,
+            5,
+            163,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 665
+        },
+        {
+          "index": 1,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 19934,
+          "bbox": [
+            27,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 525
+        },
+        {
+          "index": 2,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 42,
+          "bbox": [
+            89,
+            102,
+            103,
+            106
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 42
+        },
+        {
+          "index": 3,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 16847,
+          "bbox": [
+            37,
+            5,
+            154,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 482
+        },
+        {
+          "index": 4,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 23890,
+          "bbox": [
+            8,
+            5,
+            183,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 713
+        },
+        {
+          "index": 5,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 11110,
+          "bbox": [
+            5,
+            61,
+            187,
+            147
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 333
+        },
+        {
+          "index": 6,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/06.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 17224,
+          "bbox": [
+            5,
+            41,
+            187,
+            167
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 502
+        },
+        {
+          "index": 7,
+          "file": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa/rows/failed/frames/failed/07.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 17251,
+          "bbox": [
+            5,
+            41,
+            187,
+            167
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 467
+        }
+      ]
+    }
+  ]
+}

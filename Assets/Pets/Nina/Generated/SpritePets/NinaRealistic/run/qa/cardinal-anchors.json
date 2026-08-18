@@ -1,0 +1,61 @@
+{
+  "ok": true,
+  "strip": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/decoded/look-cardinals.png",
+  "directions": [
+    "000",
+    "090",
+    "180",
+    "270"
+  ],
+  "errors": [],
+  "anchors": [
+    {
+      "direction": "000",
+      "source_box": [
+        0,
+        0,
+        514,
+        765
+      ],
+      "used_pixels": 97043,
+      "edge_pixels": 0,
+      "output": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/decoded/look-anchors/000.png"
+    },
+    {
+      "direction": "090",
+      "source_box": [
+        514,
+        0,
+        1028,
+        765
+      ],
+      "used_pixels": 103247,
+      "edge_pixels": 0,
+      "output": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/decoded/look-anchors/090.png"
+    },
+    {
+      "direction": "180",
+      "source_box": [
+        1028,
+        0,
+        1541,
+        765
+      ],
+      "used_pixels": 83273,
+      "edge_pixels": 0,
+      "output": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/decoded/look-anchors/180.png"
+    },
+    {
+      "direction": "270",
+      "source_box": [
+        1541,
+        0,
+        2055,
+        765
+      ],
+      "used_pixels": 86262,
+      "edge_pixels": 0,
+      "output": "/Users/bot/Desktop/Furball2D/Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/decoded/look-anchors/270.png"
+    }
+  ]
+}

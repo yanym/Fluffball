@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild Furball's 2× v2 atlases from the largest approved row sources."""
+"""Rebuild native-Retina v2 atlases from each pet's approved HD row sources."""
 
 from __future__ import annotations
 
@@ -162,9 +162,27 @@ def normalize_row(frames: list[Image.Image]) -> tuple[list[Image.Image], float]:
     return output, scale
 
 
-def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
+def source_rows(root: Path, pet: str, style: str) -> list[tuple[Path, int | None, str]]:
+    if pet == "fortune":
+        if style != "realistic":
+            raise ValueError("Fortune currently provides only the realistic appearance")
+        base = root / "Assets/Pets/Fortune/Generated/SpritePet/run"
+        return [
+            (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/running-left-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/waving-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/jumping-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/failed-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/waiting-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/working-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/review-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
+            (base / "generated-hd/look-row-10-grid-4x2.png", 4, "magenta"),
+        ]
+
     if style == "realistic":
-        base = root / "Assets/Generated/SpritePets/NinaRealistic/run"
+        base = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run"
         return [
             (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
             (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
@@ -178,7 +196,7 @@ def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
             (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
             (base / "generated-hd/look-row-10-grid-4x2.png", 4, "green"),
         ]
-    base = root / "Assets/Generated/SpritePets/Furball/source"
+    base = root / "Assets/Pets/Nina/Generated/SpritePets/Furball/source"
     return [
         (base / "generated-hd/idle-grid-4x2.png", 4, "blue"),
         (base / "generated-hd/running-right-grid-4x2.png", 4, "blue"),
@@ -194,8 +212,8 @@ def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
     ]
 
 
-def build(root: Path, style: str) -> None:
-    sources = source_rows(root, style)
+def build(root: Path, pet: str, style: str) -> None:
+    sources = source_rows(root, pet, style)
     atlas = Image.new("RGBA", (COLS * CELL_W, ROWS * CELL_H), (0, 0, 0, 0))
     row_scales: list[float] = []
     for row, ((source, grid_columns, key), frame_count) in enumerate(zip(sources, FRAME_COUNTS)):
@@ -215,19 +233,21 @@ def build(root: Path, style: str) -> None:
         for column, frame in enumerate(normalized):
             atlas.alpha_composite(frame, (column * CELL_W, row * CELL_H))
 
-    output = root / f"Sources/Furball2D/Assets/Sprites/Nina/{style}/spritesheet.webp"
+    pet_dir = "Fortune" if pet == "fortune" else "Nina"
+    output = root / f"Sources/Furball2D/Assets/Pets/{pet_dir}/Sprites/{pet_dir}/{style}/spritesheet.webp"
     output.parent.mkdir(parents=True, exist_ok=True)
     atlas.save(output, "WEBP", lossless=True, quality=100, method=6, exact=True)
 
-    qa = root / f"Assets/Generated/SpritePets/HD-QA/{style}-atlas.png"
+    qa = root / f"Assets/Pets/{pet_dir}/Generated/SpritePets/HD-QA/{style}-atlas.png"
     qa.parent.mkdir(parents=True, exist_ok=True)
     atlas.resize((COLS * 192, ROWS * 208), Image.Resampling.LANCZOS).save(qa)
 
-    clarity_dir = (
-        root / "Assets/Generated/SpritePets/NinaRealistic/run/qa"
-        if style == "realistic"
-        else root / "Assets/Generated/SpritePets/Furball/qa"
-    )
+    if pet == "fortune":
+        clarity_dir = root / "Assets/Pets/Fortune/Generated/SpritePet/run/qa"
+    elif style == "realistic":
+        clarity_dir = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa"
+    else:
+        clarity_dir = root / "Assets/Pets/Nina/Generated/SpritePets/Furball/qa"
     clarity_dir.mkdir(parents=True, exist_ok=True)
     clarity_report = {
         "nativeCellWidth": CELL_W,
@@ -242,19 +262,24 @@ def build(root: Path, style: str) -> None:
         json.dumps(clarity_report, indent=2) + "\n", encoding="utf-8"
     )
     print(
-        f"{style}: {output} ({atlas.width}x{atlas.height}); "
+        f"{pet}/{style}: {output} ({atlas.width}x{atlas.height}); "
         f"max registration scale {max(row_scales):.3f}x"
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--pet", choices=("nina", "fortune", "all"), default="all")
     parser.add_argument("--style", choices=("cute", "realistic", "all"), default="all")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    styles = ("cute", "realistic") if args.style == "all" else (args.style,)
-    for style in styles:
-        build(root, style)
+    pets = ("nina", "fortune") if args.pet == "all" else (args.pet,)
+    for pet in pets:
+        styles = ("cute", "realistic") if args.style == "all" and pet == "nina" else (
+            "realistic",
+        ) if args.style == "all" else (args.style,)
+        for style in styles:
+            build(root, pet, style)
 
 
 if __name__ == "__main__":
