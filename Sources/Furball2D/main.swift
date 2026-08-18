@@ -35,7 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func launchPet() {
         do {
-            let controller = try PetController(startingPosture: .sleep)
+            // Launch in the most legible full-body pose so a first-time user
+            // can immediately find the pet. The normal idle routine still
+            // settles it down and puts it to sleep shortly afterward.
+            let controller = try PetController(startingPosture: .stand)
             petController = controller
             controller.start()
             for url in pendingPetPacks { controller.importPetPack(at: url) }
