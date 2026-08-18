@@ -105,6 +105,8 @@ final class PetController: NSObject, NSMenuDelegate {
     private var cursorFollowTimer: Timer?
     private var freeRoamTimer: Timer?
     private var facingTimer: Timer?
+    private var pendingAppearanceTimer: Timer?
+    private var pendingAppearanceID: String?
     private var statusItemHealthTimer: Timer?
     private var treatChaseTimer: Timer?
     private var hoverActionTimer: Timer?
@@ -131,9 +133,10 @@ final class PetController: NSObject, NSMenuDelegate {
     private var facingView: PetFacingView = .leftProfile
     private var pendingFacingView: PetFacingView?
     private var lookDirection: PetLookDirection = .left
-    private var pendingLookDirection: PetLookDirection?
     private var lastLookCursorLocation = NSPoint.zero
     private var lastLookCursorMotionTime: TimeInterval = 0
+    private var lastDirectionalLookSampleTime: TimeInterval = 0
+    private var smoothedDirectionalLookAngle: Double?
     private var directionalLookIsEngaged = false
     private var pendingFacingSince: TimeInterval = 0
     private var lastFacingChangeTime: TimeInterval = 0
@@ -746,8 +749,7 @@ final class PetController: NSObject, NSMenuDelegate {
             showSpeech(appLanguage.highFiveGreeting)
             remember(
                 .play,
-                zhHans: "我们击了个掌",
-                english: "we shared a high five",
+                text: "we shared a high five",
                 salience: 0.72,
                 energy: -0.015,
                 curiosity: -0.02,
@@ -757,8 +759,7 @@ final class PetController: NSObject, NSMenuDelegate {
         } else if totalDragDistance < 6 {
             remember(
                 .affection,
-                zhHans: "你刚刚摸了摸我",
-                english: "you gave me a gentle pet",
+                text: "you gave me a gentle pet",
                 salience: 0.48,
                 affinity: 0.018
             )
@@ -941,8 +942,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func remember(
         _ kind: PetMemoryKind,
-        zhHans: String,
-        english: String,
+        text: String,
         salience: Double = 0.55,
         energy: Double = 0,
         curiosity: Double = 0,
@@ -951,8 +951,7 @@ final class PetController: NSObject, NSMenuDelegate {
         petMind = PetMindStore.record(
             petID: mindPetID,
             kind: kind,
-            zhHans: zhHans,
-            english: english,
+            text: text,
             salience: salience,
             energy: energy,
             curiosity: curiosity,
@@ -1106,6 +1105,8 @@ final class PetController: NSObject, NSMenuDelegate {
         facingTimer?.invalidate()
         lastLookCursorLocation = NSEvent.mouseLocation
         lastLookCursorMotionTime = ProcessInfo.processInfo.systemUptime
+        lastDirectionalLookSampleTime = lastLookCursorMotionTime
+        smoothedDirectionalLookAngle = nil
         directionalLookIsEngaged = false
         // Track at display cadence. The former 10 Hz sampler plus an extra
         // 150 ms dwell made the eyes feel as if they noticed the pointer late.
@@ -1147,25 +1148,34 @@ final class PetController: NSObject, NSMenuDelegate {
         return facingView == actionFacing.profileView
     }
 
-    private func desiredFacingView(for cursor: NSPoint = NSEvent.mouseLocation) -> PetFacingView {
+    private var liveMotionFacingAnchors: [PetFacingView] {
+        [.leftProfile, .frontThreeQuarterLeft, .front, .frontThreeQuarterRight, .rightProfile]
+    }
+
+    private func desiredLiveMotionFacingView(for cursor: NSPoint = NSEvent.mouseLocation) -> PetFacingView {
         let normalizedX = (cursor.x - panel.frame.midX) / max(1, panel.frame.width)
         switch normalizedX {
-        case ..<(-0.46): return .leftProfile
-        case ..<(-0.34): return .frontNearProfileLeft
-        case ..<(-0.20): return .frontThreeQuarterLeft
-        case ..<(-0.07): return .frontNearCenterLeft
-        case ...0.07: return .front
-        case ...0.20: return .frontNearCenterRight
+        case ..<(-0.34): return .leftProfile
+        case ..<(-0.11): return .frontThreeQuarterLeft
+        case ...0.11: return .front
         case ...0.34: return .frontThreeQuarterRight
-        case ...0.46: return .frontNearProfileRight
         default: return .rightProfile
         }
+    }
+
+    private func nextLiveMotionFacingView(toward target: PetFacingView) -> PetFacingView {
+        let anchors = liveMotionFacingAnchors
+        guard let targetIndex = anchors.firstIndex(of: target) else { return target }
+        let currentIndex = anchors.indices.min {
+            abs(anchors[$0].rawValue - facingView.rawValue) < abs(anchors[$1].rawValue - facingView.rawValue)
+        } ?? targetIndex
+        guard currentIndex != targetIndex else { return target }
+        return anchors[currentIndex + (targetIndex > currentIndex ? 1 : -1)]
     }
 
     private func updateFacingTowardCursor() {
         guard canUseImageFacing else {
             pendingFacingView = nil
-            pendingLookDirection = nil
             return
         }
 
@@ -1177,26 +1187,34 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func updateLegacyFacingTowardCursor() {
-        pendingLookDirection = nil
 
         if !isUsingImageFacing {
-            playFacingView(facingView, fadeDuration: 0.07)
+            playFacingView(facingView, fadeDuration: 0.11)
             return
         }
 
-        let desiredView = desiredFacingView()
+        let desiredView = desiredLiveMotionFacingView()
         guard desiredView != facingView else {
             pendingFacingView = nil
             return
         }
 
         let now = ProcessInfo.processInfo.systemUptime
-        pendingFacingView = desiredView
-        // Still walk through adjacent views, but do it responsively. Hysteresis
-        // already lives in desiredFacingView's buckets, so a second dwell only
-        // adds latency and can starve the transition while the pointer moves.
-        guard now - lastFacingChangeTime >= 0.050 else { return }
-        playFacingView(facingView.stepped(toward: desiredView), fadeDuration: 0.045)
+        if pendingFacingView != desiredView {
+            pendingFacingView = desiredView
+            pendingFacingSince = now
+            return
+        }
+
+        // Live Motion uses still multi-view video ports. Treating all nine ports
+        // as a 20 Hz flipbook causes repeated decoder crossfades and visible
+        // double faces. Five deliberate anchors plus a short dwell reads as a
+        // smooth head turn while still responding quickly to an intentional
+        // cursor move.
+        guard now - pendingFacingSince >= 0.12,
+              now - lastFacingChangeTime >= 0.14 else { return }
+        playFacingView(nextLiveMotionFacingView(toward: desiredView), fadeDuration: 0.11)
+        pendingFacingSince = now
     }
 
     private func updateDirectionalLookTowardCursor() {
@@ -1219,7 +1237,7 @@ final class PetController: NSObject, NSMenuDelegate {
         // the animated idle row.
         if !directionalLookIsEngaged || now - lastLookCursorMotionTime >= 2.4 {
             directionalLookIsEngaged = false
-            pendingLookDirection = nil
+            smoothedDirectionalLookAngle = nil
             if isUsingImageFacing {
                 playDirectionalStandIdle(fadeDuration: 0.09)
             }
@@ -1229,27 +1247,63 @@ final class PetController: NSObject, NSMenuDelegate {
         let deltaX = cursor.x - panel.frame.midX
         let deltaY = cursor.y - panel.frame.midY
         guard hypot(deltaX, deltaY) >= 32 * petScale else {
-            pendingLookDirection = nil
             directionalLookIsEngaged = false
+            smoothedDirectionalLookAngle = nil
             if isUsingImageFacing {
                 playDirectionalStandIdle(fadeDuration: 0.09)
             }
             return
         }
-        let desiredDirection = PetLookDirection(vectorX: deltaX, vectorY: deltaY)
+        let targetAngle = atan2(Double(deltaX), Double(deltaY))
+        let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - lastDirectionalLookSampleTime))
+        lastDirectionalLookSampleTime = now
 
-        if !isUsingImageFacing {
-            playLookDirection(lookDirection.stepped(toward: desiredDirection), fadeDuration: 0.045)
-            return
-        }
-        guard desiredDirection != lookDirection else {
-            pendingLookDirection = nil
-            return
-        }
+        let currentAngle = smoothedDirectionalLookAngle ?? targetAngle
+        var shortestDelta = targetAngle - currentAngle
+        while shortestDelta > .pi { shortestDelta -= .pi * 2 }
+        while shortestDelta < -.pi { shortestDelta += .pi * 2 }
+        // A critically damped angular low-pass removes cursor jitter without
+        // making the gaze trail behind deliberate movement.
+        let response = 1 - exp(-deltaTime * 24)
+        let smoothedAngle = currentAngle + shortestDelta * response
+        smoothedDirectionalLookAngle = smoothedAngle
+        displayDirectionalLook(angle: smoothedAngle, entryFadeDuration: isUsingImageFacing ? 0 : 0.055)
+    }
 
-        pendingLookDirection = desiredDirection
-        guard now - lastFacingChangeTime >= 0.042 else { return }
-        playLookDirection(lookDirection.stepped(toward: desiredDirection), fadeDuration: 0.040)
+    private func displayDirectionalLook(angle: Double, entryFadeDuration: TimeInterval) {
+        let twoPi = Double.pi * 2
+        var normalized = angle.truncatingRemainder(dividingBy: twoPi)
+        if normalized < 0 { normalized += twoPi }
+        let fractionalIndex = normalized / twoPi * Double(PetLookDirection.count)
+        let lowerIndex = Int(floor(fractionalIndex)) % PetLookDirection.count
+        let upperIndex = (lowerIndex + 1) % PetLookDirection.count
+        let weight = Float(fractionalIndex - floor(fractionalIndex))
+        let nearest = PetLookDirection(index: Int(fractionalIndex.rounded()))
+
+        renderer.setMirrored(false)
+        do {
+            try renderer.displayDirectionalBlend(
+                first: PetClips.lookDirection(PetLookDirection(index: lowerIndex)),
+                second: PetClips.lookDirection(PetLookDirection(index: upperIndex)),
+                weight: weight,
+                entryFadeDuration: entryFadeDuration
+            )
+            let directionChanged = nearest != lookDirection
+            lookDirection = nearest
+            if (1...7).contains(nearest.index) {
+                actionFacing = .right
+            } else if (9...15).contains(nearest.index) {
+                actionFacing = .left
+            }
+            isUsingImageFacing = true
+            if directionChanged {
+                lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
+                repositionSpeechBubble(resetSilhouette: true)
+            }
+        } catch {
+            isUsingImageFacing = false
+            present(error)
+        }
     }
 
     private func playFacingView(_ view: PetFacingView, fadeDuration: TimeInterval) {
@@ -1294,6 +1348,7 @@ final class PetController: NSObject, NSMenuDelegate {
         renderer.setMirrored(false)
         do {
             try renderer.play(PetClips.standIdle, fadeDuration: fadeDuration)
+            smoothedDirectionalLookAngle = nil
             isUsingImageFacing = false
             lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
             repositionSpeechBubble(resetSilhouette: true)
@@ -1313,7 +1368,6 @@ final class PetController: NSObject, NSMenuDelegate {
         let generation = facingTransitionGeneration
         isReturningToActionProfile = true
         isTransitioning = true
-        pendingLookDirection = nil
         directionalLookIsEngaged = false
         playDirectionalStandIdle(fadeDuration: 0.09)
 
@@ -1347,9 +1401,9 @@ final class PetController: NSObject, NSMenuDelegate {
 
         func advance() {
             guard generation == facingTransitionGeneration else { return }
-            let nextView = facingView.stepped(toward: targetView)
+            let nextView = nextLiveMotionFacingView(toward: targetView)
             do {
-                try renderer.play(PetClips.imageFacing(nextView), fadeDuration: 0.07)
+                try renderer.play(PetClips.imageFacing(nextView), fadeDuration: 0.11)
                 facingView = nextView
                 isUsingImageFacing = true
                 lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
@@ -1361,7 +1415,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 return
             }
 
-            Timer.scheduledTimer(withTimeInterval: 0.11, repeats: false) { [weak self] _ in
+            Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, generation == self.facingTransitionGeneration else { return }
                     if self.facingView == targetView {
@@ -1381,7 +1435,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func returnDirectionalLookToActionProfile(completion: @escaping () -> Void) {
         let targetDirection = actionProfileLookDirection
-        guard isUsingImageFacing, lookDirection != targetDirection else {
+        guard isUsingImageFacing else {
             completion()
             return
         }
@@ -1390,41 +1444,46 @@ final class PetController: NSObject, NSMenuDelegate {
         let generation = facingTransitionGeneration
         isReturningToActionProfile = true
         isTransitioning = true
-        pendingLookDirection = nil
         speechBubble.updateAppearance(mood: speechMood)
-
-        func advance() {
-            guard generation == facingTransitionGeneration else { return }
-            let nextDirection = lookDirection.stepped(toward: targetDirection)
-            do {
-                try renderer.play(PetClips.lookDirection(nextDirection), fadeDuration: 0.065)
-                lookDirection = nextDirection
-                isUsingImageFacing = true
-                lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
-            } catch {
-                isReturningToActionProfile = false
-                isTransitioning = false
-                present(error)
-                completion()
-                return
-            }
-
-            Timer.scheduledTimer(withTimeInterval: 0.09, repeats: false) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, generation == self.facingTransitionGeneration else { return }
-                    if self.lookDirection == targetDirection {
-                        self.isReturningToActionProfile = false
-                        self.isTransitioning = false
-                        self.speechBubble.updateAppearance(mood: self.speechMood)
-                        completion()
-                    } else {
-                        advance()
-                    }
+        let twoPi = Double.pi * 2
+        let targetAngle = Double(targetDirection.index) / Double(PetLookDirection.count) * twoPi
+        let startAngle = smoothedDirectionalLookAngle
+            ?? Double(lookDirection.index) / Double(PetLookDirection.count) * twoPi
+        var angleDelta = targetAngle - startAngle
+        while angleDelta > .pi { angleDelta -= twoPi }
+        while angleDelta < -Double.pi { angleDelta += twoPi }
+        guard abs(angleDelta) >= 0.01 else {
+            lookDirection = targetDirection
+            smoothedDirectionalLookAngle = targetAngle
+            isReturningToActionProfile = false
+            isTransitioning = false
+            speechBubble.updateAppearance(mood: speechMood)
+            completion()
+            return
+        }
+        let startTime = ProcessInfo.processInfo.systemUptime
+        let duration = 0.16
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, generation == self.facingTransitionGeneration else {
+                    timer.invalidate()
+                    return
                 }
+                let linear = min(1, max(0, (ProcessInfo.processInfo.systemUptime - startTime) / duration))
+                let eased = linear * linear * (3 - 2 * linear)
+                let angle = startAngle + angleDelta * eased
+                self.smoothedDirectionalLookAngle = angle
+                self.displayDirectionalLook(angle: angle, entryFadeDuration: 0)
+                guard linear >= 1 else { return }
+                timer.invalidate()
+                self.lookDirection = targetDirection
+                self.isReturningToActionProfile = false
+                self.isTransitioning = false
+                self.speechBubble.updateAppearance(mood: self.speechMood)
+                completion()
             }
         }
-
-        advance()
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func advanceBehavior() {
@@ -1474,8 +1533,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 if clip.resultingPosture == .sleep {
                     self.remember(
                         .rest,
-                        zhHans: "我在桌面角落安心睡了一觉",
-                        english: "I had a cozy nap in a corner of the desktop",
+                        text: "I had a cozy nap in a corner of the desktop",
                         salience: 0.35,
                         curiosity: -0.015
                     )
@@ -1785,7 +1843,12 @@ final class PetController: NSObject, NSMenuDelegate {
         cursorMotionReadyTime = lastCursorSampleTime
         smoothedCursorSpeed = 0
 
-        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
+        // Moving a transparent NSPanel at 120 Hz competes with two 120 fps
+        // alpha decoders during gait crossfades. Sixty spatial updates remain
+        // display-smooth while leaving the render loop free to present every
+        // available video frame.
+        let movementFPS = renderer.visualMode == .video ? 60.0 : 120.0
+        let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateCursorFollowing()
             }
@@ -1894,7 +1957,8 @@ final class PetController: NSObject, NSMenuDelegate {
         guard freeRoamEnabled else { return }
         isUsingImageFacing = false
         lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
-        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
+        let movementFPS = renderer.visualMode == .video ? 60.0 : 120.0
+        let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateFreeRoaming()
             }
@@ -1986,8 +2050,7 @@ final class PetController: NSObject, NSMenuDelegate {
         case .trash:
             remember(
                 .exploration,
-                zhHans: "我认真检查了废纸篓",
-                english: "I carefully inspected the Trash",
+                text: "I carefully inspected the Trash",
                 salience: 0.46,
                 curiosity: -0.08
             )
@@ -2001,8 +2064,7 @@ final class PetController: NSObject, NSMenuDelegate {
             desktopInteractionInProgress = true
             remember(
                 .desktop,
-                zhHans: "我发现了桌面上的“\(name)”",
-                english: "I discovered “\(name)” on the desktop",
+                text: "I discovered “\(name)” on the desktop",
                 salience: 0.62,
                 curiosity: -0.11
             )
@@ -2145,9 +2207,7 @@ final class PetController: NSObject, NSMenuDelegate {
         if mayMoveFinderItem {
             showSpeech(appLanguage.movedDesktopItemSpeech(name, succeeded: moved))
         } else {
-            showSpeech(appLanguage == .simplifiedChinese
-                ? "嘿嘿，我叼着“\(name)”散了一小圈步，又乖乖放回去啦。"
-                : "Hehe—I carried “\(name)” for a tiny walk, then put it safely back.")
+            showSpeech("Hehe—I carried “\(name)” for a tiny walk, then put it safely back.")
         }
     }
 
@@ -2271,8 +2331,7 @@ final class PetController: NSObject, NSMenuDelegate {
         setLocomotionMode(.none, direction: locomotionDirection)
         remember(
             .treat,
-            zhHans: "你给我丢了一颗好吃的零食",
-            english: "you tossed me a delicious treat",
+            text: "you tossed me a delicious treat",
             salience: 0.90,
             energy: 0.10,
             curiosity: -0.08,
@@ -2363,7 +2422,9 @@ final class PetController: NSObject, NSMenuDelegate {
             actionFacing = locomotionDirection > 0 ? .right : .left
         }
 
-        let canChangeMode = now - lastLocomotionChangeTime >= 0.28
+        let minimumModeInterval = renderer.visualMode == .video ? 0.52 : 0.32
+        let requiredDwell = renderer.visualMode == .video ? 0.22 : 0.12
+        let canChangeMode = now - lastLocomotionChangeTime >= minimumModeInterval
             || desiredMode == .none
             || locomotionMode == .none
         if desiredMode == locomotionMode {
@@ -2374,7 +2435,7 @@ final class PetController: NSObject, NSMenuDelegate {
         } else if pendingLocomotionMode != desiredMode {
             pendingLocomotionMode = desiredMode
             pendingLocomotionSince = now
-        } else if canChangeMode, now - pendingLocomotionSince >= 0.075 {
+        } else if canChangeMode, now - pendingLocomotionSince >= requiredDwell {
             pendingLocomotionMode = nil
             setLocomotionMode(desiredMode, direction: locomotionDirection)
         }
@@ -2482,16 +2543,24 @@ final class PetController: NSObject, NSMenuDelegate {
             locomotionTranslationStartTime = now + translationDelay
         } else if newMode == .none {
             locomotionTranslationStartTime = 0
+            locomotionVelocity = .zero
         }
         speechBubble.updateAppearance(mood: speechMood)
 
         do {
             if newMode == .none {
+                if renderer.visualMode == .images {
+                    // Atlas gait stop cells are still running poses. A short
+                    // dissolve directly to planted idle reads as an immediate
+                    // arrival instead of continuing to run in place.
+                    try renderer.play(PetClips.standIdle, fadeDuration: 0.075)
+                    return
+                }
                 guard let stopClip = previousMode.clips?.stop else {
                     playIdle(.stand)
                     return
                 }
-                try renderer.play(stopClip, fadeDuration: 0.12) { [weak self] in
+                try renderer.play(stopClip, fadeDuration: 0.09) { [weak self] in
                     guard let self, self.locomotionGeneration == generation,
                           self.locomotionMode == .none,
                           !self.isTransitioning else { return }
@@ -2510,7 +2579,7 @@ final class PetController: NSObject, NSMenuDelegate {
                     self.playLocomotionLoop(newMode, direction: self.locomotionDirection)
                 }
             } else {
-                try renderer.play(clips.loop, fadeDuration: 0.12)
+                try renderer.play(clips.loop, fadeDuration: renderer.visualMode == .video ? 0.075 : 0.10)
             }
         } catch {
             locomotionMode = .none
@@ -2629,7 +2698,6 @@ final class PetController: NSObject, NSMenuDelegate {
         facingView = .leftProfile
         lookDirection = .left
         pendingFacingView = nil
-        pendingLookDirection = nil
         isUsingImageFacing = false
         renderer.setMirrored(false)
         isTransitioning = true
@@ -2664,7 +2732,6 @@ final class PetController: NSObject, NSMenuDelegate {
         facingView = actionFacing.profileView
         lookDirection = actionProfileLookDirection
         pendingFacingView = nil
-        pendingLookDirection = nil
         renderer.setMirrored(actionFacing.isMirrored)
         do {
             try renderer.play(PetClips.standIdle, fadeDuration: 0.08)
@@ -2708,12 +2775,10 @@ final class PetController: NSObject, NSMenuDelegate {
         } catch PetPackLibraryError.petAlreadyExists(let name) {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = appLanguage == .simplifiedChinese ? "替换 \(name)？" : "Replace \(name)?"
-            alert.informativeText = appLanguage == .simplifiedChinese
-                ? "现有宠物包会被新版本替换。"
-                : "The existing pet pack will be replaced by this version."
-            alert.addButton(withTitle: appLanguage == .simplifiedChinese ? "替换" : "Replace")
-            alert.addButton(withTitle: appLanguage == .simplifiedChinese ? "取消" : "Cancel")
+            alert.messageText = "Replace \(name)?"
+            alert.informativeText = "The existing pet pack will be replaced by this version."
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             do {
                 let summary = try PetPackLibraryManager.installPack(from: url, replacingExisting: true)
@@ -2736,7 +2801,6 @@ final class PetController: NSObject, NSMenuDelegate {
               patrolTimer == nil else { return }
 
         pendingFacingView = nil
-        pendingLookDirection = nil
         isUsingImageFacing = false
         isTransitioning = true
         renderer.setMirrored(false)
@@ -2790,8 +2854,7 @@ final class PetController: NSObject, NSMenuDelegate {
         registerUserActivity()
         remember(
             .play,
-            zhHans: "你让我表演了一个可爱动作",
-            english: "you asked me to perform a cute trick",
+            text: "you asked me to perform a cute trick",
             salience: 0.58,
             energy: -0.012,
             affinity: 0.012
@@ -2835,21 +2898,6 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         showSpeech(appLanguage.sleepConfirmation)
         requestSleep()
-    }
-
-    private func changeLanguage(to language: AppLanguage) {
-        guard language != appLanguage else { return }
-        let reopenSettings = settingsWindowController?.window?.isVisible == true
-        settingsWindowController?.close()
-        settingsWindowController = nil
-        appLanguage = language
-        statusItem?.button?.toolTip = language.statusTooltip
-        rebuildMenu()
-        refreshAppearanceSettings()
-        showSpeech(language.languageChanged)
-        if reopenSettings {
-            DispatchQueue.main.async { [weak self] in self?.showVisualSettings() }
-        }
     }
 
     @objc private func showVisualSettings() {
@@ -2919,9 +2967,6 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.toggleAutoBehavior()
                 self.refreshAppearanceSettings()
             }
-            controller.onLanguageChanged = { [weak self] language in
-                self?.changeLanguage(to: language)
-            }
             controller.onSpeechBubblesChanged = { [weak self] enabled in
                 guard let self else { return }
                 self.speechBubblesEnabled = enabled
@@ -2940,10 +2985,7 @@ final class PetController: NSObject, NSMenuDelegate {
             }
             controller.onPreviewSpeech = { [weak self] in
                 guard let self else { return }
-                let preview = self.appLanguage == .simplifiedChinese
-                    ? "我在这儿呀。要不要一起看看今天的桌面？"
-                    : "I’m right here. Shall we explore the desktop together?"
-                self.showSpeech(preview)
+                self.showSpeech("I’m right here. Shall we explore the desktop together?")
             }
             controller.onSelectPet = { [weak self] id in
                 self?.switchPet(to: id) ?? false
@@ -2999,7 +3041,7 @@ final class PetController: NSObject, NSMenuDelegate {
             autoBehavior: autoBehavior,
             speechBubbles: speechBubblesEnabled,
             talkativeness: talkativeness,
-            canChangeAppearance: !isTransitioning && locomotionMode == .none
+            canChangeAppearance: true
         )
     }
 
@@ -3009,21 +3051,41 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @discardableResult
     private func switchAppearance(to id: String) -> Bool {
-        guard !isTransitioning, locomotionMode == .none else {
-            showSpeech(appLanguage.appearanceBusy)
-            return false
-        }
         let previous = PetAssetCatalog.activeAppearance
-        guard previous.id != id else { return true }
+        guard previous.id != id else {
+            pendingAppearanceTimer?.invalidate()
+            pendingAppearanceTimer = nil
+            pendingAppearanceID = nil
+            return true
+        }
+        if isTransitioning {
+            pendingAppearanceID = id
+            schedulePendingAppearanceSwitch()
+            return true
+        }
+        pendingAppearanceTimer?.invalidate()
+        pendingAppearanceTimer = nil
+        pendingAppearanceID = nil
         guard let next = PetAssetCatalog.availableAppearances.first(where: { $0.id == id }),
               PetAssetCatalog.selectAppearance(id: id) else { return false }
+
+        let resumeFollowing = followCursor
+        let resumeRoaming = freeRoamEnabled
+        cursorFollowTimer?.invalidate()
+        cursorFollowTimer = nil
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        freeRoamTarget = nil
+        locomotionGeneration += 1
+        locomotionMode = .none
+        locomotionVelocity = .zero
+        pendingLocomotionMode = nil
 
         do {
             cancelTreatChase(resume: false)
             hideSpeechBubble(animated: false)
             isUsingImageFacing = false
             pendingFacingView = nil
-            pendingLookDirection = nil
             directionalLookIsEngaged = false
             videoAnimationsEnabled = next.kind == .continuousVideo
             try renderer.setVisualMode(next.kind.visualMode, replaying: PetClips.idle(for: posture))
@@ -3031,13 +3093,17 @@ final class PetController: NSObject, NSMenuDelegate {
             repositionSpeechBubble(resetSilhouette: true)
             remember(
                 .appearance,
-                zhHans: "我换上了“\(next.title(for: .simplifiedChinese))”外观",
-                english: "I changed into my “\(next.title(for: .english))” look",
+                text: "I changed into my “\(next.title(for: .english))” look",
                 salience: 0.42
             )
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(next.title(for: appLanguage)))
+            if resumeFollowing {
+                beginCursorFollowing()
+            } else if resumeRoaming {
+                beginFreeRoaming()
+            }
             return true
         } catch {
             _ = PetAssetCatalog.selectAppearance(id: previous.id)
@@ -3047,6 +3113,23 @@ final class PetController: NSObject, NSMenuDelegate {
             refreshAppearanceSettings()
             present(error)
             return false
+        }
+    }
+
+    private func schedulePendingAppearanceSwitch() {
+        pendingAppearanceTimer?.invalidate()
+        pendingAppearanceTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                guard !self.isTransitioning, let id = self.pendingAppearanceID else { return }
+                timer.invalidate()
+                self.pendingAppearanceTimer = nil
+                self.pendingAppearanceID = nil
+                _ = self.switchAppearance(to: id)
+            }
         }
     }
 
@@ -3070,7 +3153,6 @@ final class PetController: NSObject, NSMenuDelegate {
             stopPatrol()
             isUsingImageFacing = false
             pendingFacingView = nil
-            pendingLookDirection = nil
             directionalLookIsEngaged = false
             videoAnimationsEnabled = nextAppearance.kind == .continuousVideo
             try renderer.setVisualMode(nextAppearance.kind.visualMode)
@@ -3079,7 +3161,6 @@ final class PetController: NSObject, NSMenuDelegate {
             mindPetID = nextPet.id
             petMind = PetMindStore.load(petID: mindPetID)
             rebuildMenu()
-            refreshAppearanceSettings()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(nextPet.name))
             restartAutonomy()
@@ -3093,7 +3174,6 @@ final class PetController: NSObject, NSMenuDelegate {
             try? renderer.setVisualMode(previousAppearance.kind.visualMode)
             try? renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
             rebuildMenu()
-            refreshAppearanceSettings()
             refreshAppearanceSettings()
             present(error)
             return false

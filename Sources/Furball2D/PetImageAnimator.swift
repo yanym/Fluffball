@@ -83,10 +83,20 @@ final class PetImageAnimator {
         let fadeDuration: TimeInterval
     }
 
+    private struct DirectionalBlend {
+        var frameA: Frame
+        var frameB: Frame
+        var weight: Float
+        let previousFrame: Frame?
+        let startTime: CFTimeInterval
+        let fadeDuration: TimeInterval
+    }
+
     private let device: MTLDevice
     private var frameCache: [PetImageFrameReference: Frame] = [:]
     private var sourceImageCache: [URL: CGImage] = [:]
     private var playback: Playback?
+    private var directionalBlend: DirectionalBlend?
     private var completionTimer: Timer?
     private(set) var isMirrored = false
 
@@ -110,6 +120,7 @@ final class PetImageAnimator {
         let rightFrames = try animation.rightFrames.map { try $0.map(loadFrame) }
 
         completionTimer?.invalidate()
+        directionalBlend = nil
         playback = Playback(
             animation: animation,
             leftFrames: leftFrames,
@@ -129,10 +140,50 @@ final class PetImageAnimator {
         }
     }
 
+    /// Displays two neighboring direction cells as one continuously blended
+    /// pose. Updating the weight does not restart animation playback, which
+    /// avoids the latency and repeated fade resets caused by treating every
+    /// 22.5-degree cursor change as a new one-frame animation.
+    func displayDirectionalBlend(
+        _ first: PetImageAnimation,
+        _ second: PetImageAnimation,
+        weight: Float,
+        entryFadeDuration: TimeInterval
+    ) throws {
+        guard let firstReference = first.frames.first,
+              let secondReference = second.frames.first else {
+            throw PetAppError.missingAsset("directional look frame")
+        }
+        let frameA = try loadFrame(from: firstReference)
+        let frameB = try loadFrame(from: secondReference)
+        let clampedWeight = max(0, min(1, weight))
+
+        completionTimer?.invalidate()
+        completionTimer = nil
+        if var existing = directionalBlend {
+            existing.frameA = frameA
+            existing.frameB = frameB
+            existing.weight = clampedWeight
+            directionalBlend = existing
+        } else {
+            let now = CACurrentMediaTime()
+            directionalBlend = DirectionalBlend(
+                frameA: frameA,
+                frameB: frameB,
+                weight: clampedWeight,
+                previousFrame: currentFrame(at: now),
+                startTime: now,
+                fadeDuration: max(0, entryFadeDuration)
+            )
+            playback = nil
+        }
+    }
+
     func stop() {
         completionTimer?.invalidate()
         completionTimer = nil
         playback = nil
+        directionalBlend = nil
     }
 
     func setMirrored(_ mirrored: Bool) {
@@ -140,6 +191,28 @@ final class PetImageAnimator {
     }
 
     func sample(at now: CFTimeInterval) -> PetImageRenderSample? {
+        if let blend = directionalBlend {
+            let elapsed = max(0, now - blend.startTime)
+            if let previous = blend.previousFrame,
+               blend.fadeDuration > 0,
+               elapsed < blend.fadeDuration {
+                let target = blend.weight < 0.5 ? blend.frameA : blend.frameB
+                return PetImageRenderSample(
+                    textureA: previous.texture,
+                    textureB: target.texture,
+                    blendWeight: smootherstep(Float(elapsed / blend.fadeDuration)),
+                    transform: PetImageTransform(),
+                    isMirrored: false
+                )
+            }
+            return PetImageRenderSample(
+                textureA: blend.frameA.texture,
+                textureB: blend.frameB.texture,
+                blendWeight: smootherstep(blend.weight),
+                transform: PetImageTransform(),
+                isMirrored: false
+            )
+        }
         guard let playback else { return nil }
         let frames = selectedFrames(for: playback)
         guard !frames.isEmpty else { return nil }
@@ -170,11 +243,22 @@ final class PetImageAnimator {
     }
 
     func alpha(at point: NSPoint, in bounds: NSRect) -> Float? {
+        if let blend = directionalBlend {
+            let alphaA = blend.frameA.alpha(at: point, in: bounds, mirrored: false)
+            let alphaB = blend.frameB.alpha(at: point, in: bounds, mirrored: false)
+            return alphaA * (1 - blend.weight) + alphaB * blend.weight
+        }
         guard let playback, let frame = currentFrame(at: CACurrentMediaTime()) else { return nil }
         return frame.alpha(at: point, in: bounds, mirrored: effectiveMirroring(for: playback))
     }
 
     func visibleContentRect(in bounds: NSRect) -> NSRect? {
+        if let blend = directionalBlend {
+            let rectA = blend.frameA.visibleRect(in: bounds, mirrored: false)
+            let rectB = blend.frameB.visibleRect(in: bounds, mirrored: false)
+            if let rectA, let rectB { return rectA.union(rectB) }
+            return rectA ?? rectB
+        }
         guard let playback, let frame = currentFrame(at: CACurrentMediaTime()) else { return nil }
         var result = frame.visibleRect(in: bounds, mirrored: effectiveMirroring(for: playback))
         if CACurrentMediaTime() - playback.startTime < playback.fadeDuration,
@@ -198,6 +282,9 @@ final class PetImageAnimator {
     }
 
     private func currentFrame(at now: CFTimeInterval) -> Frame? {
+        if let blend = directionalBlend {
+            return blend.weight < 0.5 ? blend.frameA : blend.frameB
+        }
         guard let playback else { return nil }
         let frames = selectedFrames(for: playback)
         guard !frames.isEmpty else { return nil }

@@ -40,7 +40,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onPetScaleChanged: ((CGFloat) -> Void)?
     var onPassThroughChanged: ((Bool) -> Void)?
     var onAutoBehaviorChanged: ((Bool) -> Void)?
-    var onLanguageChanged: ((AppLanguage) -> Void)?
     var onSpeechBubblesChanged: ((Bool) -> Void)?
     var onTalkativenessChanged: ((Double) -> Void)?
     var onPreviewSpeech: (() -> Void)?
@@ -65,7 +64,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let petSizeValue = NSTextField(labelWithString: "")
     private let talkativenessSlider = NSSlider()
     private let talkativenessValue = NSTextField(labelWithString: "")
-    private let languagePopup = NSPopUpButton()
     private let previewSpeechButton = NSButton()
 
     init(snapshot: AppearanceSettingsSnapshot) {
@@ -182,25 +180,19 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     }
 
     private func makeGeneralBox(language: AppLanguage) -> NSView {
-        languagePopup.removeAllItems()
-        AppLanguage.allCases.forEach { languagePopup.addItem(withTitle: $0.displayName) }
-        languagePopup.target = self
-        languagePopup.action = #selector(languageChanged(_:))
         petSizeSlider.minValue = 0.6
         petSizeSlider.maxValue = 1.4
         petSizeSlider.isContinuous = true
         petSizeSlider.target = self
         petSizeSlider.action = #selector(petSizeChanged(_:))
         let rows = NSStackView(views: [
-            makeValueRow(title: language == .simplifiedChinese ? "语言" : "Language", control: languagePopup),
+            makeSliderRow(title: "Pet Size", slider: petSizeSlider, value: petSizeValue),
             separator(),
-            makeSliderRow(title: language == .simplifiedChinese ? "宠物大小" : "Pet Size", slider: petSizeSlider, value: petSizeValue),
+            makeToggleRow(title: "Always on Top", toggle: alwaysOnTopSwitch, action: #selector(alwaysOnTopChanged(_:))),
             separator(),
-            makeToggleRow(title: language == .simplifiedChinese ? "始终置顶" : "Always on Top", toggle: alwaysOnTopSwitch, action: #selector(alwaysOnTopChanged(_:))),
+            makeToggleRow(title: "Click Through Completely", toggle: passThroughSwitch, action: #selector(passThroughChanged(_:))),
             separator(),
-            makeToggleRow(title: language == .simplifiedChinese ? "完全鼠标穿透" : "Click Through Completely", toggle: passThroughSwitch, action: #selector(passThroughChanged(_:))),
-            separator(),
-            makeToggleRow(title: language == .simplifiedChinese ? "自动作息与活动" : "Autonomous Routine", toggle: autoBehaviorSwitch, action: #selector(autoBehaviorChanged(_:)))
+            makeToggleRow(title: "Autonomous Routine", toggle: autoBehaviorSwitch, action: #selector(autoBehaviorChanged(_:)))
         ])
         return boxed(rows)
     }
@@ -239,7 +231,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private func makeInteractionBox(language: AppLanguage) -> NSView {
         let box = settingsBox()
         let content = NSStackView(views: [
-            makeToggleRow(title: language == .simplifiedChinese ? "和桌面物品玩耍、撕咬与叼取" : "Play, bite, and carry desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
+            makeToggleRow(title: "Play, bite, and carry desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
             separator(),
             makeToggleRow(title: language.iconRearrangementSetting, toggle: iconRearrangementSwitch, action: #selector(iconRearrangementChanged(_:)))
         ])
@@ -255,16 +247,16 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         talkativenessSlider.isContinuous = true
         talkativenessSlider.target = self
         talkativenessSlider.action = #selector(talkativenessChanged(_:))
-        previewSpeechButton.title = language == .simplifiedChinese ? "预览新气泡" : "Preview Bubble"
+        previewSpeechButton.title = "Preview Bubble"
         previewSpeechButton.bezelStyle = .rounded
         previewSpeechButton.target = self
         previewSpeechButton.action = #selector(previewSpeech)
         let rows = NSStackView(views: [
-            makeToggleRow(title: language == .simplifiedChinese ? "显示宠物对话" : "Show Pet Speech", toggle: speechBubblesSwitch, action: #selector(speechBubblesChanged(_:))),
+            makeToggleRow(title: "Show Pet Speech", toggle: speechBubblesSwitch, action: #selector(speechBubblesChanged(_:))),
             separator(),
-            makeSliderRow(title: language == .simplifiedChinese ? "话痨程度" : "Talkativeness", slider: talkativenessSlider, value: talkativenessValue),
+            makeSliderRow(title: "Talkativeness", slider: talkativenessSlider, value: talkativenessValue),
             separator(),
-            makeValueRow(title: language == .simplifiedChinese ? "气泡样式与跟随效果" : "Bubble Style & Motion", control: previewSpeechButton)
+            makeValueRow(title: "Bubble Style & Motion", control: previewSpeechButton)
         ])
         return boxed(rows)
     }
@@ -341,32 +333,22 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     }
 
     private func pageTitle(_ page: Page, language: AppLanguage) -> String {
-        switch (page, language) {
-        case (.general, .simplifiedChinese): "常规"
-        case (.general, .english): "General"
-        case (.appearance, .simplifiedChinese): "外观与动画"
-        case (.appearance, .english): "Appearance & Animation"
-        case (.behavior, .simplifiedChinese): "行为"
-        case (.behavior, .english): "Behavior"
-        case (.interaction, .simplifiedChinese): "桌面互动"
-        case (.interaction, .english): "Desktop Interaction"
-        case (.speech, .simplifiedChinese): "对话"
-        case (.speech, .english): "Speech"
+        switch page {
+        case .general: "General"
+        case .appearance: "Appearance & Animation"
+        case .behavior: "Behavior"
+        case .interaction: "Desktop Interaction"
+        case .speech: "Speech"
         }
     }
 
     private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
-        switch (page, language) {
-        case (.general, .simplifiedChinese): "调整窗口、尺寸和应用语言。"
-        case (.general, .english): "Adjust window behavior, size, and app language."
-        case (.appearance, .simplifiedChinese): "选择素材外观；连续动画可单独控制自然转场。"
-        case (.appearance, .english): "Choose an asset appearance and tune transitions for continuous video."
-        case (.behavior, .simplifiedChinese): "决定它如何观察、跟随和自主探索桌面。"
-        case (.behavior, .english): "Choose how your pet watches, follows, and explores."
-        case (.interaction, .simplifiedChinese): "让它发现文件、轻轻撕咬并叼着走一小段。真正移动 Finder 图标仍需单独授权。"
-        case (.interaction, .english): "Let it discover, nibble, and carry files briefly. Moving Finder icons remains a separate opt-in."
-        case (.speech, .simplifiedChinese): "控制说话频率，并预览更克制、更精致的新气泡。"
-        case (.speech, .english): "Control speaking frequency and preview the calmer, polished bubble."
+        switch page {
+        case .general: "Adjust pet size and window behavior."
+        case .appearance: "Choose an asset appearance and tune transitions for continuous video."
+        case .behavior: "Choose how your pet watches, follows, and explores."
+        case .interaction: "Let it discover, nibble, and carry files briefly. Moving Finder icons remains a separate opt-in."
+        case .speech: "Control speaking frequency and preview the calmer, polished bubble."
         }
     }
 
@@ -428,7 +410,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         talkativenessValue.stringValue = "\(Int((snapshot.talkativeness * 100).rounded()))%"
         talkativenessSlider.isEnabled = snapshot.speechBubbles
         previewSpeechButton.isEnabled = snapshot.speechBubbles
-        languagePopup.selectItem(at: AppLanguage.allCases.firstIndex(of: language) ?? 0)
 
         crossfadeSwitch.target = self
         crossfadeSwitch.action = #selector(crossfadeChanged(_:))
@@ -485,10 +466,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     @objc private func petSizeChanged(_ sender: NSSlider) {
         petSizeValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
         onPetScaleChanged?(CGFloat(sender.doubleValue))
-    }
-    @objc private func languageChanged(_ sender: NSPopUpButton) {
-        guard sender.indexOfSelectedItem >= 0 else { return }
-        onLanguageChanged?(AppLanguage.allCases[sender.indexOfSelectedItem])
     }
     @objc private func speechBubblesChanged(_ sender: NSSwitch) {
         let enabled = sender.state == .on
@@ -574,6 +551,14 @@ final class AppearanceCardView: NSControl {
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
         onSelect(optionID)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isEnabled, bounds.contains(point) else { return nil }
+        // Treat the icon, labels, and radio indicator as one card-sized target.
+        // Otherwise AppKit may deliver the click to a label subview and make
+        // appearance selection seem intermittent.
+        return self
     }
 
     @objc private func selectCard() {

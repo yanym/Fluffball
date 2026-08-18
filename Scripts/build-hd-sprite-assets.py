@@ -164,7 +164,7 @@ def normalize_row(frames: list[Image.Image]) -> tuple[list[Image.Image], float]:
 
 def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
     if style == "realistic":
-        base = root / "Assets/SpritePets/NinaRealistic/run"
+        base = root / "Assets/Generated/SpritePets/NinaRealistic/run"
         return [
             (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
             (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
@@ -178,7 +178,7 @@ def source_rows(root: Path, style: str) -> list[tuple[Path, int | None, str]]:
             (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
             (base / "generated-hd/look-row-10-grid-4x2.png", 4, "green"),
         ]
-    base = root / "Assets/SpritePets/Furball/source"
+    base = root / "Assets/Generated/SpritePets/Furball/source"
     return [
         (base / "generated-hd/idle-grid-4x2.png", 4, "blue"),
         (base / "generated-hd/running-right-grid-4x2.png", 4, "blue"),
@@ -219,14 +219,14 @@ def build(root: Path, style: str) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     atlas.save(output, "WEBP", lossless=True, quality=100, method=6, exact=True)
 
-    qa = root / f"Assets/SpritePets/HD-QA/{style}-atlas.png"
+    qa = root / f"Assets/Generated/SpritePets/HD-QA/{style}-atlas.png"
     qa.parent.mkdir(parents=True, exist_ok=True)
     atlas.resize((COLS * 192, ROWS * 208), Image.Resampling.LANCZOS).save(qa)
 
     clarity_dir = (
-        root / "Assets/SpritePets/NinaRealistic/run/qa"
+        root / "Assets/Generated/SpritePets/NinaRealistic/run/qa"
         if style == "realistic"
-        else root / "Assets/SpritePets/Furball/qa"
+        else root / "Assets/Generated/SpritePets/Furball/qa"
     )
     clarity_dir.mkdir(parents=True, exist_ok=True)
     clarity_report = {

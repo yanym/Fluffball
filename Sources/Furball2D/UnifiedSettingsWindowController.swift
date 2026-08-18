@@ -45,9 +45,6 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onAutoBehaviorChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onAutoBehaviorChanged = onAutoBehaviorChanged }
     }
-    var onLanguageChanged: ((AppLanguage) -> Void)? {
-        didSet { appearanceController.onLanguageChanged = onLanguageChanged }
-    }
     var onSpeechBubblesChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onSpeechBubblesChanged = onSpeechBubblesChanged }
     }
@@ -207,12 +204,12 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     private func applyLanguage() {
-        sidebarTitle.stringValue = language == .simplifiedChinese ? "设置" : "Settings"
-        generalButton.title = language == .simplifiedChinese ? "常规" : "General"
-        appearanceButton.title = language == .simplifiedChinese ? "外观与动画" : "Appearance & Animation"
-        behaviorButton.title = language == .simplifiedChinese ? "行为" : "Behavior"
-        interactionButton.title = language == .simplifiedChinese ? "桌面互动" : "Desktop Interaction"
-        speechButton.title = language == .simplifiedChinese ? "对话" : "Speech"
+        sidebarTitle.stringValue = "Settings"
+        generalButton.title = "General"
+        appearanceButton.title = "Appearance & Animation"
+        behaviorButton.title = "Behavior"
+        interactionButton.title = "Desktop Interaction"
+        speechButton.title = "Speech"
         libraryButton.title = language.libraryTab
         creatorButton.title = language.creatorTab
         window?.title = sidebarTitle.stringValue

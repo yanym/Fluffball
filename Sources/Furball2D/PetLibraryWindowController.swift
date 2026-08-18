@@ -553,9 +553,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             return
         }
         petName.stringValue = pet.name
-        let species = language == .simplifiedChinese
-            ? (["dog": "狗狗", "cat": "猫咪", "other": "其他"] [pet.species] ?? pet.species)
-            : pet.species.capitalized
+        let species = pet.species.capitalized
         petMeta.stringValue = "\(species) · v\(pet.assetVersion)"
         builtInBadge.isHidden = !pet.isBundled
         appearanceStack.arrangedSubviews.forEach {
@@ -612,7 +610,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             formatter.locale = Locale(identifier: language.rawValue)
             for memory in snapshot.memories.prefix(3) {
                 let time = formatter.localizedString(for: memory.date, relativeTo: Date())
-                let label = NSTextField(wrappingLabelWithString: "• \(memory.text(for: language))  ·  \(time)")
+                let label = NSTextField(wrappingLabelWithString: "• \(memory.text)  ·  \(time)")
                 label.font = .systemFont(ofSize: 11)
                 label.textColor = .secondaryLabelColor
                 label.maximumNumberOfLines = 2
@@ -664,7 +662,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = language == .simplifiedChinese ? "导入" : "Import"
+        panel.prompt = "Import"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let summary = try PetPackLibraryManager.installPack(from: url)
@@ -672,12 +670,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         } catch PetPackLibraryError.petAlreadyExists(let name) {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = language == .simplifiedChinese ? "替换 \(name)？" : "Replace \(name)?"
-            alert.informativeText = language == .simplifiedChinese
-                ? "新版本通过完整验证后才会原子替换现有宠物包。"
-                : "The existing pack is atomically replaced only after the new version passes validation."
-            alert.addButton(withTitle: language == .simplifiedChinese ? "替换" : "Replace")
-            alert.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+            alert.messageText = "Replace \(name)?"
+            alert.informativeText = "The existing pack is atomically replaced only after the new version passes validation."
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             do {
                 let summary = try PetPackLibraryManager.installPack(from: url, replacingExisting: true)
@@ -703,7 +699,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = language == .simplifiedChinese ? "导出到这里" : "Export Here"
+        panel.prompt = "Export Here"
         guard panel.runModal() == .OK, let directory = panel.url else { return }
         do {
             let output = try PetPackLibraryManager.exportPet(pet, to: directory)
@@ -715,12 +711,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         guard let pet = selectedPet, !pet.isBundled else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = language == .simplifiedChinese ? "移除 \(pet.name)？" : "Remove \(pet.name)?"
-        alert.informativeText = language == .simplifiedChinese
-            ? "宠物包会移到废纸篓，可以恢复。"
-            : "The pet pack will move to Trash and can be recovered."
+        alert.messageText = "Remove \(pet.name)?"
+        alert.informativeText = "The pet pack will move to Trash and can be recovered."
         alert.addButton(withTitle: language.removePetButton)
-        alert.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+        alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
             try PetPackLibraryManager.removePet(pet)
@@ -736,7 +730,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.image]
-        panel.prompt = language == .simplifiedChinese ? "选择照片" : "Choose Photos"
+        panel.prompt = "Choose Photos"
         guard panel.runModal() == .OK else { return }
         guard (6...12).contains(panel.urls.count) else {
             showMessage(language.invalidCreationInput)
@@ -752,7 +746,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = language == .simplifiedChinese ? "创建到这里" : "Create Here"
+        panel.prompt = "Create Here"
         guard panel.runModal() == .OK, let directory = panel.url else { return }
         do {
             let output = try PetPackLibraryManager.makeCreationRequest(
@@ -793,7 +787,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         consent.messageText = language.codexPhotoConsentTitle
         consent.informativeText = language.codexPhotoConsentBody
         consent.addButton(withTitle: language.oneClickCodexButton)
-        consent.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+        consent.addButton(withTitle: "Cancel")
         guard consent.runModal() == .alertFirstButtonReturn else { return }
 
         do {
@@ -851,10 +845,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             creationStatus.stringValue = error.localizedDescription
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = language == .simplifiedChinese ? "生成未完成" : "Generation Did Not Finish"
+            alert.messageText = "Generation Did Not Finish"
             alert.informativeText = error.localizedDescription
-            alert.addButton(withTitle: language == .simplifiedChinese ? "查看日志" : "Show Log")
-            alert.addButton(withTitle: language == .simplifiedChinese ? "关闭" : "Close")
+            alert.addButton(withTitle: "Show Log")
+            alert.addButton(withTitle: "Close")
             if alert.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.activateFileViewerSelecting([job.logURL])
             }
@@ -866,7 +860,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = language == .simplifiedChinese ? "下载到这里" : "Download Here"
+        panel.prompt = "Download Here"
         guard panel.runModal() == .OK, let directory = panel.url else { return }
         do {
             let output = try PetPackLibraryManager.exportCreatorSkill(to: directory)

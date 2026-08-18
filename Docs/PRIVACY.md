@@ -1,20 +1,4 @@
-# Furball2D Privacy / 隐私说明
-
-[中文](#中文) · [English](#english)
-
-## 中文
-
-Furball2D 1.0 默认完全离线运行：
-
-- 不包含账号、广告、分析、遥测或崩溃上传 SDK。
-- 不发送鼠标位置、桌面内容、宠物照片或宠物包。
-- 宠物设置、性格、当前状态和最多 48 小时的短期记忆保存在 macOS `UserDefaults`；可在宠物档案中清除记忆。
-- 用户导入的宠物包保存在 `~/Library/Application Support/Furball2D/Pets/`。
-- “导出创建请求”只在用户选择的本地目录创建照片副本、`REQUEST.json` 和创建 Skill，不上传任何内容。
-- 用户明确确认“用 Codex 一键生成并导入”后，App 会启动本机已登录的 Codex CLI，并把所选照片副本交给其图片模型；App 不读取或保存 Codex 账号、Token 或 API Key。数据处理、套餐和用量限制由用户的 Codex 服务及其隐私政策负责。
-- 一键创建的临时请求和日志位于 `~/Library/Application Support/Furball2D/CreationJobs/`；成功导入后自动删除，失败或用户取消时保留，便于查看日志和重试。
-
-## English
+# Furball2D Privacy
 
 Furball2D 1.0 runs locally by default:
 

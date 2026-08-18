@@ -25,7 +25,16 @@ private final class PetVideoChannel: @unchecked Sendable {
         player.automaticallyWaitsToMinimizeStalling = false
 
         let first = try makeItem()
+        first.preferredForwardBufferDuration = clip.loops ? 1.5 : 0.6
         player.insert(first, after: nil)
+        // Short gait loops can end before the periodic observer gets enough
+        // main-run-loop time while the window is moving. Queue the first repeat
+        // up front so fast-run playback never has to recover from an empty queue.
+        if clip.loops {
+            let next = try makeItem()
+            next.preferredForwardBufferDuration = 1.5
+            player.insert(next, after: first)
+        }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nil,
@@ -114,7 +123,8 @@ private final class PetVideoChannel: @unchecked Sendable {
         let item = AVPlayerItem(url: try clip.url)
         let attributes: [String: any Sendable] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [String: String]()
         ]
         let output = AVPlayerItemVideoOutput(pixelBufferAttributes: attributes)
         output.suppressesPlayerRendering = true
@@ -320,6 +330,10 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         view.preferredFramesPerSecond = min(120, max(60, displayFPS))
         view.layer?.isOpaque = false
         view.wantsLayer = true
+        if let metalLayer = view.layer as? CAMetalLayer {
+            metalLayer.maximumDrawableCount = 3
+            metalLayer.allowsNextDrawableTimeout = false
+        }
     }
 
     deinit {
@@ -399,6 +413,22 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             clip.imageAnimation,
             fadeDuration: crossfadeEnabled ? fadeDuration : 0,
             completion: completion
+        )
+    }
+
+    func displayDirectionalBlend(
+        first: PetClip,
+        second: PetClip,
+        weight: Float,
+        entryFadeDuration: TimeInterval = 0.06
+    ) throws {
+        guard visualMode == .images else { return }
+        clearVideoChannels()
+        try imageAnimator.displayDirectionalBlend(
+            first.imageAnimation,
+            second.imageAnimation,
+            weight: weight,
+            entryFadeDuration: entryFadeDuration
         )
     }
 

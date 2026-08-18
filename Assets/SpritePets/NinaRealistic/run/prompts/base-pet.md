@@ -1,7 +1,0 @@
-Create one clean full-body reference sprite for Codex pet Nina · 写实 2D.
-
-Pet identity: Preserve Nina exactly: black tri-color Australian shepherd, broad white blaze and chest, warm copper brows and cheeks, brown eyes, natural long coat and fluffy tail. Photographic fur texture and anatomically believable motion, isolated as a clean desktop sprite. No cartoon proportions, no chibi, no illustration outline, no clothes, no props, no text..
-Style: Pet-safe sprite: compact full-body mascot, readable in a 192x208 cell, clear silhouette, simple face, stable palette/materials, and crisp edges for chroma-key extraction. Style `auto`: Infer the most appropriate pet-safe style from the user request and reference images, then keep that exact style consistent across every row. User style notes: Photorealistic studio cutout rendered as a high-fidelity 2D sprite. True natural fur strands, realistic anatomy and warm soft studio light, simplified only enough to remain readable at 192x208. Identical camera height, scale, coat markings and color grade in every frame..
-
-
-Place a single centered pose on a perfectly flat pure user-selected #FF00FF chroma-key background. Keep the full pet visible, compact, readable at 192x208, and easy to animate. Preserve approved reference identity cues. No scenery, text, borders, checkerboard transparency, shadows, glows, detached effects, or extra props. Keep #FF00FF and close colors out of the pet, props, highlights, and effects.

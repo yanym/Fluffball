@@ -1,8 +1,8 @@
-# Furball Pet Pack v2 Contract / Furball 宠物包 v2 合同
+# Furball Pet Pack v2 Contract
 
 `ACTION_REGISTRY_VERSION: 2026-08-18.1`
 
-This file is authoritative for assets produced by `furball-pet-creator`. 本文件是创建 Skill 的权威输出合同。
+This file is authoritative for assets produced by `furball-pet-creator`.
 
 ## Runtime package
 
@@ -93,7 +93,7 @@ gesture.yawn
 gesture.tail-chase
 ```
 
-Every published action has a binding, bilingual `zh-Hans`/`en` title, resulting posture, and autonomous Boolean.
+Every published action has a binding, an English `en` title, a resulting posture, and an autonomous Boolean.
 
 ## Direction semantics
 

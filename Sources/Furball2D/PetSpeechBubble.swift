@@ -355,7 +355,7 @@ private final class SpeechBubbleView: NSView {
         tagIcon.imageScaling = .scaleProportionallyUpOrDown
         addSubview(tagIcon)
 
-        // 对话正文
+        // Message body
         messageLabel.alignment = .left
         messageLabel.maximumNumberOfLines = 5
         messageLabel.lineBreakMode = .byWordWrapping

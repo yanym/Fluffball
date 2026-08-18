@@ -3,20 +3,20 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-SOURCE_DIR="$PROJECT_DIR/Assets/SourceVideos/left-profile"
+SOURCE_DIR="$PROJECT_DIR/Assets/UserProvided/SourceVideos/left-profile"
 OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile"
 
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-  print -u2 "需要先安装 FFmpeg（brew install ffmpeg）。"
+  print -u2 "FFmpeg is required (brew install ffmpeg)."
   exit 1
 fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# 连续动画以 1280×720、120 fps 输出，在 ProMotion 屏幕上保持与窗口位移同频。
-# 原始 AI 视频是 24 fps，运动补帧必须
-# 放在绿幕抠像之前：此时背景稳定、轮廓完整，光流不会在透明毛发边缘制造破洞。
-# 片尾克隆 0.10 秒只用于给双向光流提供未来帧，随后会裁回动作原始时长。
+# Continuous animation exports at 1280×720 and 120 fps to match window movement on ProMotion.
+# The original AI footage is 24 fps. Motion interpolation must run before keying while the
+# background is stable and silhouettes are complete, preventing optical-flow holes in fur alpha.
+# A 0.10-second cloned tail supplies future frames for bidirectional flow and is trimmed afterward.
 TARGET_WIDTH=1280
 TARGET_HEIGHT=720
 TARGET_FPS=120
@@ -29,9 +29,9 @@ motion_interpolation_filter() {
   print -r -- "tpad=stop_mode=clone:stop_duration=0.10,minterpolate=fps=$TARGET_FPS:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,trim=duration=$duration,setpts=PTS-STARTPTS"
 }
 
-# 移动素材来自另一批生成视频，原始白毛和棕毛明显偏暖、偏亮。以下曲线用
-# stand-idle 的黑毛、棕毛和白毛统计值作为三个锚点，在抠像后统一色温与明度。
-# 每种移动源片使用一条固定曲线，保证 start / loop / stop 内部不会发生色漂。
+# Locomotion footage came from a warmer, brighter generation batch. These curves use stand-idle
+# black, tan, and white fur statistics as anchors after keying. One fixed curve per source keeps
+# start, loop, and stop color-stable.
 color_curve_points() {
   local source_black="$1"
   local source_tan="$2"
@@ -74,9 +74,9 @@ motion_color_filter() {
   print -r -- "curves=interp=pchip:r='$red':g='$green':b='$blue'"
 }
 
-# 在透明的 1600×900 工作画布上做等比缩放和位移，再裁回 1280×720。
-# 这样既支持缩小，也支持放大，不会因为 pad 目标小于动态输入而失败。
-# q / dx / dy 在片段首尾之间使用 smoothstep，避免校正本身造成速度突变。
+# Apply uniform scale and translation on a transparent 1600×900 work canvas, then crop to
+# 1280×720. This supports enlargement and reduction without pad failures. Interpolate q, dx,
+# and dy with smoothstep so correction does not introduce a velocity discontinuity.
 stabilize_filter() {
   local base_width="$1"
   local base_height="$2"
@@ -90,8 +90,8 @@ stabilize_filter() {
   local progress="min(1,max(0,t/$timeline_duration))"
   local eased="($progress*$progress*(3-2*$progress))"
   local q="($q0+($q1-$q0)*$eased)"
-  # pad 不暴露帧号 n；它收到的 iw 已经是逐帧 scale 后的宽度，因此可由
-  # iw/base_width 反推出同一个 eased 进度，保证缩放和位移严格同步。
+  # pad does not expose frame n. Its iw already reflects per-frame scaling, so iw/base_width
+  # reconstructs the eased progress and keeps scale and translation synchronized.
   local inferred_eased="((iw/$base_width-$q0)/($q1-$q0))"
   local dx="($dx0+($dx1-$dx0)*$inferred_eased)"
   local dy="($dy0+($dy1-$dy0)*$inferred_eased)"
@@ -122,12 +122,12 @@ compile_clip() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少素材：$source_path"
+    print -u2 "Missing asset: $source_path"
     exit 1
   fi
 
   interpolate="$(motion_interpolation_filter "$duration")"
-  print "编译 120 fps 高清动作 $source_name [$start_time + $duration] → $output_name.mov"
+  print "Building 120 fps HD action $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
     -vf "$SOURCE_CLEANUP,$interpolate,$FINISH_FILTERS" \
     "${ENCODE_OPTIONS[@]}" \
@@ -153,13 +153,13 @@ compile_stabilized_clip() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少素材：$source_path"
+    print -u2 "Missing asset: $source_path"
     exit 1
   fi
 
   normalize="$(stabilize_filter 1280 720 "$duration" "$q0" "$q1" "$dx0" "$dx1" "$dy0" "$dy1")"
   interpolate="$(motion_interpolation_filter "$duration")"
-  print "编译端口稳定动作 $source_name [$start_time + $duration] → $output_name.mov"
+  print "Building port-stabilized action $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
     -vf "$SOURCE_CLEANUP,$interpolate,chromakey=0x3f985b:0.075:0.025,despill=green:mix=0.30:expand=0.05,unsharp=5:5:0.25:3:3:0,format=rgba,$normalize,scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:flags=lanczos+accurate_rnd,format=bgra" \
     "${ENCODE_OPTIONS[@]}" \
@@ -177,15 +177,15 @@ compile_pingpong_idle() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少素材：$source_path"
+    print -u2 "Missing asset: $source_path"
     exit 1
   fi
   last_frame_index="$(segment_last_frame_index "$source_path" "$duration")"
   interpolate="$(motion_interpolation_filter "$duration")"
 
-  # 普通 AI 视频的首尾不是同一姿态，直接 AVQueuePlayer 循环会每隔几秒轻跳一次。
-  # 待机动作幅度很小，使用首尾去重的正放/倒放能保留动作且保证位置连续。
-  print "编译无跳点待机循环 $source_name → $output_name.mov"
+  # Typical AI clips do not share the same first and last pose. Low-motion idle can use a
+  # de-duplicated forward/reverse loop to preserve motion without a periodic jump.
+  print "Building seamless idle loop $source_name → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
     -filter_complex "[0:v]$SOURCE_CLEANUP,$interpolate,$FINISH_FILTERS,split=2[forward][backward];[forward]setpts=PTS-STARTPTS[f];[backward]reverse,trim=start_frame=1:end_frame=$last_frame_index,setpts=PTS-STARTPTS[r];[f][r]concat=n=2:v=1:a=0,fps=${TARGET_FPS}[out]" \
     -map "[out]" "${ENCODE_OPTIONS[@]}" \
@@ -199,15 +199,15 @@ compile_sleep_loop() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少素材：$source_path"
+    print -u2 "Missing asset: $source_path"
     exit 1
   fi
   last_frame_index="$(segment_last_frame_index "$source_path" "0.55")"
   interpolate="$(motion_interpolation_filter "0.55")"
 
-  print "编译低动作睡眠呼吸循环 → sleep-idle.mov"
-  # 只取 0.55 秒最稳定的呼吸动作，并放慢 2.5 倍；倒放段去掉首尾重复帧。
-  # 这样每轮约 2.5 秒，身体有轻微起伏，但不会反复甩尾或调整睡姿。
+  print "Building low-motion sleep breathing loop → sleep-idle.mov"
+  # Keep the calmest 0.55 seconds, slow it 2.5×, and remove repeated endpoints from reverse.
+  # Each cycle retains subtle breathing without repeated tail sweeps or posture changes.
   ffmpeg -y -v warning -ss "0.50" -t "0.55" -i "$source_path" \
     -filter_complex "[0:v]$SOURCE_CLEANUP,$interpolate,$FINISH_FILTERS,split=2[forward][backward];[forward]setpts=2.5*(PTS-STARTPTS)[f];[backward]reverse,trim=start_frame=1:end_frame=$last_frame_index,setpts=2.5*(PTS-STARTPTS)[r];[f][r]concat=n=2:v=1:a=0,fps=${TARGET_FPS}[out]" \
     -map "[out]" "${ENCODE_OPTIONS[@]}" \
@@ -220,16 +220,16 @@ compile_sleep_to_stand() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少素材：$source_path"
+    print -u2 "Missing asset: $source_path"
     exit 1
   fi
 
-  # 原片在起身过程中逐渐推近，末帧主体约大 6%。这里使用 smoothstep 渐变缩回，
-  # 同时以脚底为锚点补偿横纵位置，使末帧和 stand-idle 的大小、落脚点一致。
+  # The source pushes in during waking and ends about 6% larger. Smoothstep scale correction
+  # plus foot-anchored translation matches the final frame to stand-idle size and placement.
   local normalize="scale=w='iw*(1-0.057*(3*min(1,t/4.60)^2-2*min(1,t/4.60)^3))':h='ih*(1-0.057*(3*min(1,t/4.60)^2-2*min(1,t/4.60)^3))':eval=frame,pad=1280:720:x='(ow-iw)/2+25*((1280-iw)/(1280*0.057))':y='oh-ih-12*((720-ih)/(720*0.057))':eval=frame:color=0x3f985b"
   interpolate="$(motion_interpolation_filter "4.60")"
 
-  print "编译并校正睡醒起身尺寸 → sleep-to-stand.mov"
+  print "Building and normalizing wake-up scale → sleep-to-stand.mov"
   ffmpeg -y -v warning -ss "0.00" -t "4.60" -i "$source_path" \
     -vf "$SOURCE_CLEANUP,$interpolate,$normalize,$FINISH_FILTERS" \
     "${ENCODE_OPTIONS[@]}" \
@@ -255,20 +255,20 @@ compile_motion_segment() {
   local interpolate
 
   if [[ ! -f "$source_path" ]]; then
-    print -u2 "缺少移动素材：$source_path"
+    print -u2 "Missing locomotion source: $source_path"
     exit 1
   fi
 
-  # 移动原片的站立端口比 stand-idle 大约 8%，脚底低约 18 px，且三个
-  # 原片在跑动期间各有不同程度的横向/纵向漂移。每一段都使用独立的
-  # 首末 q/dx/dy 校正；循环段的两端被归一到同一高度、中心和脚底基线。
-  # 走路/跑步是方向性动作，循环段只取相同落脚相位，绝不使用倒放。
+  # Locomotion standing ports are roughly 8% larger and 18 px lower than stand-idle, with
+  # source-specific drift. Give each segment independent endpoint q/dx/dy correction and
+  # normalize loop ends to one height, center, and foot baseline. Never reverse locomotion;
+  # trim loops to matching contact phases.
   normalize="$(stabilize_filter 1190 670 "$duration" "$q0" "$q1" "$dx0" "$dx1" "$dy0" "$dy1")"
   color_grade="$(motion_color_filter "$source_name")"
   interpolate="$(motion_interpolation_filter "$duration")"
   local motion_filters="$SOURCE_CLEANUP,$interpolate,chromakey=$key_color:0.078:0.025,despill=green:mix=0.32:expand=0.05,format=rgba,$color_grade,unsharp=5:5:0.25:3:3:0,$normalize,scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:flags=lanczos+accurate_rnd,format=bgra"
 
-  print "编译移动动作 $source_name [$start_time + $duration] → $output_name.mov"
+  print "Building locomotion $source_name [$start_time + $duration] → $output_name.mov"
   ffmpeg -y -v warning -ss "$start_time" -t "$duration" -i "$source_path" \
     -vf "$motion_filters" \
     "${ENCODE_OPTIONS[@]}" \
@@ -286,10 +286,9 @@ compile_stabilized_clip "lie-to-sleep.mp4" "lie-to-sleep" "3.70" "5.90" 142 \
 compile_sleep_loop
 compile_sleep_to_stand
 
-# 新移动素材均包含“站立 → 移动 → 站立”。每段拆成起步、相位闭合循环、停步：
-# walk loop:    frame 99  → 128（约 1.208 s）
-# slow-run loop: frame 98  → 129（约 1.292 s）
-# fast-run loop: frame 66  → 80 （约 0.583 s）
+# Every locomotion source contains stand → move → stand. Split each into start, phase-closed
+# loop, and stop. Measured loops: walk frames 99–128 (~1.208 s), slow-run frames 98–129
+# (~1.292 s), and fast-run frames 66–80 (~0.583 s).
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-start" "0.200000" "3.925000" "0x549a44" 94 \
   "0.929752" "0.934504" "-12.060" "8.919" "0.749" "25.332"
 compile_motion_segment "stand-to-walk-to-stand.mp4" "walk-loop" "4.125000" "1.208333" "0x549a44" 29 \
@@ -312,6 +311,5 @@ compile_motion_segment "stand-to-fast-run-to-stand.mp4" "fast-run-stop" "3.33333
   "0.945081" "1.022727" "-12.716" "2.779" "35.963" "-9.788"
 
 "$SCRIPT_DIR/build-image-turn-mvp.sh"
-"$SCRIPT_DIR/build-image-assets.sh"
 
-print "透明素材已写入：$OUTPUT_DIR"
+print "Wrote transparent assets to: $OUTPUT_DIR"

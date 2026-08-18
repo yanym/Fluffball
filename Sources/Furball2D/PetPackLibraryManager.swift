@@ -9,17 +9,12 @@ enum PetPackLibraryError: LocalizedError {
     case operationFailed(String)
 
     var errorDescription: String? {
-        switch (AppLanguage.stored, self) {
-        case (.simplifiedChinese, .invalidPack(let reason)): "宠物包未通过验证：\(reason)"
-        case (.english, .invalidPack(let reason)): "The pet pack failed validation: \(reason)"
-        case (.simplifiedChinese, .petAlreadyExists(let name)): "素材库里已经有 \(name)。"
-        case (.english, .petAlreadyExists(let name)): "\(name) is already in the library."
-        case (.simplifiedChinese, .bundledPetConflict(let id)): "导入包的 ID（\(id)）与内置宠物冲突。"
-        case (.english, .bundledPetConflict(let id)): "The imported ID (\(id)) conflicts with a built-in pet."
-        case (.simplifiedChinese, .missingCreatorSkill): "安装包中找不到宠物创建 Skill。"
-        case (.english, .missingCreatorSkill): "The pet creator Skill is missing from the app bundle."
-        case (.simplifiedChinese, .operationFailed(let reason)): "操作失败：\(reason)"
-        case (.english, .operationFailed(let reason)): "The operation failed: \(reason)"
+        switch self {
+        case .invalidPack(let reason): "The pet pack failed validation: \(reason)"
+        case .petAlreadyExists(let name): "\(name) is already in the library."
+        case .bundledPetConflict(let id): "The imported ID (\(id)) conflicts with a built-in pet."
+        case .missingCreatorSkill: "The pet creator Skill is missing from the app bundle."
+        case .operationFailed(let reason): "The operation failed: \(reason)"
         }
     }
 }
@@ -84,51 +79,40 @@ enum PetPackLibraryManager {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
-            throw PetPackLibraryError.invalidPack("请选择一个 .furballpet 文件夹 / Choose a .furballpet folder")
+            throw PetPackLibraryError.invalidPack("Choose a .furballpet folder")
         }
         try validateTreeSafety(at: root)
 
         let manifestURL = root.appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: manifestURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw PetPackLibraryError.invalidPack("manifest.json 缺失或格式无效 / missing or invalid manifest.json")
+            throw PetPackLibraryError.invalidPack("Missing or invalid manifest.json")
         }
         guard (json["petPackVersion"] as? Int) == 2 else {
-            throw PetPackLibraryError.invalidPack("petPackVersion 必须为 2 / must be 2")
+            throw PetPackLibraryError.invalidPack("petPackVersion must be 2")
         }
         guard let pet = json["pet"] as? [String: Any],
               let id = pet["id"] as? String,
               id.range(of: "^[a-z0-9][a-z0-9-]{1,63}$", options: .regularExpression) != nil,
               let name = pet["name"] as? String,
               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw PetPackLibraryError.invalidPack("pet.id 或 pet.name 无效 / invalid pet.id or pet.name")
+            throw PetPackLibraryError.invalidPack("Invalid pet.id or pet.name")
         }
         let species = (pet["species"] as? String) ?? "other"
         guard ["dog", "cat", "other"].contains(species) else {
-            throw PetPackLibraryError.invalidPack("pet.species 必须是 dog、cat 或 other")
+            throw PetPackLibraryError.invalidPack("pet.species must be dog, cat, or other")
         }
         let assetVersion = max(1, (pet["assetVersion"] as? Int) ?? 1)
         guard let capabilities = json["capabilities"] as? [String: Any] else {
-            throw PetPackLibraryError.invalidPack("缺少 capabilities / missing capabilities")
+            throw PetPackLibraryError.invalidPack("Missing capabilities")
         }
         let imageMode = capabilities["imageMode"] as? Bool ?? false
         let videoMode = capabilities["videoMode"] as? Bool ?? false
         guard imageMode || videoMode else {
-            throw PetPackLibraryError.invalidPack("至少启用一种视觉模式 / enable at least one visual mode")
+            throw PetPackLibraryError.invalidPack("Enable at least one visual mode")
         }
 
         var semanticLoops: [String: Bool] = [:]
-        if let images = json["imageAnimations"] as? [[String: Any]] {
-            for animation in images {
-                guard let semanticID = animation["id"] as? String,
-                      let files = animation["files"] as? [String], !files.isEmpty else { continue }
-                for path in files + ((animation["rightFiles"] as? [String]) ?? []) {
-                    _ = try safeFile(path, under: root)
-                }
-                semanticLoops[semanticID] = animation["loop"] as? Bool ?? false
-            }
-        }
-
         var atlasFiles = Set<String>()
         if let atlas = json["spriteAtlas"] as? [String: Any] {
             try inspectAtlas(atlas, root: root, semanticLoops: &semanticLoops, atlasFiles: &atlasFiles)
@@ -146,24 +130,24 @@ enum PetPackLibraryManager {
         }
 
         if imageMode {
-            guard !atlasFiles.isEmpty || !semanticLoops.isEmpty else {
-                throw PetPackLibraryError.invalidPack("图片模式没有图集或 PNG 动画 / no image assets")
+            guard !atlasFiles.isEmpty else {
+                throw PetPackLibraryError.invalidPack("Image mode requires a sprite-atlas v2 WebP")
             }
             let missing = requiredSemanticIDs.subtracting(semanticLoops.keys)
             guard missing.isEmpty else {
                 throw PetPackLibraryError.invalidPack(
-                    "缺少标准动作：\(missing.sorted().joined(separator: ", "))"
+                    "Missing required actions: \(missing.sorted().joined(separator: ", "))"
                 )
             }
             for id in requiredSemanticIDs {
                 guard semanticLoops[id] == requiredLoopingIDs.contains(id) else {
-                    throw PetPackLibraryError.invalidPack("\(id) 的 loop 语义不正确 / invalid loop semantics")
+                    throw PetPackLibraryError.invalidPack("Invalid loop semantics for \(id)")
                 }
             }
         }
         if videoMode {
             guard let clips = json["clips"] as? [[String: Any]], !clips.isEmpty else {
-                throw PetPackLibraryError.invalidPack("videoMode=true 但没有 clips")
+                throw PetPackLibraryError.invalidPack("videoMode=true requires clips")
             }
             for clip in clips {
                 guard let path = clip["file"] as? String else { continue }
@@ -340,9 +324,7 @@ enum PetPackLibraryManager {
     ) throws -> CodexPetCreationJob {
         guard let codexExecutableURL else {
             throw PetPackLibraryError.operationFailed(
-                AppLanguage.stored == .simplifiedChinese
-                    ? "未找到 Codex CLI，请先安装并登录 Codex，或导出创建请求。"
-                    : "Codex CLI was not found. Install and sign in to Codex, or export a creation request instead."
+                "Codex CLI was not found. Install and sign in to Codex, or export a creation request instead."
             )
         }
         let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -449,18 +431,19 @@ enum PetPackLibraryManager {
     ) throws {
         guard (atlas["spriteVersionNumber"] as? Int) == 2,
               let file = atlas["file"] as? String else {
-            throw PetPackLibraryError.invalidPack("spriteAtlas 必须是 v2 并声明 file")
+            throw PetPackLibraryError.invalidPack("spriteAtlas must be v2 and declare file")
         }
         guard let layout = atlas["layout"] as? [String: Any],
               layout["columns"] as? Int == 8,
               layout["rows"] as? Int == 11,
-              layout["cellWidth"] as? Int == 192,
-              layout["cellHeight"] as? Int == 208 else {
-            throw PetPackLibraryError.invalidPack("v2 图集必须是 8×11，每格 192×208")
+              atlas["assetScale"] as? Int == 2,
+              layout["cellWidth"] as? Int == 384,
+              layout["cellHeight"] as? Int == 416 else {
+            throw PetPackLibraryError.invalidPack("v2 atlases must be 8×11 with native 384×416 cells at assetScale 2")
         }
         atlasFiles.insert(file)
         guard let animations = atlas["animations"] as? [[String: Any]], !animations.isEmpty else {
-            throw PetPackLibraryError.invalidPack("spriteAtlas.animations 不能为空")
+            throw PetPackLibraryError.invalidPack("spriteAtlas.animations cannot be empty")
         }
         var animationLoops: [String: Bool] = [:]
         for animation in animations {
@@ -470,18 +453,18 @@ enum PetPackLibraryManager {
                   let durations = animation["frameDurations"] as? [Double],
                   durations.count == count, durations.allSatisfy({ $0 > 0 }),
                   let loops = animation["loop"] as? Bool else {
-                throw PetPackLibraryError.invalidPack("sprite 动画行、帧数或时长无效")
+                throw PetPackLibraryError.invalidPack("Invalid sprite animation row, frame count, or timing")
             }
             animationLoops[id] = loops
         }
         guard let bindings = atlas["bindings"] as? [[String: Any]] else {
-            throw PetPackLibraryError.invalidPack("spriteAtlas.bindings 不能为空")
+            throw PetPackLibraryError.invalidPack("spriteAtlas.bindings cannot be empty")
         }
         for binding in bindings {
             guard let id = binding["id"] as? String,
                   let animation = binding["animation"] as? String,
                   let inheritedLoop = animationLoops[animation] else {
-                throw PetPackLibraryError.invalidPack("sprite binding 引用了不存在的动画")
+                throw PetPackLibraryError.invalidPack("A sprite binding references a missing animation")
             }
             semanticLoops[id] = binding["loop"] as? Bool ?? inheritedLoop
         }
@@ -492,7 +475,7 @@ enum PetPackLibraryManager {
                         let column = direction["columnIndex"] as? Int else { return false }
                   return (0..<11).contains(row) && (0..<8).contains(column)
               }) else {
-            throw PetPackLibraryError.invalidPack("v2 图集必须声明完整 16 方向")
+            throw PetPackLibraryError.invalidPack("A v2 atlas must declare all 16 directions")
         }
         for id in [
             "stand.facing.left-profile", "stand.facing.front-near-profile-left",
@@ -507,23 +490,23 @@ enum PetPackLibraryManager {
     private static func validateAtlasImage(_ url: URL) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              image.width == 1536, image.height == 2288 else {
-            throw PetPackLibraryError.invalidPack("\(url.lastPathComponent) 必须是 1536×2288 WebP")
+              image.width == 3072, image.height == 4576 else {
+            throw PetPackLibraryError.invalidPack("\(url.lastPathComponent) must be a 3072×4576 WebP")
         }
         let alpha = image.alphaInfo
         guard alpha != .none && alpha != .noneSkipFirst && alpha != .noneSkipLast else {
-            throw PetPackLibraryError.invalidPack("\(url.lastPathComponent) 没有透明通道")
+            throw PetPackLibraryError.invalidPack("\(url.lastPathComponent) has no alpha channel")
         }
     }
 
     private static func safeFile(_ relativePath: String, under root: URL) throws -> URL {
         guard !relativePath.hasPrefix("/"), !relativePath.contains("\\") else {
-            throw PetPackLibraryError.invalidPack("不安全路径：\(relativePath)")
+            throw PetPackLibraryError.invalidPack("Unsafe path: \(relativePath)")
         }
         let file = root.appendingPathComponent(relativePath).standardizedFileURL.resolvingSymlinksInPath()
         let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
         guard file.path.hasPrefix(rootPrefix), FileManager.default.fileExists(atPath: file.path) else {
-            throw PetPackLibraryError.invalidPack("缺少素材或路径越界：\(relativePath)")
+            throw PetPackLibraryError.invalidPack("Missing asset or path escapes the pack: \(relativePath)")
         }
         return file
     }
@@ -533,20 +516,20 @@ enum PetPackLibraryManager {
             at: root,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
-        ) else { throw PetPackLibraryError.invalidPack("无法读取宠物包") }
+        ) else { throw PetPackLibraryError.invalidPack("Could not read the pet pack") }
         var fileCount = 0
         var totalBytes: Int64 = 0
         for case let file as URL in enumerator {
             let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
             guard values.isSymbolicLink != true else {
-                throw PetPackLibraryError.invalidPack("不允许符号链接：\(file.lastPathComponent)")
+                throw PetPackLibraryError.invalidPack("Symbolic links are not allowed: \(file.lastPathComponent)")
             }
             if values.isRegularFile == true {
                 fileCount += 1
                 totalBytes += Int64(values.fileSize ?? 0)
             }
             guard fileCount <= 2_000, totalBytes <= 800 * 1_024 * 1_024 else {
-                throw PetPackLibraryError.invalidPack("宠物包过大（最多 2000 个文件 / 800 MB）")
+                throw PetPackLibraryError.invalidPack("Pet pack exceeds 2,000 files or 800 MB")
             }
         }
     }

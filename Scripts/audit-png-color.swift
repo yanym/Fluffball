@@ -37,7 +37,7 @@ private func audit(path: String) throws {
     guard let source = CGImageSourceCreateWithURL(url, nil),
           let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
         throw NSError(domain: "FurballColorAudit", code: 1, userInfo: [
-            NSLocalizedDescriptionKey: "无法读取 PNG：\(path)"
+            NSLocalizedDescriptionKey: "Could not read PNG: \(path)"
         ])
     }
 
@@ -93,7 +93,7 @@ private func audit(path: String) throws {
 }
 
 guard CommandLine.arguments.count > 1 else {
-    FileHandle.standardError.write(Data("用法：audit-png-color.swift <png> [png ...]\n".utf8))
+    FileHandle.standardError.write(Data("Usage: audit-png-color.swift <png> [png ...]\n".utf8))
     exit(2)
 }
 

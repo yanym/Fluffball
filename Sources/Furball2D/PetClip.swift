@@ -19,16 +19,6 @@ private struct PetAssetManifest: Decodable {
         let loop: Bool
     }
 
-    struct ImageAnimationDescriptor: Decodable {
-        let id: String
-        let files: [String]
-        let rightFiles: [String]?
-        let loop: Bool
-        let motion: PetImageMotion
-        let frameDuration: TimeInterval?
-        let duration: TimeInterval?
-    }
-
     struct SpriteAtlasDescriptor: Decodable {
         struct LayoutDescriptor: Decodable {
             let columns: Int
@@ -72,13 +62,7 @@ private struct PetAssetManifest: Decodable {
         }
 
         struct LocalizedTitleDescriptor: Decodable {
-            let zhHans: String
             let en: String
-
-            private enum CodingKeys: String, CodingKey {
-                case zhHans = "zh-Hans"
-                case en
-            }
         }
 
         struct ActionDescriptor: Decodable {
@@ -100,13 +84,7 @@ private struct PetAssetManifest: Decodable {
 
     struct AppearanceDescriptor: Decodable {
         struct LocalizedText: Decodable {
-            let zhHans: String
             let en: String
-
-            private enum CodingKeys: String, CodingKey {
-                case zhHans = "zh-Hans"
-                case en
-            }
         }
 
         let id: String
@@ -122,7 +100,6 @@ private struct PetAssetManifest: Decodable {
     let pet: PetDescriptor?
     let capabilities: CapabilitiesDescriptor?
     let clips: [ClipDescriptor]?
-    let imageAnimations: [ImageAnimationDescriptor]?
     let spriteAtlas: SpriteAtlasDescriptor?
     let appearances: [AppearanceDescriptor]?
 }
@@ -142,20 +119,14 @@ enum PetAppearanceKind: String, Decodable {
 struct PetAppearanceOption: Equatable {
     let id: String
     let kind: PetAppearanceKind
-    let zhHansTitle: String
-    let englishTitle: String
-    let zhHansSubtitle: String
-    let englishSubtitle: String
+    let title: String
+    let subtitle: String
     let systemImage: String
     let isDefault: Bool
 
-    func title(for language: AppLanguage) -> String {
-        language == .simplifiedChinese ? zhHansTitle : englishTitle
-    }
+    func title(for language: AppLanguage) -> String { title }
 
-    func subtitle(for language: AppLanguage) -> String {
-        language == .simplifiedChinese ? zhHansSubtitle : englishSubtitle
-    }
+    func subtitle(for language: AppLanguage) -> String { subtitle }
 }
 
 struct PetLibraryPet: Equatable {
@@ -198,9 +169,6 @@ struct PetImageFrameReference: Hashable {
     let renderCanvas: PetPixelSize?
     let bottomPadding: Int
 
-    static func file(_ url: URL) -> PetImageFrameReference {
-        PetImageFrameReference(url: url, crop: nil, renderCanvas: nil, bottomPadding: 0)
-    }
 }
 
 struct PetImageAnimation {
@@ -220,17 +188,11 @@ struct PetImageAnimation {
 
 struct PetImageAction {
     let id: String
-    let zhHansTitle: String
-    let englishTitle: String
+    let title: String
     let resultingPosture: PetPosture
     let mayRunAutonomously: Bool
 
-    func title(for language: AppLanguage) -> String {
-        switch language {
-        case .simplifiedChinese: zhHansTitle
-        case .english: englishTitle
-        }
-    }
+    func title(for language: AppLanguage) -> String { title }
 }
 
 struct PetLookDirection: Hashable, Sendable {
@@ -290,7 +252,6 @@ enum PetAssetCatalog {
         let assetVersion: Int
         let isBundled: Bool
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
-        let imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor]
         let appearances: [(option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)]
     }
 
@@ -305,11 +266,6 @@ enum PetAssetCatalog {
             for clip in manifest.clips ?? [] where clipsByID[clip.id] == nil {
                 clipsByID[clip.id] = clip
             }
-            var imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor] = [:]
-            for animation in manifest.imageAnimations ?? [] where imagesByID[animation.id] == nil {
-                imagesByID[animation.id] = animation
-            }
-
             func resolveAtlas(
                 _ descriptor: PetAssetManifest.SpriteAtlasDescriptor
             ) -> ResolvedSpriteAtlas? {
@@ -333,8 +289,7 @@ enum PetAssetCatalog {
                     guard bindingsByID[action.id] != nil else { return nil }
                     return PetImageAction(
                         id: action.id,
-                        zhHansTitle: action.title.zhHans,
-                        englishTitle: action.title.en,
+                        title: action.title.en,
                         resultingPosture: action.resultingPosture ?? .stand,
                         mayRunAutonomously: action.autonomous ?? false
                     )
@@ -373,10 +328,8 @@ enum PetAssetCatalog {
                     PetAppearanceOption(
                         id: descriptor.id,
                         kind: descriptor.kind,
-                        zhHansTitle: descriptor.title.zhHans,
-                        englishTitle: descriptor.title.en,
-                        zhHansSubtitle: descriptor.subtitle.zhHans,
-                        englishSubtitle: descriptor.subtitle.en,
+                        title: descriptor.title.en,
+                        subtitle: descriptor.subtitle.en,
                         systemImage: descriptor.systemImage ?? "pawprint.fill",
                         isDefault: descriptor.isDefault ?? false
                     ),
@@ -391,10 +344,8 @@ enum PetAssetCatalog {
                         PetAppearanceOption(
                             id: "continuous-video",
                             kind: .continuousVideo,
-                            zhHansTitle: "真实连续动画",
-                            englishTitle: "Live Motion",
-                            zhHansSubtitle: "最细腻的视频动作",
-                            englishSubtitle: "Detailed continuous video",
+                            title: "Live Motion",
+                            subtitle: "Detailed continuous video",
                             systemImage: "film.stack.fill",
                             isDefault: true
                         ),
@@ -406,10 +357,8 @@ enum PetAssetCatalog {
                         PetAppearanceOption(
                             id: "cute-2d",
                             kind: .spriteAtlas,
-                            zhHansTitle: "可爱 2D",
-                            englishTitle: "Cute 2D",
-                            zhHansSubtitle: "轻巧灵动的图片动画",
-                            englishSubtitle: "Lightweight illustrated animation",
+                            title: "Cute 2D",
+                            subtitle: "Lightweight illustrated animation",
                             systemImage: "sparkles",
                             isDefault: appearances.isEmpty
                         ),
@@ -426,7 +375,6 @@ enum PetAssetCatalog {
                 assetVersion: manifest.pet?.assetVersion ?? 1,
                 isBundled: isBundledAssetRoot(rootURL),
                 clipsByID: clipsByID,
-                imagesByID: imagesByID,
                 appearances: appearances
             )
     }
@@ -477,10 +425,8 @@ enum PetAssetCatalog {
         selectedAppearance?.option ?? PetAppearanceOption(
             id: "continuous-video",
             kind: .continuousVideo,
-            zhHansTitle: "真实连续动画",
-            englishTitle: "Live Motion",
-            zhHansSubtitle: "最细腻的视频动作",
-            englishSubtitle: "Detailed continuous video",
+            title: "Live Motion",
+            subtitle: "Detailed continuous video",
             systemImage: "film.stack.fill",
             isDefault: true
         )
@@ -559,7 +505,7 @@ enum PetAssetCatalog {
     }
 
     static func imageAnimation(for id: String) throws -> PetImageAnimation {
-        guard let loaded else {
+        guard loaded != nil else {
             throw PetAppError.missingAsset("image animation: \(id)")
         }
 
@@ -574,28 +520,7 @@ enum PetAssetCatalog {
             }
         }
 
-        guard let descriptor = loaded.imagesByID[id] else {
-            throw PetAppError.missingAsset("image animation: \(id)")
-        }
-        let frames = try descriptor.files.map {
-            PetImageFrameReference.file(try existingAssetURL($0, in: loaded.rootURL))
-        }
-        guard !frames.isEmpty else { throw PetAppError.missingAsset("image animation: \(id)") }
-        let rightFrames = try descriptor.rightFiles.map { paths in
-            try paths.map { PetImageFrameReference.file(try existingAssetURL($0, in: loaded.rootURL)) }
-        }
-        let frameDuration = max(1.0 / 60.0, descriptor.frameDuration ?? 0.12)
-        let duration = max(frameDuration, descriptor.duration ?? frameDuration * Double(frames.count))
-        return PetImageAnimation(
-            id: id,
-            frames: frames,
-            rightFrames: rightFrames,
-            loops: descriptor.loop,
-            motion: descriptor.motion,
-            frameDurations: Array(repeating: frameDuration, count: frames.count),
-            duration: duration,
-            frameBlendFraction: 0.44
-        )
+        throw PetAppError.missingAsset("sprite-atlas animation: \(id)")
     }
 
     private static func spriteAnimation(

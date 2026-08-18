@@ -62,24 +62,6 @@ if [[ "$assets_missing" == true ]]; then
   "$SCRIPT_DIR/build-assets.sh"
 fi
 
-if [[ "$image_mode_enabled" == true ]]; then
-  typeset -a required_images=(
-    stand/left-profile stand/right-profile stand/front
-    sit/left-profile sit/right-profile
-    lie/left-profile lie/right-profile
-    sleep/left-profile sleep/right-profile
-  )
-  image_assets_missing=false
-  for image_name in "${required_images[@]}"; do
-    if [[ ! -f "$PROJECT_DIR/Sources/Furball2D/Assets/Images/$image_name.png" ]]; then
-      image_assets_missing=true
-      break
-    fi
-  done
-  if [[ "$image_assets_missing" == true ]]; then
-    "$SCRIPT_DIR/build-image-assets.sh"
-  fi
-fi
 if [[ ! -f "$PROJECT_DIR/Support/AppIcon.icns" ]]; then
   "$SCRIPT_DIR/build-app-icon.sh"
 fi
@@ -109,8 +91,8 @@ cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/Assets" "$STAGE_APP/Contents/Resour
 cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/CreatorSkill" "$STAGE_APP/Contents/Resources/CreatorSkill"
 find "$STAGE_APP" -type f -name '.DS_Store' -delete
 
-# Desktop 由 File Provider 管理，会主动给新 .app 写 FinderInfo。先在 /tmp 的干净
-# 暂存区完成签名和严格校验，再制作不携带扩展属性的 ZIP，避免签名竞争。
+# Desktop may be managed by File Provider and can add FinderInfo to a new app. Sign and verify
+# in a clean /tmp staging area, then create a ZIP without extended attributes.
 xattr -cr "$STAGE_APP"
 SIGN_IDENTITY="${FURBALL_CODESIGN_IDENTITY:--}"
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
@@ -143,12 +125,12 @@ if [[ -n "${FURBALL_NOTARY_PROFILE:-}" ]]; then
   ditto -c -k --keepParent --norsrc --noextattr "$STAGE_APP" "$ARCHIVE_PATH"
 fi
 
-# 保留一个可直接双击运行的副本。即使 File Provider 随后添加展示元数据，也不会
-# 影响本机运行；需要传输或复验签名时使用上面的 ZIP。
+# Keep a directly launchable copy. File Provider display metadata does not affect local use;
+# use the ZIP for transfer or strict signature verification.
 if [[ -d "$APP_DIR" ]]; then
   rm -rf "$APP_DIR"
 fi
 ditto --norsrc --noextattr "$STAGE_APP" "$APP_DIR"
 
-print "已生成：$APP_DIR"
-print "可传输包：$ARCHIVE_PATH"
+print "Generated: $APP_DIR"
+print "Transfer archive: $ARCHIVE_PATH"

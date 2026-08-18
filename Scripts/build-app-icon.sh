@@ -15,7 +15,7 @@ cleanup_work_dir() {
 trap cleanup_work_dir EXIT
 
 if [[ ! -f "$SOURCE_PATH" ]]; then
-  print -u2 "找不到应用图标源文件：$SOURCE_PATH"
+  print -u2 "App icon source not found: $SOURCE_PATH"
   exit 1
 fi
 
@@ -28,7 +28,7 @@ sips -s format png "$SOURCE_PATH" --out "$MASTER_PATH" >/dev/null
 width="$(sips -g pixelWidth "$MASTER_PATH" | awk '/pixelWidth/ { print $2 }')"
 height="$(sips -g pixelHeight "$MASTER_PATH" | awk '/pixelHeight/ { print $2 }')"
 if [[ "$width" != "$height" ]]; then
-  print -u2 "应用图标必须是正方形，当前尺寸为 ${width}×${height}"
+  print -u2 "The app icon must be square; current size is ${width}×${height}"
   exit 1
 fi
 
@@ -53,4 +53,4 @@ done
 
 mkdir -p "${OUTPUT_PATH:h}"
 iconutil -c icns "$ICONSET_DIR" -o "$OUTPUT_PATH"
-print "已生成应用图标：$OUTPUT_PATH"
+print "Generated app icon: $OUTPUT_PATH"

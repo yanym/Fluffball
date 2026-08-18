@@ -3,14 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-KEYFRAME_DIR="$PROJECT_DIR/Assets/ImageTurnMVP/normalized"
+KEYFRAME_DIR="$PROJECT_DIR/Assets/Generated/ImageTurn/normalized"
 OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/left-profile"
 OUTPUT_PATH="$OUTPUT_DIR/look-around-images.mov"
 FACING_OUTPUT_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Clips/image-views"
 TARGET_FPS=120
 
-# 图片视角来自多次独立生成，曝光和白平衡差异比几何差异更容易在短淡化中被看见。
-# 以 left-profile 为参考，分别用黑毛、棕毛和白毛统计值建立单调 PCHIP 曲线。
+# The views come from separate generations, so exposure and white-balance differences are
+# more visible than geometry differences during a short dissolve. Match black, tan, and white
+# fur statistics to left-profile with monotonic PCHIP curves.
 image_curve_points() {
   local source_black="$1"
   local source_tan="$2"
@@ -43,8 +44,9 @@ image_color_filter() {
     *) print -r -- "null"; return ;;
   esac
 
-  # 目标锚点略低于直接统计均值，用于抵消曲线处理后高亮/棕毛像素重新分组造成的
-  # 亮度回升。输出复测会落在 left-profile 的可见范围内，而不是只让输入均值相等。
+  # Target anchors sit slightly below raw means to offset highlight and tan-pixel regrouping
+  # after the curve. Output audits should land inside the visible left-profile range rather
+  # than merely equalizing input means.
   local red green blue
   red="$(image_curve_points "${anchors[1]}" "${anchors[2]}" "${anchors[3]}" 25 82 175)"
   green="$(image_curve_points "${anchors[4]}" "${anchors[5]}" "${anchors[6]}" 22 55 158)"
@@ -53,7 +55,7 @@ image_color_filter() {
 }
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
-  print -u2 "需要先安装 FFmpeg（brew install ffmpeg）。"
+  print -u2 "FFmpeg is required (brew install ffmpeg)."
   exit 1
 fi
 
@@ -70,15 +72,15 @@ typeset -a required_keyframes=(
 )
 for keyframe_name in "${required_keyframes[@]}"; do
   if [[ ! -f "$KEYFRAME_DIR/$keyframe_name.png" ]]; then
-    print -u2 "缺少图片关键帧：$KEYFRAME_DIR/$keyframe_name.png"
+    print -u2 "Missing image keyframe: $KEYFRAME_DIR/$keyframe_name.png"
     exit 1
   fi
 done
 
 mkdir -p "$OUTPUT_DIR" "$FACING_OUTPUT_DIR"
 
-# 每个角度也导出为一段 1 秒无缝静止循环，供运行时按鼠标位置逐级切换。
-# 使用 HEVC with Alpha 是为了复用现有 AVFoundation + Metal 双通道渲染器。
+# Export each angle as a seamless one-second still loop for cursor-driven runtime switching.
+# HEVC with Alpha reuses the existing AVFoundation and Metal dual-channel renderer.
 for keyframe_name in "${required_keyframes[@]}"; do
   color_grade="$(image_color_filter "$keyframe_name")"
   ffmpeg -y -v warning \
@@ -98,8 +100,8 @@ grade_three_quarter_right="$(image_color_filter front-three-quarter-right)"
 grade_near_profile_right="$(image_color_filter front-near-profile-right)"
 grade_right="$(image_color_filter right-profile)"
 
-# 这不是 AI 视频生成：只把 9 张透明 PNG 按角度排序，并用 0.07 秒短淡化
-# 组成一次往返转身。首尾都使用 stand-idle 的左侧面端口，因此运行时可以平稳接回待机。
+# This is not AI video generation. It orders nine transparent view references into a round-trip
+# turn with short dissolves. Both ends use the stand-idle left-profile port for a stable return.
 ffmpeg -y -v warning \
   -loop 1 -framerate "$TARGET_FPS" -t 0.36 -i "$KEYFRAME_DIR/left-profile.png" \
   -loop 1 -framerate "$TARGET_FPS" -t 0.20 -i "$KEYFRAME_DIR/front-near-profile-left.png" \
@@ -157,5 +159,5 @@ ffmpeg -y -v warning \
   -c:v hevc_videotoolbox -alpha_quality 0.95 -q:v 75 -tag:v hvc1 \
   "$OUTPUT_PATH"
 
-print "图片转身 MVP 已写入：$OUTPUT_PATH"
-print "鼠标朝向图片循环已写入：$FACING_OUTPUT_DIR"
+print "Wrote image-turn sequence: $OUTPUT_PATH"
+print "Wrote cursor-facing loops: $FACING_OUTPUT_DIR"

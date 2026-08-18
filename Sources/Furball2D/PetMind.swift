@@ -84,28 +84,44 @@ struct PetMemoryEvent: Codable, Equatable, Identifiable {
     let id: UUID
     let date: Date
     let kind: PetMemoryKind
-    let zhHansText: String
-    let englishText: String
+    let text: String
     let salience: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, kind, text, englishText, salience
+    }
 
     init(
         id: UUID = UUID(),
         date: Date = Date(),
         kind: PetMemoryKind,
-        zhHansText: String,
-        englishText: String,
+        text: String,
         salience: Double
     ) {
         self.id = id
         self.date = date
         self.kind = kind
-        self.zhHansText = zhHansText
-        self.englishText = englishText
+        self.text = text
         self.salience = min(1, max(0, salience))
     }
 
-    func text(for language: AppLanguage) -> String {
-        language == .simplifiedChinese ? zhHansText : englishText
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        date = try values.decode(Date.self, forKey: .date)
+        kind = try values.decode(PetMemoryKind.self, forKey: .kind)
+        text = try values.decodeIfPresent(String.self, forKey: .text)
+            ?? values.decode(String.self, forKey: .englishText)
+        salience = try values.decode(Double.self, forKey: .salience)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(date, forKey: .date)
+        try values.encode(kind, forKey: .kind)
+        try values.encode(text, forKey: .text)
+        try values.encode(salience, forKey: .salience)
     }
 }
 
@@ -187,8 +203,7 @@ enum PetMindStore {
     static func record(
         petID: String,
         kind: PetMemoryKind,
-        zhHans: String,
-        english: String,
+        text: String,
         salience: Double = 0.55,
         energy: Double = 0,
         curiosity: Double = 0,
@@ -202,7 +217,7 @@ enum PetMindStore {
         let now = Date()
         let isDuplicate = snapshot.memories.first.map {
             $0.kind == kind
-                && $0.zhHansText == zhHans
+                && $0.text == text
                 && now.timeIntervalSince($0.date) < 90
         } ?? false
         if !isDuplicate {
@@ -210,8 +225,7 @@ enum PetMindStore {
                 PetMemoryEvent(
                     date: now,
                     kind: kind,
-                    zhHansText: zhHans,
-                    englishText: english,
+                    text: text,
                     salience: salience
                 ),
                 at: 0
@@ -235,39 +249,31 @@ enum PetMindStore {
 
 extension PetMindSnapshot {
     func personalitySummary(for language: AppLanguage) -> String {
-        let descriptors: [(Double, String, String)] = [
-            (traits.vitality, "活泼", "playful"),
-            (traits.curiosity, "好奇", "curious"),
-            (traits.affection, "亲人", "affectionate"),
-            (traits.composure, "沉稳", "calm")
+        let descriptors: [(Double, String)] = [
+            (traits.vitality, "playful"),
+            (traits.curiosity, "curious"),
+            (traits.affection, "affectionate"),
+            (traits.composure, "calm")
         ]
         let strongest = descriptors.sorted { $0.0 > $1.0 }.prefix(2)
-        if language == .simplifiedChinese {
-            return "一只\(strongest.map { $0.1 }.joined(separator: "、"))的小伙伴"
-        }
-        return "A \(strongest.map { $0.2 }.joined(separator: ", ")) companion"
+        return "A \(strongest.map { $0.1 }.joined(separator: ", ")) companion"
     }
 
     func contextualSpeech(for language: AppLanguage) -> [String] {
         var messages: [String] = []
         if state.energy < 0.28 {
-            messages.append(language == .simplifiedChinese ? "今天的电量有一点点低，想靠着你歇会儿。" : "My battery is a little low. Can I rest near you?")
+            messages.append("My battery is a little low. Can I rest near you?")
         } else if state.energy > 0.82, traits.vitality > 0.62 {
-            messages.append(language == .simplifiedChinese ? "我现在精力超足，要不要一起玩？" : "I have so much energy right now. Want to play?")
+            messages.append("I have so much energy right now. Want to play?")
         }
         if state.curiosityNeed > 0.74 {
-            messages.append(language == .simplifiedChinese ? "桌面上是不是又多了什么新鲜东西？" : "Is there something new on the desktop?")
+            messages.append("Is there something new on the desktop?")
         }
         if state.affinity > 0.72 {
-            messages.append(language == .simplifiedChinese ? "我越来越喜欢待在你旁边啦。" : "I like staying close to you more and more.")
+            messages.append("I like staying close to you more and more.")
         }
         if let memory = memories.first, Date().timeIntervalSince(memory.date) < 4 * 60 * 60 {
-            let remembered = memory.text(for: language)
-            messages.append(
-                language == .simplifiedChinese
-                    ? "我还记得：\(remembered)"
-                    : "I still remember: \(remembered)"
-            )
+            messages.append("I still remember: \(memory.text)")
         }
         return messages
     }

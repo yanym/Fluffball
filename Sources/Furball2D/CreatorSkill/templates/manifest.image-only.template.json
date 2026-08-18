@@ -31,8 +31,8 @@
     {
       "id": "cute-2d",
       "kind": "sprite-atlas",
-      "title": {"zh-Hans": "可爱 2D", "en": "Cute 2D"},
-      "subtitle": {"zh-Hans": "温暖可爱的图片动画", "en": "Warm and playful image animation"},
+      "title": {"en": "Cute 2D"},
+      "subtitle": {"en": "Warm and playful image animation"},
       "systemImage": "sparkles",
       "isDefault": true,
       "atlasFile": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp"
