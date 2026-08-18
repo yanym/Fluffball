@@ -7,6 +7,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     var onLibraryChanged: (() -> Void)?
 
     private var language: AppLanguage
+    private let isEmbedded: Bool
     private var pets: [PetLibraryPet] = []
     private var selectedPetID: String?
     private var selectedPhotos: [URL] = []
@@ -37,8 +38,9 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let createRequestButton = NSButton()
     private let downloadSkillButton = NSButton()
 
-    init(language: AppLanguage) {
+    init(language: AppLanguage, embedded: Bool = false) {
         self.language = language
+        isEmbedded = embedded
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 830, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -89,6 +91,26 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         present()
     }
 
+    func showLibraryEmbedded() {
+        segmented.selectedSegment = 0
+        libraryPage.isHidden = false
+        creatorPage.isHidden = true
+    }
+
+    func showCreatorEmbedded() {
+        segmented.selectedSegment = 1
+        libraryPage.isHidden = true
+        creatorPage.isHidden = false
+    }
+
+    /// Transfers the library/creator page into the unified Settings window.
+    func contentViewForEmbedding() -> NSView {
+        guard let window, let content = window.contentView else { return NSView() }
+        window.contentView = NSView()
+        content.removeFromSuperview()
+        return content
+    }
+
     private func buildInterface() {
         guard let window else { return }
         let root = NSVisualEffectView()
@@ -103,7 +125,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         segmented.segmentStyle = .capsule
         segmented.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(segmented)
+        if !isEmbedded { root.addSubview(segmented) }
         root.addSubview(contentContainer)
 
         for page in [libraryPage, creatorPage] {
@@ -120,38 +142,48 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         buildLibraryPage()
         buildCreatorPage()
 
-        NSLayoutConstraint.activate([
-            segmented.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            segmented.topAnchor.constraint(equalTo: root.topAnchor, constant: 48),
-            segmented.widthAnchor.constraint(equalToConstant: 280),
+        var constraints = [
             contentContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            contentContainer.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 14),
             contentContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor)
-        ])
+        ]
+        if isEmbedded {
+            constraints.append(contentContainer.topAnchor.constraint(equalTo: root.topAnchor))
+        } else {
+            constraints.append(contentsOf: [
+                segmented.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+                segmented.topAnchor.constraint(equalTo: root.topAnchor, constant: 48),
+                segmented.widthAnchor.constraint(equalToConstant: 280),
+                contentContainer.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 14)
+            ])
+        }
+        NSLayoutConstraint.activate(constraints)
     }
 
     private func buildLibraryPage() {
+        libraryPage.wantsLayer = true
+        libraryPage.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("pets"))
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.rowHeight = 58
-        tableView.style = .sourceList
+        tableView.style = .plain
         tableView.delegate = self
         tableView.dataSource = self
-        tableView.backgroundColor = .clear
+        tableView.backgroundColor = .controlBackgroundColor
 
         let scroll = NSScrollView()
         scroll.documentView = tableView
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
         scroll.borderType = .noBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
-        let sidebar = NSVisualEffectView()
-        sidebar.material = .sidebar
-        sidebar.blendingMode = .withinWindow
+        let sidebar = NSView()
+        sidebar.wantsLayer = true
+        sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(scroll)
 
@@ -162,6 +194,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         sidebar.addSubview(importButton)
 
         let details = NSView()
+        details.wantsLayer = true
+        details.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         details.translatesAutoresizingMaskIntoConstraints = false
         petName.font = .systemFont(ofSize: 28, weight: .bold)
         petMeta.font = .systemFont(ofSize: 12.5, weight: .medium)

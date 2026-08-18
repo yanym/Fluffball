@@ -10,7 +10,7 @@
 
 `Scripts/build-image-assets.sh` 会独立构建真正的图片运行时素材，不把 PNG 再编码成视频。输出位于 `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`：站姿来自已归一化的 9 个视角，坐/趴/睡来自 `generation-ready/` 姿态图并离线抠像。`ImageMode/qa/contact-sheet.png` 是本次 17 张运行时图片的接触表。`manifest.json.imageAnimations` 再把同一组 27 个语义动作映射到这些图片与程序化 motion。
 
-`SpritePets/Furball/` 保存原可爱 Codex v2 图片宠物的生成记录；`SpritePets/NinaRealistic/` 保存 Nina 写实 2D 的完整生成、接触表、方向连续性和 Alpha QA。运行时成品位于 `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`。两张图集都是 1536×2288、8×11、192×208 单元格，使用同一组动作绑定与 16 个视线方向，因此切换风格不会改变行为语义。
+`SpritePets/Furball/` 保存原可爱 Codex v2 图片宠物的生成记录；`SpritePets/NinaRealistic/` 保存 Nina 写实 2D 的完整生成、接触表、方向连续性和 Alpha QA。运行时成品位于 `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`。两张生产图集都是 3072×4576、8×11、384×416 单元格的 2× 高清图集，使用同一组动作绑定与 16 个视线方向，因此切换风格不会改变行为语义。
 
 图集/PNG 图片表示与视频表示并列。`capabilities.imageMode` 和 `capabilities.videoMode` 决定素材包支持哪一种；纯图片包可以完全不带 `Clips/`。两者都存在时应用默认视频并允许用户切换。当前图集具有独立左右步态行和真实脚掌相位，不再用单张站姿的程序化弹跳冒充走跑。
 
@@ -56,7 +56,7 @@
 | `slow-run-start/loop/stop.mov` | 慢跑起步、相位闭合循环、停步 | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | 快跑起步、相位闭合循环、停步 | `stand-to-fast-run-to-stand.mp4` |
 
-`Sources/Furball2D/Assets/Clips/image-views/` 另含从 `left-profile.mov` 到 `right-profile.mov` 的 9 个角度，其中 `front-near-profile-*` 和 `front-near-center-*` 是新增中间视角。每个文件都是由对应透明 PNG 导出的 1 秒、24 fps 单视角循环；运行时只逐级切换相邻视角，并在进入视频动作前逐级抵达匹配朝向的左或右侧面端口。右向待机、过渡、睡眠和步态由左侧面动作视频在运行时镜像得到。
+`Sources/Furball2D/Assets/Clips/image-views/` 另含从 `left-profile.mov` 到 `right-profile.mov` 的 9 个角度，其中 `front-near-profile-*` 和 `front-near-center-*` 是新增中间视角。每个文件都是由对应透明 PNG 导出的 1280×720、60 fps 单视角循环；运行时只逐级切换相邻视角，并在进入视频动作前逐级抵达匹配朝向的左或右侧面端口。右向待机、过渡、睡眠和步态由左侧面动作视频在运行时镜像得到。
 
 首次从站立进入走路、慢跑或快跑时，运行时分别等待约 0.32、0.16 和 0.32 秒再开始桌面位移，并使用平滑加速接入目标速度。这些时间来自起步片段接触表中的第一处明确步态，而不是从菜单点击时刻立即平移。
 
@@ -87,7 +87,7 @@ All original videos are organized by `view/action`. Directory and file names use
 
 `Scripts/build-image-assets.sh` independently builds true image-runtime assets; it does not encode the PNGs back into video. Outputs live under `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`. Standing views come from the normalized nine-angle set, while sit/lie/sleep sources under `generation-ready/` are keyed offline. `ImageMode/qa/contact-sheet.png` reviews the current 17 runtime images. `manifest.json.imageAnimations` maps the same 27 semantic actions to these images and procedural motion types.
 
-`SpritePets/Furball/` preserves the original cute Codex v2 generation record. `SpritePets/NinaRealistic/` contains Nina Realistic 2D generation, contact sheets, direction-continuity review, and alpha QA. Runtime atlases live at `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`. Both are 1536×2288, 8×11 atlases using the same semantic bindings and 16 gaze directions, so style changes never alter behavior semantics.
+`SpritePets/Furball/` preserves the original cute Codex v2 generation record. `SpritePets/NinaRealistic/` contains Nina Realistic 2D generation, contact sheets, direction-continuity review, and alpha QA. Runtime atlases live at `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`. Both production atlases are 2× assets at 3072×4576 with 384×416 cells, using the same semantic bindings and 16 gaze directions so style changes never alter behavior semantics.
 
 Atlas/PNG image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what the pack supports; an image-only pack may omit `Clips/` completely. When both exist, the app defaults to video and lets the user switch. The current atlas has independent left/right gait rows with real footfall phases instead of moving a procedurally bouncing standing still.
 
@@ -133,7 +133,7 @@ The archived duplicate and `SourceVideos/three-quarter-to-front/stand-to-sit.mp4
 | `slow-run-start/loop/stop.mov` | Jog start, phase-closed loop, and stop | `stand-to-slow-run-to-stand.mp4` |
 | `fast-run-start/loop/stop.mov` | Run start, phase-closed loop, and stop | `stand-to-fast-run-to-stand.mp4` |
 
-`Sources/Furball2D/Assets/Clips/image-views/` additionally contains nine angles from `left-profile.mov` through `right-profile.mov`; the `front-near-profile-*` and `front-near-center-*` files are the added intermediate views. Each is a one-second, 24 fps loop exported from its matching transparent PNG. At runtime the app changes only to an adjacent view and reaches the left- or right-profile port matching the next video action. Right-facing idle, transition, sleep, and gait footage is produced by mirroring the left-profile clips at runtime.
+`Sources/Furball2D/Assets/Clips/image-views/` additionally contains nine angles from `left-profile.mov` through `right-profile.mov`; the `front-near-profile-*` and `front-near-center-*` files are the added intermediate views. Each is a 1280×720, 60 fps loop exported from its matching transparent PNG. At runtime the app changes only to an adjacent view and reaches the left- or right-profile port matching the next video action. Right-facing idle, transition, sleep, and gait footage is produced by mirroring the left-profile clips at runtime.
 
 On a fresh transition from standing to walking, jogging, or running, runtime translation waits approximately 0.32, 0.16, or 0.32 seconds respectively, then ramps smoothly to the target speed. These offsets come from the first clear gait motion in each start-clip contact sheet rather than translating immediately when the menu action occurs.
 

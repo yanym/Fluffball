@@ -64,8 +64,10 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
     if atlas.get("spriteVersionNumber") != 2:
         fail("spriteVersionNumber must be 2")
     layout = atlas.get("layout", {})
-    if layout != {"columns": 8, "rows": 11, "cellWidth": 192, "cellHeight": 208}:
-        fail("atlas layout must be 8x11 with 192x208 cells")
+    scale = atlas.get("assetScale", 2)
+    expected = {"columns": 8, "rows": 11, "cellWidth": 192 * scale, "cellHeight": 208 * scale}
+    if scale not in (1, 2) or layout != expected:
+        fail("atlas layout must be 8x11 with 384x416 cells for production (192x208 legacy is accepted)")
     file = atlas.get("file")
     if not isinstance(file, str):
         fail("spriteAtlas.file is required")
@@ -131,8 +133,10 @@ def main() -> None:
     for relative in atlas_files:
         image = safe_file(root, relative)
         width, height, alpha = webp_dimensions(image)
-        if (width, height) != (1536, 2288) or not alpha:
-            fail(f"{relative}: expected 1536x2288 WebP with alpha")
+        atlas_scale = atlas.get("assetScale", 2)
+        expected_size = (1536 * atlas_scale, 2288 * atlas_scale)
+        if (width, height) != expected_size or not alpha:
+            fail(f"{relative}: expected {expected_size[0]}x{expected_size[1]} WebP with alpha")
     print(f"OK: {pet.get('name')} — {len(manifest['appearances'])} appearance(s), 27 semantic slots")
 
 

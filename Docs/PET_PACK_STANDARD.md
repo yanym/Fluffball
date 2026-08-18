@@ -33,10 +33,10 @@ Pet Pack 把“这是哪只动物”“有哪些素材表示”和“应用如�
 - 每种已启用的表示都必须覆盖同一组 27 个语义槽位：17 个姿态/移动动作、9 个站立视角和 1 个完整转身演示。
 - 图片表示可以由 `imageAnimations`、`spriteAtlas` 或两者混合组成；同一语义 ID 同时存在时图集绑定优先，旧 PNG 作为兼容回退。
 - 独立图片规格：960×540 RGBA PNG，必须已有透明背景，禁止运行时 chromakey。`imageAnimations` 为语义 ID 声明 `files`、可选 `rightFiles`、循环属性、时长和程序化 `motion`。
-- Codex v2 图集规格：透明无损 WebP、1536×2288、8 列×11 行、每格 192×208、`spriteVersionNumber: 2`。`animations` 声明行、有效帧数、逐帧时长、循环和短溶解比例；`bindings` 将任意语义 ID 映射到动画，可覆盖帧子集、左右真实行、播放速度和 motion。
+- Furball 生产图集使用 v2 语义布局的 2× 扩展：透明无损 WebP、3072×4576、8 列×11 行、每格 384×416、`spriteVersionNumber: 2`、`assetScale: 2`。1536×2288 / 192×208 仅用于兼容旧包，不再作为新素材默认值。`animations` 声明行、有效帧数、逐帧时长、循环和短溶解比例；`bindings` 将任意语义 ID 映射到动画。
 - `lookDirections` 必须完整声明从 0° 起每 22.5° 一个的 16 个方向。0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左；运行时沿相邻格最短路径切换。
 - `actions` 可将图集绑定发布为双语菜单动作，并可声明是否允许自动行为使用。动作标题、帧时长、菜单数量和语义映射均属于素材包，不在 Swift 中按某只宠物硬编码。
-- 视频规格：960×540、24 fps、HEVC with Alpha、`hvc1`、无音轨。`clips` 为每个语义 ID 声明相对路径与循环属性。
+- 视频规格：1280×720、60 fps、HEVC with Alpha、`hvc1`、无音轨；24 fps 原片先做双向运动补偿插帧，再抠像和归一化。`clips` 为每个语义 ID 声明相对路径与循环属性。
 - `appearances` 可以为同一宠物声明一个视频外观与多个图片图集外观；默认项由 `isDefault` 指定。应用只显示实际存在的外观，视频混合设置仅在视频外观中出现。
 - 统一姿态端口：`stand`、`sit`、`lie`、`sleep`。
 - 统一跟踪端口：主体高度、Alpha 加权中心 x 和接地 y。
@@ -110,10 +110,10 @@ Green screen is an implementation detail, not a user requirement. A provider may
 - Every enabled representation covers the same 27 semantic slots: 17 posture/locomotion actions, nine standing views, and one complete look-around demonstration.
 - An image representation may use `imageAnimations`, `spriteAtlas`, or a hybrid. When both resolve the same semantic ID, the atlas binding wins and the standalone PNG remains a compatibility fallback.
 - Standalone images are transparent 960×540 RGBA PNGs with no runtime chroma key. Each `imageAnimations` entry declares `files`, optional `rightFiles`, looping, duration, and procedural `motion`.
-- A Codex v2 atlas is a transparent lossless WebP at 1536×2288 with 8 columns × 11 rows, 192×208 cells, and `spriteVersionNumber: 2`. `animations` declares rows, valid frame counts, per-frame timing, loops, and short blend fractions. `bindings` maps arbitrary semantic IDs to animations and may override frame subsets, true left/right rows, playback speed, and motion.
+- Furball's production atlas is the 2× extension of the v2 semantic layout: transparent lossless WebP at 3072×4576, 8 columns × 11 rows, 384×416 cells, `spriteVersionNumber: 2`, and `assetScale: 2`. The 1536×2288 / 192×208 form remains a legacy import path, not the default for new assets.
 - `lookDirections` contains all 16 directions from 0° in 22.5° steps. Zero is up, 90° is screen-right, 180° is down, and 270° is screen-left. Runtime transitions along the shortest adjacent-cell path.
 - `actions` exposes atlas bindings as localized menu actions and may opt individual actions into autonomous behavior. Titles, timing, action count, and semantic mapping belong to the pack rather than pet-specific Swift code.
-- Video assets are 960×540, 24 fps, HEVC with Alpha, `hvc1`, and no audio. Each `clips` entry declares a relative file and loop behavior.
+- Video assets are 1280×720 at 60 fps, HEVC with Alpha, `hvc1`, and no audio. Motion-compensate lower-frame-rate sources before keying. Each `clips` entry declares a relative file and loop behavior.
 - `appearances` may declare one video appearance and multiple sprite-atlas appearances for one pet, with exactly one `isDefault`. The app exposes only available appearances, and video-blending controls appear only for a video appearance.
 - Four posture ports: stand, sit, lie, and sleep.
 - Geometry ports use subject height, alpha-weighted center x, and ground y.

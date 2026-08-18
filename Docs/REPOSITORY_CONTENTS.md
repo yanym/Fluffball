@@ -15,7 +15,7 @@
 - `Assets/SpritePets/Furball/` 与 `Assets/SpritePets/NinaRealistic/`：可爱/写实 Codex v2 图集生成记录、方向检查表和连续性 QA
 - `Assets/SourceVideos/` 下的原始视频归档
 - `Sources/Furball2D/Assets/Images/` 下的 17 张 960×540 透明 PNG 运行时图片
-- `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`：两套 1536×2288、8×11 透明图片动画图集
+- `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`：两套 3072×4576、8×11 的 2× 高清透明图片动画图集
 - `Sources/Furball2D/Assets/Clips/` 下的 27 段透明运行时视频
 - Pet Pack v2 素材清单 `manifest.json`：声明图片/视频能力、图集动画/绑定、16 方向、自定义双语动作和两套 27 个语义动作
 - 图片素材构建、视频素材重建、素材验收和应用打包脚本
@@ -47,7 +47,7 @@ Repository name: `Furball`. Keep the repository private by default because it co
 - `Assets/SpritePets/Furball/` and `Assets/SpritePets/NinaRealistic/`, containing Cute/Realistic Codex v2 generation records, direction sheets, and continuity QA
 - Archived source footage under `Assets/SourceVideos/`
 - Seventeen transparent 960×540 runtime PNGs under `Sources/Furball2D/Assets/Images/`
-- The two transparent 1536×2288, 8×11 runtime atlases under `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/`
+- The two transparent 3072×4576, 8×11 2× runtime atlases under `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/`
 - Twenty-seven transparent runtime video clips under `Sources/Furball2D/Assets/Clips/`
 - The Pet Pack v2 `manifest.json`, declaring image/video capabilities, atlas animations/bindings, 16 directions, localized custom actions, and both sets of 27 semantic actions
 - Image building, video rebuilding, pack validation, and app packaging scripts

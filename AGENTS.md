@@ -9,7 +9,7 @@
 1. 先匹配动作端口，再考虑 Crossfade。交叉淡化只能柔化已经接近的两帧，不能修复不同大小、不同落脚点、不同朝向或不同姿势的狗。
 2. 不要根据文件名猜动作。必须观看整段视频并建立时间轴，确认每段的真实语义、稳定区间和动作方向。
 3. 始终从用户提供的原始视频重新处理，不要放大已经抠像、压缩过的旧 `.mov`。
-4. 所有动作必须使用同一个画布、帧率、主体尺度和地面锚点。当前标准是 960×540、24 fps、HEVC with Alpha。
+4. 所有视频动作必须使用同一个画布、帧率、主体尺度和地面锚点。当前运行时标准是 1280×720、60 fps、HEVC with Alpha；24 fps 原片必须先做运动补偿插帧。
 5. “待机视频”不等于“可循环视频”。首尾姿态不一致时，直接循环一定会每隔几秒跳一下。
 6. 质量问题优先在离线素材层修复。不要把运行时 Crossfade 拉长来掩盖坏切点，写实宠物会出现双头、双爪和毛发重影。
 
@@ -24,7 +24,7 @@
 当用户明确不要 AI 生成视频时，优先制作 Codex 兼容的 Pet Pack v2 图集图片模式。若环境提供 `$hatch-pet`，必须按该 Skill 生成、注册和验收；否则严格遵守 `Docs/PET_PACK_STANDARD.md`。旧 `Scripts/build-image-assets.sh` 与 `Images/` 仅是 PNG 兼容路径，不再是新宠物的首选。
 
 1. 先锁定同一只宠物的标准身份、画风、身体比例、脚底基线和纯色抠像背景。不得在不同动作行改变脸、耳朵、花纹、尾巴、材质或镜头。
-2. 新图集使用 `spriteVersionNumber: 2`：1536×2288、8 列×11 行、每格 192×208。前 9 行依次为 idle、running-right、running-left、waving、jumping、failed、waiting、working、review；空格必须透明。
+2. 新图集使用 `spriteVersionNumber: 2` 与 `assetScale: 2`：3072×4576、8 列×11 行、每格 384×416。1536×2288 / 192×208 仅用于兼容旧包，不得把旧小格放大冒充高清源。
 3. 左右步态应分别生成。只有宠物完全左右对称且用户明确接受时才可镜像；步态首尾必须闭合相位，不能用倒放制作跑步。
 4. 最后两行必须提供完整 16 方向：0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左，每 22.5° 一格。四个主方向先单独批准，再生成两条连续方向行。
 5. 视线动作保持脚、下躯干和基线稳定；眼睛先动，口鼻和头颈随后，耳朵、面颊毛与胸毛轻微滞后。不得旋转整个 sprite 冒充转头。
@@ -90,7 +90,7 @@
 - Alpha 加权中心点。
 - 最低脚掌或身体接地点的 y 坐标。
 
-不要只看画布大小。相同的 960×540 视频里，狗仍然可能放大、缩小或漂移。
+不要只看画布大小。相同的 1280×720 视频里，狗仍然可能放大、缩小或漂移。
 
 推荐流程：
 
@@ -99,7 +99,7 @@
 3. 对存在镜头推近或主体漂移的片段做逐帧平滑校正。
 4. 缩放时以脚底为锚点，不要以画面中心为锚点。
 5. 使用 smoothstep 让校正量从片段开头平滑变化到结尾，避免校正本身产生速度突变。
-6. 完成位置与尺度校正后再抠像、去绿边和输出 960×540。
+6. 完成位置与尺度校正后再抠像、去绿边和输出 1280×720。
 
 为每一种稳定姿态建立明确的“端口三元组”，不要只记录一个缩放百分比：
 
@@ -120,7 +120,7 @@ port = (主体高度, Alpha 加权中心 x, 脚底 y)
 画面漂移，固定 93% 之类的处理只能碰巧对齐某一帧，仍会在入口、出口或循环缝跳动。
 
 需要同时支持放大和缩小时，可先在更大的透明工作画布上执行等比缩放与位移，再裁回
-标准画布。当前构建脚本使用 1600×900 工作画布，裁回 1280×720 后再输出 960×540；
+标准画布。当前构建脚本使用 1600×900 工作画布，直接裁回并输出 1280×720；
 这样缩放大于 1 时不会被 `pad` 截断。缩放必须围绕画布中心计算，纵向位移再以脚底
 端口补偿，不能直接围绕主体边界框中心缩放。
 
@@ -161,11 +161,11 @@ format=bgra
 输出要求：
 
 ```text
-960×540
-24 fps
+1280×720
+60 fps
 HEVC VideoToolbox with Alpha
--alpha_quality 0.84
--q:v 62
+-alpha_quality 0.95
+-q:v 75
 -tag:v hvc1
 无音轨
 ```
@@ -190,7 +190,7 @@ reverse:  N-1, N-2, ... 1
 loop:     0, 1, 2, ...
 ```
 
-必须删除转折点和循环点的重复端帧，否则会在两端多停一帧。最终再统一为 24 fps。
+必须删除转折点和循环点的重复端帧，否则会在两端多停一帧。最终统一为 60 fps。
 
 往返循环只适用于幅度小、方向性不强的动作。如果宠物明显转头、抬爪、翻身或走动，倒放会被看出来，应寻找更稳定的窗口或制作真实闭环。
 
@@ -198,7 +198,7 @@ loop:     0, 1, 2, ...
 
 用户偏好是“没操作时安静睡觉”，不能把包含甩尾、换姿势或抬头的整段睡眠视频直接循环。
 
-推荐从连续睡眠视频中寻找约 0.5–1.0 秒的最低动作窗口，只保留细微胸腹呼吸；必要时放慢约 1.5–2.5 倍，再制作首尾去重的往返循环。当前素材使用 0.55 秒窗口、放慢 2.5 倍，最终约 2.7 秒、24 fps。
+推荐从连续睡眠视频中寻找约 0.5–1.0 秒的最低动作窗口，只保留细微胸腹呼吸；必要时放慢约 1.5–2.5 倍，再制作首尾去重的往返循环。当前素材使用 0.55 秒窗口、放慢 2.5 倍，最终约 2.7 秒、60 fps。
 
 ## 7. 运行时转场规则
 
@@ -312,7 +312,7 @@ dist/Furball2D.zip
 - 不要只给所有转场统一加长 Crossfade。
 - 不要把有明显动作的整段视频直接标记为 `loop: true`。
 - 不要用静止站姿代替走路并让窗口横向滑动。
-- 不要把旧的 640×360 透明视频放大成 960×540。
+- 不要把旧的低清透明视频放大成 1280×720。
 - 不要只比较画布尺寸，必须测主体边界框和脚底锚点。
 - 不要为了对齐边界框而随意做非等比拉伸。
 - 不要在运行时实时 chromakey；绿幕处理必须离线完成。
@@ -332,7 +332,7 @@ This file is mandatory guidance for any Agent working on Fluffball/Furball2D. Wh
 1. Match action ports before considering a crossfade. A crossfade can soften two already similar frames; it cannot fix different subject sizes, foot positions, directions, or postures.
 2. Never infer action semantics from filenames. Watch the full video, build a timeline, and verify every stable interval and movement direction.
 3. Always rebuild from the user-provided original video. Never enlarge an older keyed or compressed `.mov`.
-4. Every action must use the same canvas, frame rate, subject scale, and ground anchor. The current standard is 960×540, 24 fps, HEVC with Alpha.
+4. Every video action must use the same canvas, frame rate, subject scale, and ground anchor. The runtime standard is 1280×720 at 60 fps HEVC with Alpha; interpolate 24 fps sources before keying.
 5. An “idle video” is not automatically loopable. If the first and last poses differ, a direct loop will jump every few seconds.
 6. Fix quality problems in offline assets first. Do not hide bad cut points with a long runtime crossfade; realistic pets develop double heads, paws, and fur trails.
 
@@ -347,7 +347,7 @@ A typical action uses two to four references. Do not mix opposite profile views 
 When the user explicitly rejects AI-generated video, prefer a Codex-compatible Pet Pack v2 sprite-atlas image mode. If `$hatch-pet` is available, follow that Skill for generation, registration, and QA; otherwise follow `Docs/PET_PACK_STANDARD.md` exactly. The old `Scripts/build-image-assets.sh` and `Images/` tree are PNG compatibility paths, not the preferred starting point for a new pet.
 
 1. Lock one canonical identity, art style, body proportion, ground baseline, and solid key background. No row may change face, ears, markings, tail, materials, or camera.
-2. A new atlas uses `spriteVersionNumber: 2`: 1536×2288, 8 columns × 11 rows, and 192×208 cells. Rows 0–8 are idle, running-right, running-left, waving, jumping, failed, waiting, working, and review. Unused cells remain transparent.
+2. A new atlas uses `spriteVersionNumber: 2` and `assetScale: 2`: 3072×4576, 8 columns × 11 rows, and 384×416 cells. The 1536×2288 / 192×208 form is legacy-only; never upscale old runtime cells as an HD source.
 3. Generate left and right gait rows independently. Mirror only for a truly symmetric pet and explicit user approval. Gait loops must close on contact phase and must never use reverse playback.
 4. Rows 9–10 contain all 16 directions: 0° up, 90° screen-right, 180° down, and 270° screen-left at 22.5° steps. Approve the four cardinals before synthesizing both coherent direction rows.
 5. Keep paws, lower torso, and baseline stable during look motion. Eyes lead, muzzle/head/neck follow, and ears, cheek fur, and ruff lag subtly. Never rotate the whole sprite to fake a head turn.
@@ -413,7 +413,7 @@ After keying, measure at least the first, middle, and last frame of every clip:
 - Alpha-weighted center.
 - Lowest paw or body contact y-coordinate.
 
-Do not compare canvas sizes alone. Two 960×540 videos can still contain pets at different scales or positions.
+Do not compare canvas sizes alone. Two 1280×720 videos can still contain pets at different scales or positions.
 
 Recommended workflow:
 
@@ -422,7 +422,7 @@ Recommended workflow:
 3. Apply smoothed per-frame correction to clips with camera zoom or subject drift.
 4. Anchor vertical scale correction at the feet, not at the center of the image.
 5. Interpolate correction values with smoothstep so the correction does not introduce a velocity discontinuity.
-6. Apply keying, despill, and the final 960×540 output only after scale and placement are solved.
+6. Apply keying, despill, and the final 1280×720 output only after scale and placement are solved.
 
 Define a clear “port tuple” for each stable posture instead of recording only one scale percentage:
 
@@ -438,7 +438,7 @@ Normalize both the outgoing last frame and incoming first frame to the same port
 
 Never apply one fixed scale to a complete locomotion video. An AI source can change size and drift within the same shot; a fixed value such as 93% can align one frame while leaving the entry, exit, or loop seam wrong.
 
-When correction requires both enlargement and reduction, transform on a larger transparent work canvas and crop back to the standard canvas. The current build script uses a 1600×900 work canvas, crops to 1280×720, and then outputs 960×540. This prevents `pad` from clipping scale factors above 1. Compute scale around canvas center, then compensate vertical position against the ground port; do not scale around the alpha bounding-box center.
+When correction requires both enlargement and reduction, transform on a larger transparent work canvas and crop back to the 1280×720 standard canvas. This prevents `pad` from clipping scale factors above 1. Compute scale around canvas center, then compensate vertical position against the ground port.
 
 The current `sleep-to-stand` source enlarges the subject by roughly 6% near the end. The build script corrects it with dynamic scale and foot anchoring. New footage must be measured independently; never reuse this 6% value or its offsets.
 
@@ -477,11 +477,11 @@ Re-sample green-screen color for every new video. Inspect fur edges over dark gr
 Output requirements:
 
 ```text
-960×540
-24 fps
+1280×720
+60 fps
 HEVC VideoToolbox with Alpha
--alpha_quality 0.84
--q:v 62
+-alpha_quality 0.95
+-q:v 75
 -tag:v hvc1
 No audio track
 ```
@@ -506,7 +506,7 @@ reverse:  N-1, N-2, ... 1
 loop:     0, 1, 2, ...
 ```
 
-Remove duplicated endpoint frames at both the turn and the loop seam. Convert the result to a consistent 24 fps only after constructing the sequence.
+Remove duplicated endpoint frames at both the turn and the loop seam. Convert the result to a consistent 60 fps only after constructing the sequence.
 
 Ping-pong is appropriate only for low-amplitude, weakly directional motion. A clear head turn, raised paw, roll, or walk will reveal reversal; find a more stable interval or construct a true closed loop instead.
 
@@ -514,7 +514,7 @@ Ping-pong is appropriate only for low-amplitude, weakly directional motion. A cl
 
 The user prefers the pet to sleep quietly when untouched. Never loop an entire sleep video containing tail sweeps, posture changes, or head lifts.
 
-Find a roughly 0.5–1.0-second lowest-motion window containing only subtle breathing. If needed, slow it by about 1.5–2.5×, then build an endpoint-deduplicated ping-pong loop. The current asset uses a 0.55-second window slowed 2.5× for a final loop of roughly 2.7 seconds at 24 fps.
+Find a roughly 0.5–1.0-second lowest-motion window containing only subtle breathing. If needed, slow it by about 1.5–2.5×, then build an endpoint-deduplicated ping-pong loop. The current asset uses a 0.55-second window slowed 2.5× for a final loop of roughly 2.7 seconds at 60 fps.
 
 ## 7. Runtime transition rules
 
@@ -625,7 +625,7 @@ Desktop File Provider may attach FinderInfo to a local app copy. Prefer the ZIP 
 - Do not apply one longer crossfade duration to every transition.
 - Do not mark a full video with obvious movement as `loop: true`.
 - Do not slide a static standing pose across the desktop as a substitute for walking.
-- Do not upscale an old 640×360 transparent clip to 960×540.
+- Do not upscale an old low-resolution transparent clip to 1280×720.
 - Do not compare canvas sizes alone; measure subject bounds and the ground anchor.
 - Do not use arbitrary non-uniform scaling merely to align bounding boxes.
 - Do not chromakey at runtime; green-screen processing is an offline step.

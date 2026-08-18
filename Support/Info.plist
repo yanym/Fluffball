@@ -37,6 +37,8 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Furball can gently nudge a desktop icon only when you explicitly enable that interaction in Settings.</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

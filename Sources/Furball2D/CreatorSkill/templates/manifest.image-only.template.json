@@ -19,8 +19,9 @@
   "spriteAtlas": {
     "file": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp",
     "spriteVersionNumber": 2,
-    "layout": {"columns": 8, "rows": 11, "cellWidth": 192, "cellHeight": 208},
-    "rendering": {"canvasWidth": 384, "canvasHeight": 216, "bottomPadding": 4},
+    "assetScale": 2,
+    "layout": {"columns": 8, "rows": 11, "cellWidth": 384, "cellHeight": 416},
+    "rendering": {"canvasWidth": 768, "canvasHeight": 432, "bottomPadding": 8},
     "animations": [],
     "bindings": [],
     "lookDirections": [],

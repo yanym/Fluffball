@@ -293,8 +293,10 @@ private func validateSpriteAtlas(
     }
     let layout = atlas.layout
     guard layout.columns == 8, layout.rows == 11,
-          layout.cellWidth == 192, layout.cellHeight == 208 else {
-        try fail("Codex v2 spriteAtlas 必须为 8×11 格，每格 192×208")
+          layout.cellWidth % 192 == 0, layout.cellHeight % 208 == 0,
+          layout.cellWidth / 192 == layout.cellHeight / 208,
+          (1...2).contains(layout.cellWidth / 192) else {
+        try fail("v2 spriteAtlas 必须为 8×11 格，并使用 192×208（1×）或 384×416（2×）单元格")
     }
     guard atlas.rendering.canvasWidth > 0, atlas.rendering.canvasHeight > 0,
           (atlas.rendering.bottomPadding ?? 0) >= 0 else {
@@ -467,9 +469,10 @@ private func validate(packURL: URL) async throws {
     guard ["dog", "cat", "other"].contains(manifest.pet.species) else {
         try fail("pet.species 必须是 dog、cat 或 other")
     }
-    guard manifest.canvas.width == 960, manifest.canvas.height == 540,
-          abs(manifest.canvas.fps - 24) < 0.01 else {
-        try fail("Pet Pack 运行时画布必须为 960×540、24 fps")
+    guard manifest.canvas.width >= 960, manifest.canvas.height >= 540,
+          manifest.canvas.width * 9 == manifest.canvas.height * 16,
+          manifest.canvas.fps >= 24, manifest.canvas.fps <= 120 else {
+        try fail("Pet Pack 视频画布必须为至少 960×540 的 16:9 画布，帧率为 24–120 fps")
     }
 
 

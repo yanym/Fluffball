@@ -47,7 +47,7 @@ If fewer than four useful viewpoints are present, more than one animal appears, 
 3. Generate the nine standard animation rows in this exact order: `idle`, `running-right`, `running-left`, `waving`, `jumping`, `failed`, `waiting`, `working`, `review`.
 4. Generate four cardinal look directions first: 0° up/away, 90° screen-right, 180° down/toward viewer, 270° screen-left. Check identity and semantics before generating intermediates.
 5. Generate both direction rows as a coherent 16-direction turn at 22.5° increments. Paws, lower torso, scale, and ground baseline remain fixed; eyes lead, then muzzle/head/neck, with subtle ear/ruff lag. Never rotate a whole sprite to fake a head turn.
-6. Assemble deterministically into 1536×2288, 8 columns × 11 rows, 192×208 per cell. Unused cells must be transparent black (`RGBA 0,0,0,0`).
+6. Assemble the production atlas deterministically at `assetScale: 2`: 3072×4576, 8 columns × 11 rows, 384×416 per cell. The 1536×2288 / 192×208 form is legacy compatibility only and must not be the default for a new pet. Unused cells must be transparent black (`RGBA 0,0,0,0`).
 7. Remove the solid key background, despill edges, and preserve true alpha. Do not leave RGB residue under fully transparent pixels.
 8. Build `manifest.json` using the supplied template and action registry. A complete 16-direction map satisfies the nine legacy facing semantic slots; do not add placeholder PNGs.
 9. Run `python3 scripts/validate_pet_pack.py <pack>` and correct every error. Review the contact sheet, per-row loops, and 16-direction sheet at 100% plus 60%/140% simulated display sizes.
@@ -67,6 +67,17 @@ If fewer than four useful viewpoints are present, more than one animal appears, 
 - One fixed lens/camera height, exposure, white balance, scale, shadow policy, and ground baseline across every cell.
 - No painterly reinterpretation, extra limbs, fused paws, changed coat patches, or lighting changes between rows.
 
+## Resolution and clarity gate / 分辨率与清晰度门槛
+
+- Prefer source photos whose long edge is at least 1600 px; at least one full-body identity anchor should be 2000 px or larger. Reject motion blur, social-media thumbnails, aggressive denoise, and already enlarged images as the only identity source.
+- Generate and retain complete action rows at a native resolution that yields at least 384×416 useful pixels per extracted cell. Never enlarge a 192×208 runtime cell to fabricate the production atlas.
+- The visible animal should use at least 70% of one cell's height or 55% of its width while keeping 8 px of transparent safety margin at 2×. Tiny subjects surrounded by empty pixels fail even when the canvas dimensions pass.
+- Inspect eyes, nose, paw edges, facial markings, and long fur at 100% native pixels. Halos, stair-stepping, waxy denoise, ringing, smeared whiskers, color fringing, and compression blocks are rejection conditions.
+- One resampling pass is allowed during deterministic registration. Any required enlargement above 1.25× means the generation source is too small and the affected whole row must be regenerated.
+- 原始照片长边优先不低于 1600 px，至少一张完整身体身份图应达到 2000 px；模糊缩略图、强降噪图或二次放大图不能作为唯一身份依据。
+- 每个动作整行必须以足够原生分辨率生成，使切格后至少拥有 384×416 的有效像素。禁止把旧 192×208 运行时格子放大冒充高清素材。
+- 在 100% 像素下检查眼睛、鼻子、爪缘、花纹和长毛；光晕、锯齿、蜡感、锐化振铃、胡须糊掉、色边和压缩块都必须返工。
+
 ## Animation requirements / 动画要求
 
 - Locomotion loops close on the same contact phase. Never use reverse playback for walking or running.
@@ -74,7 +85,7 @@ If fewer than four useful viewpoints are present, more than one animal appears, 
 - `lie.to.sleep` contains the deliberate eye-close transition; `sleep.to.stand` contains the full wake-up chain.
 - Start/loop/stop geometry uses one ground anchor. Subject-height drift should remain under 2%, center drift under 5 px in atlas-cell coordinates, and ground drift under 2 px after assembly.
 - Image frame blending remains short. Do not hide mismatched cells with long dissolves.
-- Publish the registry’s ten menu actions. `play-bow`, `head-tilt`, `sniff`, and `high-five` may reuse carefully chosen frame subsets from jumping/review/working/waving, but their timing and bilingual titles must remain in the manifest rather than app code.
+- Publish the registry’s sixteen menu actions. Subset-derived actions must still have believable timing and bilingual titles in the manifest rather than app code.
 
 ## Output contract / 输出合同
 

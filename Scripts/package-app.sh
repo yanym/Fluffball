@@ -88,6 +88,14 @@ fi
 # malformed packs before compiling/signing an application that cannot recover.
 "$SCRIPT_DIR/validate-pet-pack.swift" "$PROJECT_DIR/Sources/Furball2D/Assets"
 
+# Exercise one complete interaction instead of treating compilation as product
+# QA. This catches orphan treat windows, never-ending locomotion, missing pet
+# content, and a lost menu-bar recovery entry. Headless release automation may
+# explicitly opt out after running an equivalent UI test stage.
+if [[ "${FURBALL_SKIP_BEHAVIOR_QA:-0}" != "1" ]]; then
+  "$SCRIPT_DIR/behavior-qa.sh"
+fi
+
 swift build -c release
 BUILD_DIR="$(swift build -c release --show-bin-path)"
 STAGE_DIR="$(mktemp -d /tmp/furball-package.XXXXXX)"

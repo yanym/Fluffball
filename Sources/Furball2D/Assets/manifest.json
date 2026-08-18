@@ -4,14 +4,14 @@
     "id": "furball-demo-dog",
     "name": "Nina",
     "species": "dog",
-    "assetVersion": 3
+    "assetVersion": 4
   },
   "capabilities": {
     "imageMode": true,
     "videoMode": true
   },
-  "formatVersion": 10,
-  "canvas": { "width": 960, "height": 540, "fps": 24 },
+  "formatVersion": 11,
+  "canvas": { "width": 1280, "height": 720, "fps": 60 },
   "imageCanvas": {
     "width": 960,
     "height": 540,
@@ -22,16 +22,17 @@
   "spriteAtlas": {
     "file": "Sprites/Nina/cute/spritesheet.webp",
     "spriteVersionNumber": 2,
+    "assetScale": 2,
     "layout": {
       "columns": 8,
       "rows": 11,
-      "cellWidth": 192,
-      "cellHeight": 208
+      "cellWidth": 384,
+      "cellHeight": 416
     },
     "rendering": {
-      "canvasWidth": 384,
-      "canvasHeight": 216,
-      "bottomPadding": 4
+      "canvasWidth": 768,
+      "canvasHeight": 432,
+      "bottomPadding": 8
     },
     "animations": [
       { "id": "idle", "rowIndex": 0, "frameCount": 6, "frameDurations": [0.280, 0.110, 0.110, 0.140, 0.140, 0.320], "loop": true, "motion": "none", "frameBlendFraction": 0.18 },
@@ -72,7 +73,13 @@
       { "id": "gesture.play-bow", "animation": "jumping", "frameIndices": [0, 1, 0], "loop": false, "frameDurationScale": 1.15 },
       { "id": "gesture.head-tilt", "animation": "review", "frameIndices": [0, 1, 2, 1, 0], "loop": false, "frameDurationScale": 1.10 },
       { "id": "gesture.sniff", "animation": "working", "frameIndices": [0, 1, 2, 3, 4, 5], "loop": false, "motion": "look", "frameDurationScale": 1.15 },
-      { "id": "gesture.high-five", "animation": "waving", "frameIndices": [0, 1, 2, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.92 }
+      { "id": "gesture.high-five", "animation": "waving", "frameIndices": [0, 1, 2, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.92 },
+      { "id": "gesture.stretch", "animation": "jumping", "frameIndices": [0, 1, 2, 1, 0], "loop": false, "frameDurationScale": 1.45 },
+      { "id": "gesture.sneeze", "animation": "failed", "frameIndices": [0, 1, 2, 1, 0], "loop": false, "frameDurationScale": 0.62 },
+      { "id": "gesture.paw-tap", "animation": "waving", "frameIndices": [0, 1, 0, 1, 0], "loop": false, "frameDurationScale": 0.72 },
+      { "id": "gesture.happy-dance", "animation": "jumping", "frameIndices": [0, 1, 2, 3, 2, 1, 3, 4], "loop": false, "frameDurationScale": 0.76 },
+      { "id": "gesture.yawn", "animation": "waiting", "frameIndices": [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0], "loop": false, "frameDurationScale": 1.32 },
+      { "id": "gesture.tail-chase", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1, 2, 3, 4, 5, 6, 7], "loop": false, "frameDurationScale": 0.78 }
     ],
     "lookDirections": [
       { "degrees": 0, "rowIndex": 9, "columnIndex": 0 },
@@ -102,7 +109,13 @@
       { "id": "gesture.play-bow", "title": { "zh-Hans": "邀请你玩", "en": "Play Bow" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.head-tilt", "title": { "zh-Hans": "歪头好奇", "en": "Curious Head Tilt" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.sniff", "title": { "zh-Hans": "闻闻桌面", "en": "Sniff Around" }, "resultingPosture": "stand", "autonomous": true },
-      { "id": "gesture.high-five", "title": { "zh-Hans": "击个掌", "en": "High Five" }, "resultingPosture": "stand", "autonomous": false }
+      { "id": "gesture.high-five", "title": { "zh-Hans": "击个掌", "en": "High Five" }, "resultingPosture": "stand", "autonomous": false },
+      { "id": "gesture.stretch", "title": { "zh-Hans": "伸个懒腰", "en": "Big Stretch" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.sneeze", "title": { "zh-Hans": "小小喷嚏", "en": "Tiny Sneeze" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.paw-tap", "title": { "zh-Hans": "爪爪敲敲", "en": "Paw Tap" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.happy-dance", "title": { "zh-Hans": "开心扭扭", "en": "Happy Dance" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.yawn", "title": { "zh-Hans": "打个哈欠", "en": "Sleepy Yawn" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.tail-chase", "title": { "zh-Hans": "追追尾巴", "en": "Chase Tail" }, "resultingPosture": "stand", "autonomous": true }
     ]
   },
   "appearances": [

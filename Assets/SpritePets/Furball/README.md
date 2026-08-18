@@ -17,7 +17,7 @@
 Sources/Furball2D/Assets/Sprites/Nina/cute/spritesheet.webp
 ```
 
-成品遵循 Codex `spriteVersionNumber: 2`：1536×2288、8 列×11 行、每格 192×208、透明无损 WebP。
+运行时成品保留 Codex `spriteVersionNumber: 2` 的 8×11 语义布局，并使用 Furball `assetScale: 2` 高清扩展：3072×4576、每格 384×416、透明无损 WebP。目录中的旧 1536×2288 图集只保留为生成记录与兼容参考。
 
 - 0：idle，6 帧。
 - 1：running-right，8 帧。
@@ -44,7 +44,7 @@ The copy loaded by the app at runtime is:
 Sources/Furball2D/Assets/Sprites/Nina/cute/spritesheet.webp
 ```
 
-It follows the Codex `spriteVersionNumber: 2` contract: a transparent lossless WebP at 1536×2288, 8 columns × 11 rows, and 192×208 cells.
+The runtime asset preserves the Codex `spriteVersionNumber: 2` 8×11 semantic layout and uses Furball's `assetScale: 2` HD extension: a 3072×4576 transparent lossless WebP with 384×416 cells. Older 1536×2288 files remain only as generation records and compatibility references.
 
 - Row 0: six-frame idle.
 - Row 1: eight-frame running-right.

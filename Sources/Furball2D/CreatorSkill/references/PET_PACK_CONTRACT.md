@@ -1,6 +1,6 @@
 # Furball Pet Pack v2 Contract / Furball 宠物包 v2 合同
 
-`ACTION_REGISTRY_VERSION: 2026-08-17.2`
+`ACTION_REGISTRY_VERSION: 2026-08-18.1`
 
 This file is authoritative for assets produced by `furball-pet-creator`. 本文件是创建 Skill 的权威输出合同。
 
@@ -8,11 +8,11 @@ This file is authoritative for assets produced by `furball-pet-creator`. 本文�
 
 - Folder suffix: `.furballpet`
 - `petPackVersion`: `2`
-- `formatVersion`: `10` or newer
+- `formatVersion`: `11` or newer
 - `capabilities.imageMode`: `true`
 - `capabilities.videoMode`: `false`
-- Sprite atlas: lossless WebP with alpha, exactly 1536×2288
-- Layout: 8×11, 192×208 cells
+- Production sprite atlas: lossless WebP with alpha, exactly 3072×4576
+- Layout: 8×11, 384×416 cells, `assetScale: 2` (192×208 is accepted only for legacy imports)
 - Transparent pixels: RGBA must be 0,0,0,0
 - Paths: relative, forward slashes, no `..`, no absolute paths, no symlinks
 - Maximum import size: 2,000 files and 800 MB
@@ -72,7 +72,7 @@ stand.facing.front-near-profile-right
 stand.facing.right-profile
 ```
 
-Published optional menu actions in registry version 2026-08-17.2:
+Published optional menu actions in registry version 2026-08-18.1:
 
 ```text
 gesture.wave
@@ -85,6 +85,12 @@ gesture.play-bow
 gesture.head-tilt
 gesture.sniff
 gesture.high-five
+gesture.stretch
+gesture.sneeze
+gesture.paw-tap
+gesture.happy-dance
+gesture.yawn
+gesture.tail-chase
 ```
 
 Every published action has a binding, bilingual `zh-Hans`/`en` title, resulting posture, and autonomous Boolean.

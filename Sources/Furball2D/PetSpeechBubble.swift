@@ -76,6 +76,7 @@ final class PetSpeechBubble {
         panel.orderFrontRegardless()
         startMotionLoop()
         content.playEntranceAnimation()
+        VisualQACapture.schedule(view: content, name: "speech-bubble")
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.24
@@ -125,6 +126,11 @@ final class PetSpeechBubble {
                 self.panel.orderOut(nil)
             }
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) { [weak self] in
+            guard let self, self.animationGeneration == generation else { return }
+            self.panel.alphaValue = 0
+            self.panel.orderOut(nil)
+        }
     }
 
     private func updateTarget(avoiding petFrame: NSRect, in visibleFrame: NSRect, immediately: Bool) {
@@ -132,6 +138,12 @@ final class PetSpeechBubble {
         let edgeChanged = lockedTailEdge != placement.tailEdge
         content.updateTail(edge: placement.tailEdge, position: placement.tailPosition, immediately: immediately || edgeChanged)
         lockedTailEdge = placement.tailEdge
+        if !immediately, let existing = targetFrame,
+           hypot(existing.minX - placement.frame.minX, existing.minY - placement.frame.minY) < 2.2,
+           abs(existing.width - placement.frame.width) < 0.8,
+           abs(existing.height - placement.frame.height) < 0.8 {
+            return
+        }
         targetFrame = placement.frame
 
         if immediately || !panel.isVisible {
@@ -170,8 +182,8 @@ final class PetSpeechBubble {
         let current = panel.frame
         // Deliberately softer than the pet motion. The bubble should feel
         // attached, but it must not echo every one-frame silhouette change.
-        let stiffness: CGFloat = 78
-        let damping: CGFloat = 18.5
+        let stiffness: CGFloat = 52
+        let damping: CGFloat = 15.5
         let accelerationX = (targetFrame.minX - current.minX) * stiffness - motionVelocity.dx * damping
         let accelerationY = (targetFrame.minY - current.minY) * stiffness - motionVelocity.dy * damping
         motionVelocity.dx += accelerationX * deltaTime
@@ -282,19 +294,13 @@ private final class SpeechBubbleView: NSView {
     }
 
     private struct Theme {
-        let gradientTop: NSColor
         let gradientBottom: NSColor
-        let glassBorderColor: NSColor
-        let glowColor: NSColor
         let accentColor: NSColor
         let badgeBackground: NSColor
-        let badgeTextColor: NSColor
         let textColor: NSColor
         let iconName: String
-        let tagTitle: String
     }
 
-    private let tagLabel = NSTextField(labelWithString: "")
     private let tagIcon = NSImageView()
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private var mood: PetSpeechBubbleMood = .stand
@@ -317,8 +323,11 @@ private final class SpeechBubbleView: NSView {
 
         let outerMargins = 22 * displayScale
         let tailAllowance = 13 * displayScale
-        let messageHorizontalPadding = 32 * displayScale
-        let contentVerticalReserve = 44 * displayScale
+        // The icon, its gap, and the trailing inset consume 54 pt. Keeping this
+        // exact reserve makes the layout width equal to the width used for text
+        // measurement even when a left/right tail also consumes panel space.
+        let messageHorizontalPadding = 54 * displayScale
+        let contentVerticalReserve = 23 * displayScale
         let textBreathingRoom = 4 * displayScale
 
         // Reserve the tail in both axes. This keeps the panel size stable when
@@ -326,7 +335,7 @@ private final class SpeechBubbleView: NSView {
         // message frame is never narrower than the width used for measurement.
         let totalW = messageWidth + outerMargins + tailAllowance + messageHorizontalPadding
         let totalH = max(
-            102 * displayScale,
+            78 * displayScale,
             messageHeight + outerMargins + tailAllowance + contentVerticalReserve + textBreathingRoom
         )
         return NSSize(width: totalW, height: totalH)
@@ -339,15 +348,9 @@ private final class SpeechBubbleView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
 
-        // 标签栏图标
+        // A single small mood mark is enough; the message remains the hero.
         tagIcon.imageScaling = .scaleProportionallyUpOrDown
         addSubview(tagIcon)
-
-        // 标签栏文字（Mood Tag）
-        tagLabel.alignment = .left
-        tagLabel.maximumNumberOfLines = 1
-        tagLabel.drawsBackground = false
-        addSubview(tagLabel)
 
         // 对话正文
         messageLabel.alignment = .left
@@ -406,12 +409,9 @@ private final class SpeechBubbleView: NSView {
         super.layout()
         let body = bodyRect
 
-        let padX = 16 * displayScale
-        let padTop = 13 * displayScale
-
-        // 顶部小胶囊区域
-        let iconSize = 13 * displayScale
-        let tagIconY = body.maxY - padTop - iconSize
+        let padX = 14 * displayScale
+        let iconSize = 15 * displayScale
+        let tagIconY = body.midY - iconSize / 2
         tagIcon.frame = NSRect(
             x: body.minX + padX,
             y: tagIconY,
@@ -419,22 +419,13 @@ private final class SpeechBubbleView: NSView {
             height: iconSize
         )
 
-        let tagTextX = tagIcon.frame.maxX + 5 * displayScale
-        let tagTextW = max(50, body.width - padX * 2 - iconSize - 8 * displayScale)
-        tagLabel.frame = NSRect(
-            x: tagTextX,
-            y: tagIconY - 1.5 * displayScale,
-            width: tagTextW,
-            height: 16 * displayScale
-        )
-
-        // 下方消息内容
-        let msgTop = tagLabel.frame.minY - 5 * displayScale
-        let msgW = max(40, body.width - padX * 2)
-        let msgH = max(20, msgTop - (body.minY + 11 * displayScale))
+        let msgX = tagIcon.frame.maxX + 11 * displayScale
+        let msgW = max(40, body.maxX - msgX - 14 * displayScale)
+        let measuredHeight = measuredMessageHeight(for: msgW)
+        let msgH = min(body.height - 16 * displayScale, max(20, measuredHeight + 3 * displayScale))
         messageLabel.frame = NSRect(
-            x: body.minX + padX,
-            y: body.minY + 11 * displayScale,
+            x: msgX,
+            y: body.midY - msgH / 2,
             width: msgW,
             height: msgH
         )
@@ -446,64 +437,44 @@ private final class SpeechBubbleView: NSView {
         let body = bodyRect
         let cornerRadius = min(body.height * 0.38, 20 * displayScale)
 
-        // 1. 构建整体气泡路径（主体 + G2 水滴顺滑尾巴）
         let path = buildBubblePath(body: body, radius: cornerRadius)
-
-        // 2. 绘制多层柔和环境光晕与阴影（Ambient Colored Glow + Drop Shadow）
         NSGraphicsContext.saveGraphicsState()
-
-        // 外层色彩弥散柔光
-        let glowShadow = NSShadow()
-        glowShadow.shadowColor = theme.glowColor
-        glowShadow.shadowBlurRadius = 18 * displayScale
-        glowShadow.shadowOffset = NSSize(width: 0, height: -4 * displayScale)
-        glowShadow.set()
-
-        // 填充通透高雅渐变背景
-        if let gradient = NSGradient(starting: theme.gradientTop, ending: theme.gradientBottom) {
-            gradient.draw(in: path, angle: -90)
-        }
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.15)
+        shadow.shadowBlurRadius = 10 * displayScale
+        shadow.shadowOffset = NSSize(width: 0, height: -3 * displayScale)
+        shadow.set()
+        theme.gradientBottom.setFill()
+        path.fill()
         NSGraphicsContext.restoreGraphicsState()
-
-        // 3. 绘制晶莹半透明内发光轮廓（1.0pt 玻璃微边缘）
         NSGraphicsContext.saveGraphicsState()
-        theme.glassBorderColor.setStroke()
-        path.lineWidth = 1.1 * displayScale
+        theme.accentColor.withAlphaComponent(0.28).setStroke()
+        path.lineWidth = 1.0 * displayScale
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
 
-        // 4. 绘制气泡顶部镜面微高光线（Top Sheen），赋予果冻/玻璃通透感
-        drawTopSheen(body: body, radius: cornerRadius)
-
-        // A compact mood capsule gives the bubble a friendly product voice
-        // without competing with the message itself.
-        drawMoodCapsule(body: body, theme: theme)
-
-        // 5. 绘制右下角精致小星芒 / 心动微光标
-        drawSparkleDecoration(body: body, theme: theme)
+        let badge = NSBezierPath(ovalIn: NSRect(
+            x: body.minX + 8 * displayScale,
+            y: body.midY - 14 * displayScale,
+            width: 28 * displayScale,
+            height: 28 * displayScale
+        ))
+        theme.badgeBackground.setFill()
+        badge.fill()
     }
 
     func playEntranceAnimation() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer else { return }
-        // 软萌果冻弹性弹出动画（Jelly Spring Animation）
         let pop = CAKeyframeAnimation(keyPath: "transform.scale")
-        pop.values = [0.82, 1.06, 0.97, 1.015, 1.0]
-        pop.keyTimes = [0, 0.42, 0.68, 0.86, 1.0]
-        pop.duration = 0.46
-        pop.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.9, 0.32, 1.2)
+        pop.values = [0.94, 1.015, 1.0]
+        pop.keyTimes = [0, 0.65, 1]
+        pop.duration = 0.22
+        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer.add(pop, forKey: "speech-pop")
-
-        let settle = CAKeyframeAnimation(keyPath: "transform.translation.y")
-        settle.values = [-5 * displayScale, 1.2 * displayScale, 0]
-        settle.keyTimes = [0, 0.62, 1]
-        settle.duration = 0.38
-        settle.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.9, 0.32, 1)
-        layer.add(settle, forKey: "speech-settle")
     }
 
     func stopAnimations() {
         layer?.removeAnimation(forKey: "speech-pop")
-        layer?.removeAnimation(forKey: "speech-settle")
         layer?.removeAnimation(forKey: "speech-theme-transition")
     }
 
@@ -617,111 +588,14 @@ private final class SpeechBubbleView: NSView {
         return path
     }
 
-    private func drawTopSheen(body: NSRect, radius: CGFloat) {
-        NSGraphicsContext.saveGraphicsState()
-        let sheenRect = NSRect(
-            x: body.minX + 4 * displayScale,
-            y: body.maxY - 14 * displayScale,
-            width: body.width - 8 * displayScale,
-            height: 10 * displayScale
-        )
-        let sheenPath = NSBezierPath(roundedRect: sheenRect, xRadius: radius * 0.6, yRadius: radius * 0.6)
-
-        let sheenGradient = NSGradient(
-            starting: NSColor.white.withAlphaComponent(0.48),
-            ending: NSColor.white.withAlphaComponent(0.02)
-        )
-        sheenGradient?.draw(in: sheenPath, angle: -90)
-        NSGraphicsContext.restoreGraphicsState()
-    }
-
-    private func drawMoodCapsule(body: NSRect, theme: Theme) {
-        let textWidth = min(
-            body.width * 0.58,
-            ceil(tagLabel.intrinsicContentSize.width) + 7 * displayScale
-        )
-        let capsule = NSRect(
-            x: body.minX + 10 * displayScale,
-            y: body.maxY - 34 * displayScale,
-            width: max(62 * displayScale, textWidth + 28 * displayScale),
-            height: 24 * displayScale
-        )
-        let path = NSBezierPath(
-            roundedRect: capsule,
-            xRadius: capsule.height / 2,
-            yRadius: capsule.height / 2
-        )
-        theme.badgeBackground.setFill()
-        path.fill()
-        theme.accentColor.withAlphaComponent(0.16).setStroke()
-        path.lineWidth = 0.8 * displayScale
-        path.stroke()
-
-        let dot = NSBezierPath(ovalIn: NSRect(
-            x: capsule.maxX - 9 * displayScale,
-            y: capsule.midY - 2 * displayScale,
-            width: 4 * displayScale,
-            height: 4 * displayScale
-        ))
-        theme.accentColor.withAlphaComponent(0.72).setFill()
-        dot.fill()
-    }
-
-    private func drawSparkleDecoration(body: NSRect, theme: Theme) {
-        let center = NSPoint(x: body.maxX - 14 * displayScale, y: body.maxY - 13 * displayScale)
-        let radius = 3.8 * displayScale
-        let sparkle = NSBezierPath()
-        sparkle.move(to: NSPoint(x: center.x, y: center.y + radius))
-        sparkle.curve(
-            to: NSPoint(x: center.x + radius, y: center.y),
-            controlPoint1: NSPoint(x: center.x + radius * 0.15, y: center.y + radius * 0.15),
-            controlPoint2: NSPoint(x: center.x + radius * 0.15, y: center.y + radius * 0.15)
-        )
-        sparkle.curve(
-            to: NSPoint(x: center.x, y: center.y - radius),
-            controlPoint1: NSPoint(x: center.x + radius * 0.15, y: center.y - radius * 0.15),
-            controlPoint2: NSPoint(x: center.x + radius * 0.15, y: center.y - radius * 0.15)
-        )
-        sparkle.curve(
-            to: NSPoint(x: center.x - radius, y: center.y),
-            controlPoint1: NSPoint(x: center.x - radius * 0.15, y: center.y - radius * 0.15),
-            controlPoint2: NSPoint(x: center.x - radius * 0.15, y: center.y - radius * 0.15)
-        )
-        sparkle.curve(
-            to: NSPoint(x: center.x, y: center.y + radius),
-            controlPoint1: NSPoint(x: center.x - radius * 0.15, y: center.y + radius * 0.15),
-            controlPoint2: NSPoint(x: center.x - radius * 0.15, y: center.y + radius * 0.15)
-        )
-        sparkle.close()
-        theme.accentColor.withAlphaComponent(0.70).setFill()
-        sparkle.fill()
-
-        let dot = NSBezierPath(ovalIn: NSRect(
-            x: center.x - 7 * displayScale,
-            y: center.y + 4 * displayScale,
-            width: 2.2 * displayScale,
-            height: 2.2 * displayScale
-        ))
-        theme.accentColor.withAlphaComponent(0.40).setFill()
-        dot.fill()
-    }
-
     private func applyTheme() {
         let theme = currentTheme(for: mood)
 
-        // 1. 设置 Tag 标题与图标
-        tagLabel.stringValue = theme.tagTitle
-        let tagFontSize = 10.8 * displayScale
-        let tagBaseFont = NSFont.systemFont(ofSize: tagFontSize, weight: .bold)
-        tagLabel.font = tagBaseFont.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: tagFontSize) } ?? tagBaseFont
-        tagLabel.textColor = theme.badgeTextColor
-
-        let config = NSImage.SymbolConfiguration(pointSize: 11 * displayScale, weight: .bold)
+        let config = NSImage.SymbolConfiguration(pointSize: 12 * displayScale, weight: .semibold)
             .applying(NSImage.SymbolConfiguration(paletteColors: [theme.accentColor]))
         tagIcon.image = NSImage(systemSymbolName: theme.iconName, accessibilityDescription: nil)?.withSymbolConfiguration(config)
 
-        // 2. 设置对话文字排版（现代高清晰圆体）
-        let messageFontSize = 13.8 * displayScale
+        let messageFontSize = 13.6 * displayScale
         let messageBaseFont = NSFont.systemFont(ofSize: messageFontSize, weight: .medium)
         let roundedFont = messageBaseFont.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: messageFontSize) } ?? messageBaseFont
         messageLabel.font = roundedFont
@@ -729,72 +603,46 @@ private final class SpeechBubbleView: NSView {
     }
 
     private func currentTheme(for mood: PetSpeechBubbleMood) -> Theme {
-        let tagTitle = AppLanguage.stored.moodTitle(for: mood)
         switch mood {
         case .stand:
             return Theme(
-                gradientTop: NSColor(calibratedRed: 0.99, green: 0.99, blue: 0.99, alpha: 0.96),
                 gradientBottom: NSColor(calibratedRed: 1.00, green: 0.95, blue: 0.92, alpha: 0.96),
-                glassBorderColor: NSColor(calibratedRed: 1.00, green: 0.82, blue: 0.76, alpha: 0.75),
-                glowColor: NSColor(calibratedRed: 1.00, green: 0.55, blue: 0.38, alpha: 0.16),
                 accentColor: NSColor(calibratedRed: 0.98, green: 0.44, blue: 0.30, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 1.00, green: 0.92, blue: 0.88, alpha: 0.85),
-                badgeTextColor: NSColor(calibratedRed: 0.82, green: 0.32, blue: 0.22, alpha: 1),
                 textColor: NSColor(calibratedRed: 0.18, green: 0.14, blue: 0.13, alpha: 1),
-                iconName: "pawprint.fill",
-                tagTitle: tagTitle
+                iconName: "pawprint.fill"
             )
         case .sit:
             return Theme(
-                gradientTop: NSColor(calibratedRed: 0.99, green: 0.99, blue: 0.99, alpha: 0.96),
                 gradientBottom: NSColor(calibratedRed: 1.00, green: 0.94, blue: 0.97, alpha: 0.96),
-                glassBorderColor: NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.89, alpha: 0.75),
-                glowColor: NSColor(calibratedRed: 0.96, green: 0.42, blue: 0.68, alpha: 0.16),
                 accentColor: NSColor(calibratedRed: 0.94, green: 0.32, blue: 0.58, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.99, green: 0.90, blue: 0.95, alpha: 0.85),
-                badgeTextColor: NSColor(calibratedRed: 0.78, green: 0.22, blue: 0.48, alpha: 1),
                 textColor: NSColor(calibratedRed: 0.19, green: 0.13, blue: 0.17, alpha: 1),
-                iconName: "heart.fill",
-                tagTitle: tagTitle
+                iconName: "heart.fill"
             )
         case .lie:
             return Theme(
-                gradientTop: NSColor(calibratedRed: 0.99, green: 0.99, blue: 0.99, alpha: 0.96),
                 gradientBottom: NSColor(calibratedRed: 0.93, green: 0.98, blue: 0.96, alpha: 0.96),
-                glassBorderColor: NSColor(calibratedRed: 0.75, green: 0.92, blue: 0.86, alpha: 0.75),
-                glowColor: NSColor(calibratedRed: 0.20, green: 0.68, blue: 0.54, alpha: 0.16),
                 accentColor: NSColor(calibratedRed: 0.15, green: 0.62, blue: 0.48, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.88, green: 0.96, blue: 0.93, alpha: 0.85),
-                badgeTextColor: NSColor(calibratedRed: 0.12, green: 0.48, blue: 0.36, alpha: 1),
                 textColor: NSColor(calibratedRed: 0.12, green: 0.18, blue: 0.16, alpha: 1),
-                iconName: "leaf.fill",
-                tagTitle: tagTitle
+                iconName: "leaf.fill"
             )
         case .sleep:
             return Theme(
-                gradientTop: NSColor(calibratedRed: 0.99, green: 0.99, blue: 1.00, alpha: 0.96),
                 gradientBottom: NSColor(calibratedRed: 0.93, green: 0.94, blue: 0.99, alpha: 0.96),
-                glassBorderColor: NSColor(calibratedRed: 0.78, green: 0.82, blue: 0.96, alpha: 0.75),
-                glowColor: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.88, alpha: 0.16),
                 accentColor: NSColor(calibratedRed: 0.48, green: 0.46, blue: 0.88, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 0.90, green: 0.91, blue: 0.98, alpha: 0.85),
-                badgeTextColor: NSColor(calibratedRed: 0.35, green: 0.34, blue: 0.72, alpha: 1),
                 textColor: NSColor(calibratedRed: 0.14, green: 0.15, blue: 0.22, alpha: 1),
-                iconName: "moon.stars.fill",
-                tagTitle: tagTitle
+                iconName: "moon.stars.fill"
             )
         case .active:
             return Theme(
-                gradientTop: NSColor(calibratedRed: 1.00, green: 1.00, blue: 0.99, alpha: 0.96),
                 gradientBottom: NSColor(calibratedRed: 1.00, green: 0.96, blue: 0.88, alpha: 0.96),
-                glassBorderColor: NSColor(calibratedRed: 1.00, green: 0.86, blue: 0.65, alpha: 0.75),
-                glowColor: NSColor(calibratedRed: 0.98, green: 0.64, blue: 0.15, alpha: 0.18),
                 accentColor: NSColor(calibratedRed: 0.94, green: 0.55, blue: 0.08, alpha: 1),
                 badgeBackground: NSColor(calibratedRed: 1.00, green: 0.94, blue: 0.82, alpha: 0.85),
-                badgeTextColor: NSColor(calibratedRed: 0.76, green: 0.42, blue: 0.05, alpha: 1),
                 textColor: NSColor(calibratedRed: 0.20, green: 0.16, blue: 0.10, alpha: 1),
-                iconName: "sparkles",
-                tagTitle: tagTitle
+                iconName: "sparkles"
             )
         }
     }

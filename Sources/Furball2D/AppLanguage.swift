@@ -64,6 +64,57 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var treatTimedOut: String {
+        switch self {
+        case .simplifiedChinese: "这颗藏得太刁钻啦，下次我一定找到！"
+        case .english: "That one was extra sneaky—I’ll get it next time!"
+        }
+    }
+
+    var desktopInteractionsSetting: String {
+        switch self {
+        case .simplifiedChinese: "漫游时观察桌面物品"
+        case .english: "Explore desktop items while roaming"
+        }
+    }
+
+    var iconRearrangementSetting: String {
+        switch self {
+        case .simplifiedChinese: "允许叼动桌面图标（会改变 Finder 排列）"
+        case .english: "Allow icon nudges (changes Finder layout)"
+        }
+    }
+
+    var sniffTrashSpeech: String {
+        switch self {
+        case .simplifiedChinese: "这个桶闻起来……故事很多。"
+        case .english: "This bin smells like it has stories."
+        }
+    }
+
+    func inspectDesktopItemSpeech(_ name: String) -> String {
+        switch self {
+        case .simplifiedChinese: "“\(name)”是什么？可以陪我玩吗？"
+        case .english: "What is “\(name)”? Can I play with it?"
+        }
+    }
+
+    func movedDesktopItemSpeech(_ name: String, succeeded: Bool) -> String {
+        switch (self, succeeded) {
+        case (.simplifiedChinese, true): "我把“\(name)”轻轻叼到旁边啦。"
+        case (.simplifiedChinese, false): "“\(name)”不肯跟我走，好吧～"
+        case (.english, true): "I nudged “\(name)” over a little."
+        case (.english, false): "“\(name)” would rather stay there. Fair enough!"
+        }
+    }
+
+    func carryingDesktopItemSpeech(_ name: String) -> String {
+        switch self {
+        case .simplifiedChinese: "轻轻叼住“\(name)”……挪一点点就好。"
+        case .english: "Easy now… I’ll carry “\(name)” just a tiny bit."
+        }
+    }
+
     var hoverGreeting: String {
         switch self {
         case .simplifiedChinese: "你是不是想摸摸我？"
@@ -140,6 +191,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
         switch self {
         case .simplifiedChinese: "视觉与动画设置…"
         case .english: "Visual & Animation Settings…"
+        }
+    }
+
+    var settingsMenu: String {
+        switch self {
+        case .simplifiedChinese: "设置…"
+        case .english: "Settings…"
         }
     }
 
@@ -567,7 +625,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "需要一点小狗能量吗？",
                 "我没有捣乱，是在监督～",
                 "嘿，你今天也很厉害！",
-                "站得这么乖，有奖励吗？"
+                "站得这么乖，有奖励吗？",
+                "我刚刚听见你的灵感跑过来了。",
+                "桌面这么大，幸好我找到你了。",
+                "请签收一份新鲜的小狗鼓励。",
+                "需要我替你守住这个窗口吗？",
+                "我今天的尾巴摇得很专业。",
+                "先深呼吸一下，我陪你。"
             ]
         case (.simplifiedChinese, .sit):
             [
@@ -583,7 +647,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "给你一只专注的小狗。",
                 "你忙完会陪我玩吗？",
                 "看我坐得端不端正？",
-                "已就位，请下达摸摸！"
+                "已就位，请下达摸摸！",
+                "我可以等，但耳朵会一直期待。",
+                "这个位置离你刚刚好。",
+                "安静坐好也是一种超能力。",
+                "我把最好看的侧脸留给你。",
+                "你一开口，我就认真听。",
+                "坐标已锁定：你的旁边。"
             ]
         case (.simplifiedChinese, .lie):
             [
@@ -599,7 +669,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "今天也可以慢一点哦。",
                 "发呆也是小狗的正事。",
                 "要不要一起放空三秒？",
-                "软乎乎地陪着你～"
+                "软乎乎地陪着你～",
+                "先把烦恼放地上，我帮你看着。",
+                "今天的地板有一点适合发呆。",
+                "我把尾巴收好，不打扰你。",
+                "累了就趴一下，真的没关系。",
+                "这不是暂停，是温柔加载中。",
+                "我的安静模式也很喜欢你。"
             ]
         case (.simplifiedChinese, .sleep):
             [
@@ -615,7 +691,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "梦里巡逻，不算偷懒吧？",
                 "正在下载甜甜的梦…",
                 "鼻子休息，耳朵值班。",
-                "如果打呼，请假装没听见～"
+                "如果打呼，请假装没听见～",
+                "云朵借我当一下枕头…",
+                "梦里见，记得带小饼干。",
+                "正在做一个有你的好梦。",
+                "小声一点，幸福快睡着了。",
+                "醒来第一件事就是找你。",
+                "晚安不是走开，是换一种陪伴。"
             ]
         case (.english, .stand):
             [
@@ -631,7 +713,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "Need a little puppy energy?",
                 "I’m not meddling—I’m supervising.",
                 "Hey, you’re doing great today!",
-                "Standing nicely earns treats, right?"
+                "Standing nicely earns treats, right?",
+                "I think I just heard your next great idea.",
+                "Big desktop. Good thing I found you.",
+                "One fresh delivery of puppy encouragement.",
+                "Want me to guard this window for you?",
+                "My tail work is very professional today.",
+                "Take one deep breath. I’m right here."
             ]
         case (.english, .sit):
             [
@@ -647,7 +735,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "One very focused puppy, ready!",
                 "Will you play with me when you’re done?",
                 "Am I sitting properly enough?",
-                "Ready and waiting for cuddles!"
+                "Ready and waiting for cuddles!",
+                "I can wait, but my ears stay hopeful.",
+                "This spot is exactly close enough to you.",
+                "Sitting quietly is a puppy superpower.",
+                "I saved my best profile for you.",
+                "Say the word—I’m listening.",
+                "Coordinates locked: right beside you."
             ]
         case (.english, .lie):
             [
@@ -663,7 +757,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "It’s okay to take today slowly.",
                 "Daydreaming is important puppy work.",
                 "Want to do nothing for three seconds?",
-                "Just being soft and staying close."
+                "Just being soft and staying close.",
+                "Put your worries down. I’ll watch them.",
+                "The floor is especially good for daydreams.",
+                "Tail tucked in. I won’t interrupt.",
+                "It’s genuinely okay to lie down for a bit.",
+                "Not paused—gently loading.",
+                "My quiet mode likes you too."
             ]
         case (.english, .sleep):
             [
@@ -679,7 +779,13 @@ enum AppLanguage: String, CaseIterable, Sendable {
                 "Dream patrol still counts as work, right?",
                 "Downloading extra-sweet dreams…",
                 "Nose resting. Ears on duty.",
-                "If I snore, pretend you didn’t hear."
+                "If I snore, pretend you didn’t hear.",
+                "Borrowing a cloud for my pillow…",
+                "See you in my dream—bring biscuits.",
+                "I’m having a very good dream about you.",
+                "Quiet now… happiness is falling asleep.",
+                "Finding you is task one when I wake up.",
+                "Goodnight is just another way to stay close."
             ]
         }
     }
