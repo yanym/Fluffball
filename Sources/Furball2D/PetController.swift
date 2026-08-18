@@ -17,10 +17,11 @@ final class PetController: NSObject, NSMenuDelegate {
         static let imageFacing = "imageFacing"
         static let videoAnimations = "videoAnimationsEnabled"
         static let desktopInteractions = "desktopInteractions"
-        static let allowIconRearrangement = "allowDesktopIconRearrangement"
         static let alwaysOnTop = "alwaysOnTop"
         static let speechBubbles = "speechBubblesEnabled"
         static let talkativeness = "petTalkativeness"
+        static let groupPlay = "groupPlayEnabled"
+        static let groupPetIDs = "groupPlayPetIDs"
     }
 
     private static var videoAnimationsPreferenceKey: String {
@@ -94,6 +95,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private let speechBubble = PetSpeechBubble()
     private let desktopTreat = DesktopTreat()
     private let desktopCarriedItem = DesktopCarriedItem()
+    private let groupPlayController = PetGroupPlayController()
     private let desktopInteractionService = DesktopInteractionService()
     private var settingsWindowController: UnifiedSettingsWindowController?
 
@@ -208,16 +210,20 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(desktopInteractionsEnabled, forKey: PreferenceKey.desktopInteractions) }
     }
 
-    private var allowDesktopIconRearrangement: Bool {
-        didSet { UserDefaults.standard.set(allowDesktopIconRearrangement, forKey: PreferenceKey.allowIconRearrangement) }
-    }
-
     private var speechBubblesEnabled: Bool {
         didSet { UserDefaults.standard.set(speechBubblesEnabled, forKey: PreferenceKey.speechBubbles) }
     }
 
     private var talkativeness: Double {
         didSet { UserDefaults.standard.set(talkativeness, forKey: PreferenceKey.talkativeness) }
+    }
+
+    private var groupPlayEnabled: Bool {
+        didSet { UserDefaults.standard.set(groupPlayEnabled, forKey: PreferenceKey.groupPlay) }
+    }
+
+    private var groupPetIDs: Set<String> {
+        didSet { UserDefaults.standard.set(groupPetIDs.sorted(), forKey: PreferenceKey.groupPetIDs) }
     }
 
     private var videoAnimationsEnabled: Bool {
@@ -250,7 +256,6 @@ final class PetController: NSObject, NSMenuDelegate {
         desktopInteractionsEnabled = defaults.object(forKey: PreferenceKey.desktopInteractions) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.desktopInteractions)
-        allowDesktopIconRearrangement = defaults.bool(forKey: PreferenceKey.allowIconRearrangement)
         speechBubblesEnabled = defaults.object(forKey: PreferenceKey.speechBubbles) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.speechBubbles)
@@ -258,6 +263,15 @@ final class PetController: NSObject, NSMenuDelegate {
             ? 0.55
             : defaults.double(forKey: PreferenceKey.talkativeness)
         talkativeness = min(1, max(0, savedTalkativeness))
+        groupPlayEnabled = defaults.bool(forKey: PreferenceKey.groupPlay)
+        let imageCapableIDs = PetAssetCatalog.imageCapablePetIDs
+        let savedGroupIDs = Set(defaults.stringArray(forKey: PreferenceKey.groupPetIDs) ?? [])
+        let validSavedGroupIDs = savedGroupIDs.intersection(imageCapableIDs)
+        groupPetIDs = validSavedGroupIDs.isEmpty ? imageCapableIDs : validSavedGroupIDs
+        if ProcessInfo.processInfo.environment["FURBALL_GROUP_PLAY"] == "1" {
+            groupPlayEnabled = true
+            groupPetIDs = imageCapableIDs
+        }
         // Appearance selection is the source of truth. The old Boolean is
         // retained only so existing installs keep their previous preference.
         videoAnimationsEnabled = PetAssetCatalog.activeAppearance.kind == .continuousVideo
@@ -322,6 +336,9 @@ final class PetController: NSObject, NSMenuDelegate {
             scheduleWake(epoch: behaviorEpoch)
         }
         scheduleNextSpeech(after: 1.4)
+        if groupPlayEnabled {
+            DispatchQueue.main.async { [weak self] in self?.activateGroupPlay() }
+        }
 
         // Opt-in visual QA hooks used by packaging checks; normal launches do
         // not set these environment variables.
@@ -361,7 +378,9 @@ final class PetController: NSObject, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
                 self?.inspectTrashImmediately()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            // A far-side desktop target plus a three-gesture inspection can
+            // legitimately take longer than the old single-action 15 seconds.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 32) { [weak self] in
                 guard let self,
                       !FileManager.default.fileExists(atPath: reportPath) else { return }
                 self.writeImmediateInteractionQAReport(
@@ -369,6 +388,12 @@ final class PetController: NSObject, NSMenuDelegate {
                     pass: false,
                     reason: "watchdog-timeout"
                 )
+            }
+        }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_GROUP_PLAY_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { [weak self] in
+                self?.writeGroupPlayQAReport(to: reportPath)
             }
         }
         if let reportPath = behaviorQAReportPath, !reportPath.isEmpty {
@@ -381,12 +406,6 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.writeBehaviorQAReport(to: reportPath)
             }
         }
-        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_CODEX_CREATOR_QA_REPORT"],
-           !reportPath.isEmpty {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.runCodexCreatorQA(reportPath: reportPath)
-            }
-        }
     }
 
     private func runAppearanceSwitchQA(
@@ -394,6 +413,7 @@ final class PetController: NSObject, NSMenuDelegate {
         step: Int,
         results: [[String: Any]]
     ) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         let appearanceIDs = ["continuous-video", "cute-2d", "realistic-2d"]
         guard step < appearanceIDs.count else {
             let pass = results.count == appearanceIDs.count
@@ -436,94 +456,8 @@ final class PetController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func runCodexCreatorQA(reportPath: String) {
-        guard let root = PetAssetCatalog.activePet?.rootURL,
-              let enumerator = FileManager.default.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-              ) else {
-            writeCodexCreatorQAReport(path: reportPath, values: ["pass": false, "reason": "No active Pet Pack assets"])
-            return
-        }
-        let allowed = Set(["png", "jpg", "jpeg", "webp"])
-        let photos = enumerator.compactMap { $0 as? URL }
-            .filter { allowed.contains($0.pathExtension.lowercased()) }
-            .prefix(6)
-        guard photos.count == 6 else {
-            writeCodexCreatorQAReport(path: reportPath, values: ["pass": false, "reason": "Fewer than six bundled images"])
-            return
-        }
-        do {
-            let job = try PetPackLibraryManager.startCodexCreation(
-                name: "Creator QA \(UUID().uuidString.prefix(6))",
-                species: "dog",
-                styles: ["cute-2d"],
-                photos: Array(photos)
-            )
-            job.process.terminationHandler = { [weak self] _ in
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        self.finishCodexCreatorQA(job: job, reportPath: reportPath)
-                    }
-                }
-            }
-            if !job.process.isRunning {
-                finishCodexCreatorQA(job: job, reportPath: reportPath)
-            }
-        } catch {
-            writeCodexCreatorQAReport(path: reportPath, values: [
-                "pass": false,
-                "reason": error.localizedDescription
-            ])
-        }
-    }
-
-    private func finishCodexCreatorQA(job: CodexPetCreationJob, reportPath: String) {
-        guard !FileManager.default.fileExists(atPath: reportPath) else { return }
-        job.process.terminationHandler = nil
-        try? job.logHandle.close()
-        let requestExists = FileManager.default.fileExists(
-            atPath: job.workingDirectory.appendingPathComponent("REQUEST.json").path
-        )
-        let copiedPhotoCount = (try? FileManager.default.contentsOfDirectory(
-            at: job.workingDirectory.appendingPathComponent("ReferencePhotos", isDirectory: true),
-            includingPropertiesForKeys: nil
-        ).count) ?? 0
-        let passed = job.process.terminationStatus == 0
-            && requestExists
-            && copiedPhotoCount == 6
-            && job.expectedPackURL.pathExtension == "furballpet"
-        let jobRoot = job.workingDirectory.deletingLastPathComponent()
-        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
-            .standardizedFileURL.path + "/"
-        if jobRoot.standardizedFileURL.path.hasPrefix(jobsRoot) {
-            try? FileManager.default.removeItem(at: jobRoot)
-        }
-        writeCodexCreatorQAReport(path: reportPath, values: [
-            "pass": passed,
-            "processStatus": job.process.terminationStatus,
-            "requestCreated": requestExists,
-            "copiedPhotoCount": copiedPhotoCount,
-            "expectedPackDeclared": job.expectedPackURL.pathExtension == "furballpet"
-        ])
-    }
-
-    private func writeCodexCreatorQAReport(path: String, values: [String: Any]) {
-        do {
-            let data = try JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-        } catch {
-            NSLog("Furball2D creator QA report failed: %@", error.localizedDescription)
-        }
-        if ProcessInfo.processInfo.environment["FURBALL_CODEX_CREATOR_QA_EXIT"] == "1" {
-            NSApp.terminate(nil)
-        }
-    }
-
     private func writeSmokeReport(to path: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         var animationErrors: [String] = []
         if renderer.visualMode == .images {
             let clips: [PetClip] = [
@@ -565,6 +499,35 @@ final class PetController: NSObject, NSMenuDelegate {
             NSLog("Furball2D smoke report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_SMOKE_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func writeGroupPlayQAReport(to path: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
+        let snapshot = groupPlayController.snapshot()
+        let expected = groupPetIDs.intersection(PetAssetCatalog.imageCapablePetIDs)
+        let report: [String: Any] = [
+            "pass": groupPlayEnabled
+                && Set(snapshot.petIDs) == expected
+                && snapshot.visibleCount == expected.count
+                && (snapshot.movingCount > 0 || snapshot.socialInteractionCount > 0)
+                && snapshot.socialInteractionCount > 0
+                && !panel.isVisible,
+            "selectedPetIDs": expected.sorted(),
+            "runningPetIDs": snapshot.petIDs,
+            "visibleCount": snapshot.visibleCount,
+            "movingCount": snapshot.movingCount,
+            "socialInteractionCount": snapshot.socialInteractionCount,
+            "primaryPanelHidden": !panel.isVisible
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            NSLog("Furball2D group QA report failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_GROUP_PLAY_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
         }
     }
@@ -612,6 +575,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func writeBoundaryQAReport(path: String, values: [String: Any]) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         do {
             let data = try JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -641,6 +605,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func writeBehaviorQAReport(to path: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         guard !behaviorQAReportWritten else { return }
         behaviorQAReportWritten = true
         let contentRect = renderer.visibleContentRect()
@@ -699,6 +664,11 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func recoverStartupVisibilityIfNeeded(attempt: Int) {
+        if groupPlayEnabled {
+            panel.orderOut(nil)
+            startupVisibilityGeneration += 1
+            return
+        }
         showPetWindow()
         let contentRect = renderer.visibleContentRect()
         guard contentRect == nil else {
@@ -812,6 +782,19 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
+        if groupPlayEnabled {
+            menu.addItem(
+                withTitle: appLanguage.visibilityMenu(isVisible: groupPlayController.hasVisibleCompanions),
+                action: #selector(toggleVisibility),
+                keyEquivalent: ""
+            )
+            menu.addItem(.separator())
+            menu.addItem(withTitle: appLanguage.settingsMenu, action: #selector(showVisualSettings), keyEquivalent: ",")
+            menu.addItem(.separator())
+            menu.addItem(withTitle: appLanguage.quitMenu, action: #selector(quit), keyEquivalent: "q")
+            for item in menu.items where item.action != nil { item.target = self }
+            return
+        }
         menu.addItem(withTitle: appLanguage.interactMenu, action: #selector(interactFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.speakMenu, action: #selector(speakFromMenu), keyEquivalent: "")
         if renderer.visualMode == .images {
@@ -1992,7 +1975,10 @@ final class PetController: NSObject, NSMenuDelegate {
         // alpha decoders during gait crossfades. Sixty spatial updates remain
         // display-smooth while leaving the render loop free to present every
         // available video frame.
-        let movementFPS = renderer.visualMode == .video ? 60.0 : 120.0
+        // Both built-in video and image assets are authored for 120 Hz output.
+        // Keeping window translation on the same cadence prevents a sharp pet
+        // from looking as though it is stepping smoothly inside a 60 Hz box.
+        let movementFPS = 120.0
         let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateCursorFollowing()
@@ -2104,7 +2090,7 @@ final class PetController: NSObject, NSMenuDelegate {
         guard freeRoamEnabled || immediateDesktopInteractionResume != nil else { return }
         isUsingImageFacing = false
         lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
-        let movementFPS = renderer.visualMode == .video ? 60.0 : 120.0
+        let movementFPS = 120.0
         let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateFreeRoaming()
@@ -2288,20 +2274,56 @@ final class PetController: NSObject, NSMenuDelegate {
                 curiosity: -0.11
             )
             showSpeech(appLanguage.inspectDesktopItemSpeech(name))
-            let inspectAction = PetAssetCatalog.imageActions.first(where: {
-                $0.id == "gesture.head-tilt" || $0.id == "gesture.review"
-            })
-            let beginCarry: () -> Void = { [weak self] in
-                self?.beginDesktopItemCarry(destination: destination, url: url, name: name)
-            }
-            if let inspectAction, renderer.visualMode == .images {
-                performImageAction(inspectAction, completion: beginCarry)
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in
+            let style = Int.random(in: 0...2)
+            switch style {
+            case 0:
+                showSpeech("What is this, \(name)? Let me inspect it very carefully…")
+                performImageActionSequence(
+                    ids: ["gesture.head-tilt", "gesture.sniff", "gesture.paw-tap"]
+                ) { [weak self] in
+                    self?.finishDesktopItemInspection(name: name)
+                }
+            case 1:
+                showSpeech("A tiny sniff, a polite play bow… and maybe a little carry!")
+                performImageActionSequence(
+                    ids: ["gesture.play-bow", "gesture.sniff"]
+                ) { [weak self] in
                     self?.beginDesktopItemCarry(destination: destination, url: url, name: name)
+                }
+            default:
+                showSpeech("I’ll guard \(name) for one very serious second.")
+                performImageActionSequence(
+                    ids: ["gesture.waiting", "gesture.review", "gesture.happy-dance"]
+                ) { [weak self] in
+                    self?.finishDesktopItemInspection(name: name)
                 }
             }
         }
+    }
+
+    private func performImageActionSequence(ids: [String], completion: @escaping () -> Void) {
+        guard renderer.visualMode == .images, let firstID = ids.first,
+              let action = PetAssetCatalog.imageActions.first(where: { $0.id == firstID }) else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { completion() }
+            return
+        }
+        performImageAction(action) { [weak self] in
+            guard let self else { return }
+            let remaining = Array(ids.dropFirst())
+            if remaining.isEmpty {
+                completion()
+            } else {
+                self.performImageActionSequence(ids: remaining, completion: completion)
+            }
+        }
+    }
+
+    private func finishDesktopItemInspection(name: String) {
+        desktopInteractionInProgress = false
+        freeRoamPauseUntil = ProcessInfo.processInfo.systemUptime + 1.8
+        try? renderer.play(PetClips.standIdle, fadeDuration: 0.075)
+        showSpeech("Inspection complete. \(name) stayed exactly where it was. ✨")
+        finishImmediateDesktopInteractionIfNeeded()
     }
 
     private func beginDesktopItemCarry(
@@ -2408,26 +2430,10 @@ final class PetController: NSObject, NSMenuDelegate {
         desktopInteractionTimer?.invalidate()
         desktopInteractionTimer = nil
         setLocomotionMode(.none, direction: locomotionDirection)
-        let mayMoveFinderItem = allowDesktopIconRearrangement
-            && ProcessInfo.processInfo.environment["FURBALL_DESKTOP_INTERACTION_DRY_RUN"] != "1"
-        let moved: Bool
-        if mayMoveFinderItem, let screen = panel.screen ?? NSScreen.main {
-            moved = desktopInteractionService.nudgeDesktopItem(
-                named: name,
-                from: desktopCarriedItem.center,
-                in: screen
-            )
-        } else {
-            moved = false
-        }
         desktopCarriedItem.hide()
         desktopInteractionInProgress = false
         freeRoamPauseUntil = ProcessInfo.processInfo.systemUptime + 2.4
-        if mayMoveFinderItem {
-            showSpeech(appLanguage.movedDesktopItemSpeech(name, succeeded: moved))
-        } else {
-            showSpeech("Hehe—I carried “\(name)” for a tiny walk, then put it safely back.")
-        }
+        showSpeech("Hehe—I carried a safe little picture of “\(name)”. The real item never moved.")
         finishImmediateDesktopInteractionIfNeeded()
     }
 
@@ -2526,6 +2532,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func writeImmediateInteractionQAReport(path: String, pass: Bool, reason: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         guard !FileManager.default.fileExists(atPath: path) else { return }
         let report: [String: Any] = [
             "pass": pass,
@@ -3119,6 +3126,10 @@ final class PetController: NSObject, NSMenuDelegate {
         )
         let newOrigin = NSPoint(x: oldFrame.midX - newSize.width / 2, y: oldFrame.minY)
         panel.setFrame(NSRect(origin: clampedOrigin(newOrigin, panelSize: newSize), size: newSize), display: true)
+        if groupPlayEnabled {
+            try? groupPlayController.start(petIDs: groupPetIDs, scale: petScale, level: panel.level)
+            panel.orderOut(nil)
+        }
         repositionSpeechBubble(resetSilhouette: true)
     }
 
@@ -3311,15 +3322,20 @@ final class PetController: NSObject, NSMenuDelegate {
                 }
                 self.refreshAppearanceSettings()
             }
-            controller.onIconRearrangementChanged = { [weak self] enabled in
-                self?.allowDesktopIconRearrangement = enabled
-                self?.refreshAppearanceSettings()
-            }
             controller.onInspectTrashNow = { [weak self] in
                 self?.inspectTrashImmediately()
             }
             controller.onPlayWithDesktopItemNow = { [weak self] in
                 self?.playWithDesktopItemImmediately()
+            }
+            controller.onGroupPlayChanged = { [weak self] enabled in
+                self?.setGroupPlay(enabled)
+            }
+            controller.onGroupPetSelectionChanged = { [weak self] ids in
+                guard let self else { return }
+                self.groupPetIDs = ids.intersection(PetAssetCatalog.imageCapablePetIDs)
+                if self.groupPlayEnabled { self.activateGroupPlay() }
+                self.refreshAppearanceSettings()
             }
             controller.onAlwaysOnTopChanged = { [weak self] enabled in
                 guard let self else { return }
@@ -3403,6 +3419,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private func appearanceSettingsSnapshot() -> AppearanceSettingsSnapshot {
         AppearanceSettingsSnapshot(
             appearances: PetAssetCatalog.availableAppearances,
+            pets: PetAssetCatalog.availablePets,
             selectedAppearanceID: PetAssetCatalog.activeAppearance.id,
             language: appLanguage,
             crossfadeEnabled: renderer.crossfadeEnabled,
@@ -3410,15 +3427,60 @@ final class PetController: NSObject, NSMenuDelegate {
             freeRoam: freeRoamEnabled,
             directionalLook: imageFacingEnabled,
             desktopInteractions: desktopInteractionsEnabled,
-            allowIconRearrangement: allowDesktopIconRearrangement,
             alwaysOnTop: panel.level == .floating,
             petScale: petScale,
             fullPassThrough: fullPassThrough,
             autoBehavior: autoBehavior,
             speechBubbles: speechBubblesEnabled,
             talkativeness: talkativeness,
-            canChangeAppearance: true
+            canChangeAppearance: true,
+            groupPlayEnabled: groupPlayEnabled,
+            groupPetIDs: groupPetIDs
         )
+    }
+
+    private func setGroupPlay(_ enabled: Bool) {
+        guard groupPlayEnabled != enabled else { return }
+        groupPlayEnabled = enabled
+        if enabled {
+            activateGroupPlay()
+        } else {
+            deactivateGroupPlay()
+        }
+        rebuildMenu()
+        refreshAppearanceSettings()
+    }
+
+    private func activateGroupPlay() {
+        guard groupPlayEnabled else { return }
+        let validIDs = groupPetIDs.intersection(PetAssetCatalog.imageCapablePetIDs)
+        guard !validIDs.isEmpty else {
+            groupPlayEnabled = false
+            refreshAppearanceSettings()
+            return
+        }
+        _ = interruptCurrentActivityForProfileSwitch()
+        panel.orderOut(nil)
+        do {
+            try groupPlayController.start(petIDs: validIDs, scale: petScale, level: panel.level)
+            rebuildMenu()
+        } catch {
+            groupPlayEnabled = false
+            groupPlayController.stop()
+            showPetWindow()
+            try? renderer.play(PetClips.standIdle, fadeDuration: 0.05)
+            restartAutonomy()
+            present(error)
+        }
+    }
+
+    private func deactivateGroupPlay() {
+        groupPlayController.stop()
+        showPetWindow()
+        posture = .stand
+        try? renderer.play(PetClips.standIdle, fadeDuration: 0.06)
+        rebuildMenu()
+        restartAutonomy()
     }
 
     private func refreshAppearanceSettings() {
@@ -3442,6 +3504,14 @@ final class PetController: NSObject, NSMenuDelegate {
                 replaying: PetClips.standIdle,
                 forceReload: true
             )
+            if groupPlayEnabled {
+                try groupPlayController.start(
+                    petIDs: groupPetIDs,
+                    scale: petScale,
+                    level: panel.level
+                )
+                panel.orderOut(nil)
+            }
             renderer.setMirrored(actionFacing.isMirrored)
             repositionSpeechBubble(resetSilhouette: true)
             remember(
@@ -3562,6 +3632,10 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleVisibility() {
+        if groupPlayEnabled {
+            groupPlayController.setVisible(!groupPlayController.hasVisibleCompanions)
+            return
+        }
         if panel.isVisible {
             cancelTreatChase(resume: false)
             hideSpeechBubble(animated: false)

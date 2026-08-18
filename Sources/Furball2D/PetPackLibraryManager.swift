@@ -7,6 +7,7 @@ enum PetPackLibraryError: LocalizedError {
     case bundledPetConflict(String)
     case missingCreatorSkill
     case operationFailed(String)
+    case readOnlyRuntime
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,7 @@ enum PetPackLibraryError: LocalizedError {
         case .bundledPetConflict(let id): "The imported ID (\(id)) conflicts with a built-in pet."
         case .missingCreatorSkill: "The pet creator Skill is missing from the app bundle."
         case .operationFailed(let reason): "The operation failed: \(reason)"
+        case .readOnlyRuntime: "Furball runs in read-only safety mode and cannot create, change, move, or delete files or folders."
         }
     }
 }
@@ -168,90 +170,19 @@ enum PetPackLibraryManager {
 
     @discardableResult
     static func installPack(from sourceURL: URL, replacingExisting: Bool = false) throws -> ValidatedPetPack {
-        let summary = try validatePack(at: sourceURL)
-        if let bundled = PetAssetCatalog.availablePets.first(where: { $0.id == summary.id && $0.isBundled }) {
-            throw PetPackLibraryError.bundledPetConflict(bundled.id)
-        }
-
-        let fileManager = FileManager.default
-        let library = PetAssetCatalog.userPetPacksDirectory
-        try fileManager.createDirectory(at: library, withIntermediateDirectories: true)
-        let target = library.appendingPathComponent("\(summary.id).furballpet", isDirectory: true)
-        if fileManager.fileExists(atPath: target.path), !replacingExisting {
-            throw PetPackLibraryError.petAlreadyExists(summary.name)
-        }
-
-        let staging = library.appendingPathComponent(".incoming-\(UUID().uuidString)", isDirectory: true)
-        do {
-            try fileManager.copyItem(at: sourceURL, to: staging)
-            _ = try validatePack(at: staging)
-            if fileManager.fileExists(atPath: target.path) {
-                _ = try fileManager.replaceItemAt(target, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: target)
-            }
-        } catch {
-            try? fileManager.removeItem(at: staging)
-            if let libraryError = error as? PetPackLibraryError { throw libraryError }
-            throw PetPackLibraryError.operationFailed(error.localizedDescription)
-        }
-        PetAssetCatalog.reload()
-        return summary
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static func exportPet(_ pet: PetLibraryPet, to destinationDirectory: URL) throws -> URL {
-        let fileManager = FileManager.default
-        let safeName = pet.name
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-        let exportName = safeName.isEmpty ? pet.id : safeName
-        let destination = destinationDirectory.appendingPathComponent("\(exportName).furballpet", isDirectory: true)
-        guard !fileManager.fileExists(atPath: destination.path) else {
-            throw PetPackLibraryError.operationFailed("\(destination.lastPathComponent) already exists")
-        }
-        do {
-            try fileManager.copyItem(at: pet.rootURL, to: destination)
-            _ = try validatePack(at: destination)
-            return destination
-        } catch {
-            try? fileManager.removeItem(at: destination)
-            if let libraryError = error as? PetPackLibraryError { throw libraryError }
-            throw PetPackLibraryError.operationFailed(error.localizedDescription)
-        }
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static func removePet(_ pet: PetLibraryPet) throws {
-        guard !pet.isBundled else {
-            throw PetPackLibraryError.operationFailed("Built-in pets cannot be removed")
-        }
-        let root = pet.rootURL.standardizedFileURL.resolvingSymlinksInPath()
-        let library = PetAssetCatalog.userPetPacksDirectory.standardizedFileURL.resolvingSymlinksInPath()
-        let prefix = library.path.hasSuffix("/") ? library.path : library.path + "/"
-        guard root.path.hasPrefix(prefix) else {
-            throw PetPackLibraryError.operationFailed("Pet is outside the managed library")
-        }
-        do {
-            var trashedURL: NSURL?
-            try FileManager.default.trashItem(at: root, resultingItemURL: &trashedURL)
-            PetAssetCatalog.reload()
-        } catch {
-            throw PetPackLibraryError.operationFailed(error.localizedDescription)
-        }
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static func exportCreatorSkill(to destinationDirectory: URL) throws -> URL {
-        guard let source = creatorSkillURL() else { throw PetPackLibraryError.missingCreatorSkill }
-        let destination = destinationDirectory.appendingPathComponent("furball-pet-creator", isDirectory: true)
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw PetPackLibraryError.operationFailed("furball-pet-creator already exists")
-        }
-        do {
-            try FileManager.default.copyItem(at: source, to: destination)
-            return destination
-        } catch {
-            throw PetPackLibraryError.operationFailed(error.localizedDescription)
-        }
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static func makeCreationRequest(
@@ -261,45 +192,7 @@ enum PetPackLibraryManager {
         photos: [URL],
         in destinationDirectory: URL
     ) throws -> URL {
-        let slug = name.lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        let baseID = slug.isEmpty ? "my-pet" : slug
-        let id = PetAssetCatalog.availablePets.contains(where: { $0.id == baseID })
-            ? "\(baseID)-\(UUID().uuidString.prefix(6).lowercased())"
-            : baseID
-        let root = destinationDirectory.appendingPathComponent("\(id)-creation-request", isDirectory: true)
-        guard !FileManager.default.fileExists(atPath: root.path) else {
-            throw PetPackLibraryError.operationFailed("\(root.lastPathComponent) already exists")
-        }
-        let photosRoot = root.appendingPathComponent("ReferencePhotos", isDirectory: true)
-        try FileManager.default.createDirectory(at: photosRoot, withIntermediateDirectories: true)
-        for (index, photo) in photos.enumerated() {
-            let ext = photo.pathExtension.isEmpty ? "jpg" : photo.pathExtension.lowercased()
-            try FileManager.default.copyItem(
-                at: photo,
-                to: photosRoot.appendingPathComponent(String(format: "%02d-reference.%@", index + 1, ext))
-            )
-        }
-        let request: [String: Any] = [
-            "requestVersion": 1,
-            "pet": ["id": id, "name": name, "species": species],
-            "styles": styles,
-            "videoGeneration": false,
-            "referencePhotoCount": photos.count,
-            "expectedOutput": "\(id).furballpet",
-            "instructions": [
-                "Use the bundled furball-pet-creator Skill.",
-                "Generate and validate every requested image style.",
-                "Return one import-ready .furballpet folder."
-            ]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: request, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: root.appendingPathComponent("REQUEST.json"), options: .atomic)
-        if let skill = creatorSkillURL() {
-            try FileManager.default.copyItem(at: skill, to: root.appendingPathComponent("furball-pet-creator"))
-        }
-        return root
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static var codexExecutableURL: URL? {
@@ -322,105 +215,11 @@ enum PetPackLibraryManager {
         styles: [String],
         photos: [URL]
     ) throws -> CodexPetCreationJob {
-        guard let codexExecutableURL else {
-            throw PetPackLibraryError.operationFailed(
-                "Codex CLI was not found. Install and sign in to Codex, or export a creation request instead."
-            )
-        }
-        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
-        try FileManager.default.createDirectory(at: jobsRoot, withIntermediateDirectories: true)
-        let jobRoot = jobsRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: jobRoot, withIntermediateDirectories: true)
-        var didStart = false
-        defer {
-            if !didStart { try? FileManager.default.removeItem(at: jobRoot) }
-        }
-        let requestRoot = try makeCreationRequest(
-            name: name,
-            species: species,
-            styles: styles,
-            photos: photos,
-            in: jobRoot
-        )
-        guard let requestData = try? Data(contentsOf: requestRoot.appendingPathComponent("REQUEST.json")),
-              let request = try? JSONSerialization.jsonObject(with: requestData) as? [String: Any],
-              let expectedOutput = request["expectedOutput"] as? String else {
-            throw PetPackLibraryError.operationFailed("Could not read the generated REQUEST.json")
-        }
-
-        let referencePhotos = try FileManager.default.contentsOfDirectory(
-            at: requestRoot.appendingPathComponent("ReferencePhotos", isDirectory: true),
-            includingPropertiesForKeys: nil
-        ).sorted { $0.lastPathComponent < $1.lastPathComponent }
-        let logURL = requestRoot.appendingPathComponent("codex-generation.log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        let logHandle = try FileHandle(forWritingTo: logURL)
-        let process = Process()
-        process.executableURL = codexExecutableURL
-        process.currentDirectoryURL = requestRoot
-        var arguments = [
-            "exec",
-            "--skip-git-repo-check",
-            "--ephemeral",
-            "--sandbox", "workspace-write",
-            "--ask-for-approval", "never",
-            "--cd", requestRoot.path
-        ]
-        for photo in referencePhotos {
-            arguments.append(contentsOf: ["--image", photo.path])
-        }
-        arguments.append(
-            "Read REQUEST.json and the complete furball-pet-creator/SKILL.md, then execute that Skill. "
-            + "Create the import-ready \(expectedOutput) inside this working directory. "
-            + "Use image generation only, preserve the photographed pet's identity, run every bundled validator, "
-            + "and do not stop until the final Pet Pack passes validation."
-        )
-        process.arguments = arguments
-        process.standardOutput = logHandle
-        process.standardError = logHandle
-        do {
-            try process.run()
-            didStart = true
-        } catch {
-            try? logHandle.close()
-            throw PetPackLibraryError.operationFailed(error.localizedDescription)
-        }
-        return CodexPetCreationJob(
-            process: process,
-            workingDirectory: requestRoot,
-            expectedPackURL: requestRoot.appendingPathComponent(expectedOutput, isDirectory: true),
-            logURL: logURL,
-            logHandle: logHandle
-        )
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     static func finishCodexCreation(_ job: CodexPetCreationJob) throws -> ValidatedPetPack {
-        try? job.logHandle.close()
-        guard job.process.terminationStatus == 0 else {
-            throw PetPackLibraryError.operationFailed(
-                "Codex exited with status \(job.process.terminationStatus). See \(job.logURL.lastPathComponent)."
-            )
-        }
-        _ = try validatePack(at: job.expectedPackURL)
-        let summary: ValidatedPetPack
-        do {
-            summary = try installPack(from: job.expectedPackURL)
-        } catch PetPackLibraryError.petAlreadyExists {
-            summary = try installPack(from: job.expectedPackURL, replacingExisting: true)
-        }
-        removeCompletedCreationJob(job)
-        return summary
-    }
-
-    private static func removeCompletedCreationJob(_ job: CodexPetCreationJob) {
-        let jobRoot = job.workingDirectory.deletingLastPathComponent().standardizedFileURL
-        let jobsRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Furball2D/CreationJobs", isDirectory: true)
-            .standardizedFileURL.path + "/"
-        if jobRoot.path.hasPrefix(jobsRoot) {
-            try? FileManager.default.removeItem(at: jobRoot)
-        }
+        throw PetPackLibraryError.readOnlyRuntime
     }
 
     private static func inspectAtlas(

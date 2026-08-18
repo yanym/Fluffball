@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 enum VisualQACapture {
     static func schedule(view: NSView?, name: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         guard let view,
               let directory = ProcessInfo.processInfo.environment["FURBALL_QA_CAPTURE_DIR"],
               !directory.isEmpty else { return }

@@ -15,7 +15,6 @@ enum AppLanguage: String, Sendable {
     var treatFound: String { "Found it! You’re the best ✨" }
     var treatTimedOut: String { "That one was extra sneaky—I’ll get it next time!" }
     var desktopInteractionsSetting: String { "Explore desktop items while roaming" }
-    var iconRearrangementSetting: String { "Allow icon nudges (changes Finder layout)" }
     var sniffTrashSpeech: String { "This bin smells like it has stories." }
     func inspectDesktopItemSpeech(_ name: String) -> String { "What is “\(name)”? Can I play with it?" }
     func movedDesktopItemSpeech(_ name: String, succeeded: Bool) -> String {

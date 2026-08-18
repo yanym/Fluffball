@@ -1,9 +1,8 @@
 import AppKit
 import QuartzCore
 
-/// A lightweight visual proxy for a desktop file while the pet bites or carries
-/// it. Finder is updated only once at drop time, so the animation stays smooth
-/// and never floods Accessibility/Apple Events with per-frame mutations.
+/// A lightweight, app-owned visual proxy for a desktop item while the pet bites
+/// or carries it. The real Finder item is never moved or modified.
 @MainActor
 final class DesktopCarriedItem {
     private let panel: NSPanel

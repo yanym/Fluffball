@@ -7,6 +7,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         case appearance
         case behavior
         case interaction
+        case group
         case speech
         case library
         case creator
@@ -30,14 +31,17 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onDesktopInteractionsChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onDesktopInteractionsChanged = onDesktopInteractionsChanged }
     }
-    var onIconRearrangementChanged: ((Bool) -> Void)? {
-        didSet { appearanceController.onIconRearrangementChanged = onIconRearrangementChanged }
-    }
     var onInspectTrashNow: (() -> Void)? {
         didSet { appearanceController.onInspectTrashNow = onInspectTrashNow }
     }
     var onPlayWithDesktopItemNow: (() -> Void)? {
         didSet { appearanceController.onPlayWithDesktopItemNow = onPlayWithDesktopItemNow }
+    }
+    var onGroupPlayChanged: ((Bool) -> Void)? {
+        didSet { appearanceController.onGroupPlayChanged = onGroupPlayChanged }
+    }
+    var onGroupPetSelectionChanged: ((Set<String>) -> Void)? {
+        didSet { appearanceController.onGroupPetSelectionChanged = onGroupPetSelectionChanged }
     }
     var onAlwaysOnTopChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onAlwaysOnTopChanged = onAlwaysOnTopChanged }
@@ -76,6 +80,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     private let appearanceButton = NSButton()
     private let behaviorButton = NSButton()
     private let interactionButton = NSButton()
+    private let groupButton = NSButton()
     private let speechButton = NSButton()
     private let libraryButton = NSButton()
     private let creatorButton = NSButton()
@@ -151,14 +156,16 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         configureSidebarButton(appearanceButton, symbol: "sparkles.rectangle.stack", action: #selector(showAppearance))
         configureSidebarButton(behaviorButton, symbol: "figure.walk.motion", action: #selector(showBehavior))
         configureSidebarButton(interactionButton, symbol: "macwindow.badge.plus", action: #selector(showInteraction))
+        configureSidebarButton(groupButton, symbol: "pawprint.circle", action: #selector(showGroup))
         configureSidebarButton(speechButton, symbol: "bubble.left.and.bubble.right", action: #selector(showSpeech))
         configureSidebarButton(libraryButton, symbol: "square.grid.2x2", action: #selector(showLibrary))
         configureSidebarButton(creatorButton, symbol: "wand.and.stars", action: #selector(showCreator))
+        creatorButton.isHidden = true
         let companionLabel = sidebarSectionLabel("COMPANION")
         let collectionLabel = sidebarSectionLabel("COLLECTION")
         let navigation = NSStackView(views: [
             companionLabel, generalButton, appearanceButton, behaviorButton,
-            interactionButton, speechButton, collectionLabel, libraryButton, creatorButton
+            interactionButton, groupButton, speechButton, collectionLabel, libraryButton, creatorButton
         ])
         navigation.orientation = .vertical
         navigation.alignment = .leading
@@ -201,6 +208,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
             appearanceButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             behaviorButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             interactionButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
+            groupButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             speechButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             libraryButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             creatorButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
@@ -240,6 +248,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         appearanceButton.title = "Appearance & Animation"
         behaviorButton.title = "Behavior"
         interactionButton.title = "Desktop Interaction"
+        groupButton.title = "Pet Group"
         speechButton.title = "Speech"
         libraryButton.title = language.libraryTab
         creatorButton.title = language.creatorTab
@@ -254,6 +263,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         case .appearance: corePage = .appearance
         case .behavior: corePage = .behavior
         case .interaction: corePage = .interaction
+        case .group: corePage = .group
         case .speech: corePage = .speech
         case .library, .creator: corePage = nil
         }
@@ -266,6 +276,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         appearanceButton.state = section == .appearance ? .on : .off
         behaviorButton.state = section == .behavior ? .on : .off
         interactionButton.state = section == .interaction ? .on : .off
+        groupButton.state = section == .group ? .on : .off
         speechButton.state = section == .speech ? .on : .off
         libraryButton.state = section == .library ? .on : .off
         creatorButton.state = section == .creator ? .on : .off
@@ -279,12 +290,13 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         case .appearance: selectedButton = appearanceButton
         case .behavior: selectedButton = behaviorButton
         case .interaction: selectedButton = interactionButton
+        case .group: selectedButton = groupButton
         case .speech: selectedButton = speechButton
         case .library: selectedButton = libraryButton
         case .creator: selectedButton = creatorButton
         }
         for button in [
-            generalButton, appearanceButton, behaviorButton, interactionButton,
+            generalButton, appearanceButton, behaviorButton, interactionButton, groupButton,
             speechButton, libraryButton, creatorButton
         ] {
             let isSelected = button === selectedButton
@@ -300,6 +312,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     @objc private func showAppearance() { select(.appearance) }
     @objc private func showBehavior() { select(.behavior) }
     @objc private func showInteraction() { select(.interaction) }
+    @objc private func showGroup() { select(.group) }
     @objc private func showSpeech() { select(.speech) }
     @objc private func showLibrary() { select(.library) }
     @objc private func showCreator() { select(.creator) }

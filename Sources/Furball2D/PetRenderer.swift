@@ -359,6 +359,20 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    func playImageAnimation(
+        _ animation: PetImageAnimation,
+        fadeDuration: TimeInterval = 0.10,
+        completion: (() -> Void)? = nil
+    ) throws {
+        clearVideoChannels()
+        visualMode = .images
+        try imageAnimator.play(
+            animation,
+            fadeDuration: crossfadeEnabled ? fadeDuration : 0,
+            completion: completion
+        )
+    }
+
     func setVisualMode(
         _ mode: PetVisualMode,
         replaying replayClip: PetClip? = nil,

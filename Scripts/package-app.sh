@@ -18,6 +18,10 @@ trap cleanup_stage EXIT
 
 cd "$PROJECT_DIR"
 
+# Shipping is blocked if Finder automation or a user-file mutation API ever
+# re-enters the runtime target.
+"$SCRIPT_DIR/audit-runtime-safety.sh"
+
 PETS_DIR="$PROJECT_DIR/Sources/Furball2D/Assets/Pets"
 NINA_PACK_DIR="$PETS_DIR/Nina"
 MANIFEST_PATH="$NINA_PACK_DIR/manifest.json"

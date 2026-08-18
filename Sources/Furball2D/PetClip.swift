@@ -388,13 +388,16 @@ enum PetAssetCatalog {
 
     private static var loaded: LoadedCatalog? {
         guard !loadedCatalogs.isEmpty else { return nil }
-        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_PET_ID"],
-           let forced = loadedCatalogs.first(where: { $0.petID == forcedID }) {
-            return forced
-        }
+        // An explicit in-app choice must always win. Environment overrides are
+        // launch defaults for QA and previews, not a lock that can make the UI
+        // appear broken.
         if let selectedID = explicitlySelectedPetID,
            let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
             return selected
+        }
+        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_PET_ID"],
+           let forced = loadedCatalogs.first(where: { $0.petID == forcedID }) {
+            return forced
         }
         if let selectedID = UserDefaults.standard.string(forKey: "selectedPetID"),
            let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
@@ -405,13 +408,13 @@ enum PetAssetCatalog {
 
     private static var selectedAppearance: (option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)? {
         guard let loaded, !loaded.appearances.isEmpty else { return nil }
-        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_APPEARANCE"],
-           let forced = loaded.appearances.first(where: { $0.option.id == forcedID }) {
-            return forced
-        }
         if let selectedID = explicitlySelectedAppearanceByPet[loaded.petID],
            let selected = loaded.appearances.first(where: { $0.option.id == selectedID }) {
             return selected
+        }
+        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_APPEARANCE"],
+           let forced = loaded.appearances.first(where: { $0.option.id == forcedID }) {
+            return forced
         }
         let preferenceKey = "selectedAppearance.\(loaded.petID)"
         if let selectedID = UserDefaults.standard.string(forKey: preferenceKey),
@@ -492,9 +495,12 @@ enum PetAssetCatalog {
     @discardableResult
     static func selectAppearance(id: String) -> Bool {
         guard let loaded,
-              loaded.appearances.contains(where: { $0.option.id == id }) else { return false }
+              let selection = loaded.appearances.first(where: { $0.option.id == id }) else { return false }
         explicitlySelectedAppearanceByPet[loaded.petID] = id
         UserDefaults.standard.set(id, forKey: "selectedAppearance.\(loaded.petID)")
+        if selection.option.kind == .spriteAtlas {
+            UserDefaults.standard.set(id, forKey: "lastImageAppearance.\(loaded.petID)")
+        }
         UserDefaults.standard.synchronize()
         return true
     }
@@ -542,6 +548,36 @@ enum PetAssetCatalog {
         }
 
         throw PetAppError.missingAsset("sprite-atlas animation: \(id)")
+    }
+
+    /// Resolves an image animation for a specific pet without changing the
+    /// user's active pet or appearance. Group Play uses this path so each
+    /// companion owns an independent atlas instead of racing the global picker.
+    static func groupImageAnimation(petID: String, id: String) throws -> PetImageAnimation {
+        guard let catalog = loadedCatalogs.first(where: { $0.petID == petID }) else {
+            throw PetAppError.missingAsset("pet: \(petID)")
+        }
+        let preference = UserDefaults.standard.string(forKey: "lastImageAppearance.\(petID)")
+            ?? explicitlySelectedAppearanceByPet[petID]
+            ?? UserDefaults.standard.string(forKey: "selectedAppearance.\(petID)")
+        let preferredAtlas = preference.flatMap { selectedID in
+            catalog.appearances.first(where: {
+                $0.option.id == selectedID && $0.spriteAtlas != nil
+            })?.spriteAtlas
+        }
+        guard let atlas = preferredAtlas
+                ?? catalog.appearances.first(where: { $0.option.id == "realistic-2d" && $0.spriteAtlas != nil })?.spriteAtlas
+                ?? catalog.appearances.first(where: { $0.spriteAtlas != nil })?.spriteAtlas,
+              let binding = atlas.bindingsByID[id] else {
+            throw PetAppError.missingAsset("group sprite animation: \(petID)/\(id)")
+        }
+        return try spriteAnimation(for: binding, in: atlas)
+    }
+
+    static var imageCapablePetIDs: Set<String> {
+        Set(loadedCatalogs.compactMap { catalog in
+            catalog.appearances.contains(where: { $0.spriteAtlas != nil }) ? catalog.petID : nil
+        })
     }
 
     private static func spriteAnimation(

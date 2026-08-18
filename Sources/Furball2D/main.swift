@@ -16,7 +16,6 @@ if let validationPath = ProcessInfo.processInfo.environment["FURBALL_VALIDATE_PA
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petController: PetController?
-    private var pendingPetPacks: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -41,8 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = try PetController(startingPosture: .stand)
             petController = controller
             controller.start()
-            for url in pendingPetPacks { controller.importPetPack(at: url) }
-            pendingPetPacks.removeAll()
         } catch {
             let language = AppLanguage.stored
             let alert = NSAlert()
@@ -59,13 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        let urls = filenames.map { URL(fileURLWithPath: $0, isDirectory: true) }
-        if let petController {
-            for url in urls { petController.importPetPack(at: url) }
-        } else {
-            pendingPetPacks.append(contentsOf: urls)
-        }
-        sender.reply(toOpenOrPrint: .success)
+        // Opening a file with Furball must never install, copy, move, or delete
+        // it. Pet packs are bundled by the developer-side packaging workflow.
+        sender.reply(toOpenOrPrint: .failure)
     }
 }
 

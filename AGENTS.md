@@ -10,6 +10,7 @@ This file is mandatory guidance for any Agent working on Fluffball/Furball2D. Wh
 4. Every video action must use the same canvas, frame rate, subject scale, and ground anchor. The runtime standard is 1280×720 at 120 fps HEVC with Alpha. Bidirectionally motion-interpolate 24 fps sources before keying; duplicated frames do not qualify as high frame rate.
 5. An “idle video” is not automatically loopable. If the first and last poses differ, a direct loop will jump every few seconds.
 6. Fix quality problems in offline assets first. Do not hide bad cut points with a long runtime crossfade; realistic pets develop double heads, paws, and fur trails.
+7. The shipping app must remain read-only toward user files, folders, and Finder layout. Desktop interaction may read names and system icons and must use app-owned visual proxies. Never add AppleScript, Finder icon movement, or runtime create/copy/move/rename/trash/delete paths. `Scripts/audit-runtime-safety.sh` is mandatory before packaging.
 
 ## 1.1 Identity references for new AI videos
 

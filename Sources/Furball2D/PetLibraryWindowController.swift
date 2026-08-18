@@ -213,12 +213,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(scroll)
 
-        importButton.bezelStyle = .rounded
-        importButton.target = self
-        importButton.action = #selector(importPack)
-        importButton.translatesAutoresizingMaskIntoConstraints = false
-        sidebar.addSubview(importButton)
-
         let details = NSView()
         details.wantsLayer = true
         details.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
@@ -239,15 +233,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         useButton.keyEquivalent = "\r"
         useButton.target = self
         useButton.action = #selector(useSelectedPet)
-        exportButton.bezelStyle = .rounded
-        exportButton.target = self
-        exportButton.action = #selector(exportSelectedPet)
-        removeButton.bezelStyle = .rounded
-        removeButton.contentTintColor = .systemRed
-        removeButton.target = self
-        removeButton.action = #selector(removeSelectedPet)
-
-        let buttonRow = NSStackView(views: [useButton, exportButton, removeButton, NSView()])
+        let readOnlyBadge = NSTextField(labelWithString: "Read-only library · Furball never changes your files")
+        readOnlyBadge.font = .systemFont(ofSize: 11, weight: .medium)
+        readOnlyBadge.textColor = .secondaryLabelColor
+        let buttonRow = NSStackView(views: [useButton, readOnlyBadge, NSView()])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 8
         let memoryHeader = NSStackView(views: [memoryHeading, NSView(), clearMemoriesButton])
@@ -292,10 +281,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             scroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 8),
             scroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
             scroll.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 8),
-            scroll.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -10),
-            importButton.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
-            importButton.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -14),
-            importButton.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -18),
+            scroll.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -8),
             details.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             details.trailingAnchor.constraint(equalTo: libraryPage.trailingAnchor),
             details.topAnchor.constraint(equalTo: libraryPage.topAnchor),
@@ -467,9 +453,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         segmented.setLabel(language.libraryTab, forSegment: 0)
         segmented.setLabel(language.creatorTab, forSegment: 1)
         window?.title = language.petLibraryTitle
-        importButton.title = language.importPetPackButton
-        exportButton.title = language.exportPetPackButton
-        removeButton.title = language.removePetButton
         appearanceHeading.stringValue = language.appearanceCountLabel
         personalityHeading.stringValue = language.personalityHeading
         stateHeading.stringValue = language.currentStateHeading
@@ -578,8 +561,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         let isActive = pet.id == PetAssetCatalog.activePet?.id
         useButton.title = isActive ? language.activePetButton : language.usePetButton
         useButton.isEnabled = !isActive
-        removeButton.isHidden = pet.isBundled
-        removeButton.isEnabled = !isActive
         updateMindDetails(for: pet.id)
     }
 

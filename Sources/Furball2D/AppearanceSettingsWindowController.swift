@@ -2,6 +2,7 @@ import AppKit
 
 struct AppearanceSettingsSnapshot {
     let appearances: [PetAppearanceOption]
+    let pets: [PetLibraryPet]
     let selectedAppearanceID: String
     let language: AppLanguage
     let crossfadeEnabled: Bool
@@ -9,7 +10,6 @@ struct AppearanceSettingsSnapshot {
     let freeRoam: Bool
     let directionalLook: Bool
     let desktopInteractions: Bool
-    let allowIconRearrangement: Bool
     let alwaysOnTop: Bool
     let petScale: CGFloat
     let fullPassThrough: Bool
@@ -17,6 +17,8 @@ struct AppearanceSettingsSnapshot {
     let speechBubbles: Bool
     let talkativeness: Double
     let canChangeAppearance: Bool
+    let groupPlayEnabled: Bool
+    let groupPetIDs: Set<String>
 }
 
 @MainActor
@@ -26,6 +28,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case appearance
         case behavior
         case interaction
+        case group
         case speech
     }
 
@@ -35,9 +38,10 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onFreeRoamChanged: ((Bool) -> Void)?
     var onDirectionalLookChanged: ((Bool) -> Void)?
     var onDesktopInteractionsChanged: ((Bool) -> Void)?
-    var onIconRearrangementChanged: ((Bool) -> Void)?
     var onInspectTrashNow: (() -> Void)?
     var onPlayWithDesktopItemNow: (() -> Void)?
+    var onGroupPlayChanged: ((Bool) -> Void)?
+    var onGroupPetSelectionChanged: ((Set<String>) -> Void)?
     var onAlwaysOnTopChanged: ((Bool) -> Void)?
     var onPetScaleChanged: ((CGFloat) -> Void)?
     var onPassThroughChanged: ((Bool) -> Void)?
@@ -57,9 +61,11 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let roamSwitch = NSSwitch()
     private let lookSwitch = NSSwitch()
     private let desktopInteractionsSwitch = NSSwitch()
-    private let iconRearrangementSwitch = NSSwitch()
     private let inspectTrashButton = NSButton()
     private let playWithItemButton = NSButton()
+    private let groupPlaySwitch = NSSwitch()
+    private let groupPetStack = NSStackView()
+    private var groupPetCheckboxes: [String: NSButton] = [:]
     private let alwaysOnTopSwitch = NSSwitch()
     private let passThroughSwitch = NSSwitch()
     private let autoBehaviorSwitch = NSSwitch()
@@ -189,6 +195,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .appearance: body = makeAppearanceContent(language: language)
         case .behavior: body = makeBehaviorBox(language: language)
         case .interaction: body = makeInteractionBox(language: language)
+        case .group: body = makeGroupBox(language: language)
         case .speech: body = makeSpeechBox(language: language)
         }
 
@@ -280,9 +287,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         quickActions.distribution = .fillEqually
         quickActions.spacing = 10
         let content = NSStackView(views: [
-            makeToggleRow(title: "Play, bite, and carry desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
-            separator(),
-            makeToggleRow(title: language.iconRearrangementSetting, toggle: iconRearrangementSwitch, action: #selector(iconRearrangementChanged(_:))),
+            makeToggleRow(title: "Play with safe visual copies of desktop items", toggle: desktopInteractionsSwitch, action: #selector(desktopInteractionsChanged(_:))),
             separator(),
             quickTitle,
             quickActions
@@ -309,6 +314,23 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
             makeSliderRow(title: "Talkativeness", slider: talkativenessSlider, value: talkativenessValue),
             separator(),
             makeValueRow(title: "Bubble Style & Motion", control: previewSpeechButton)
+        ])
+        return boxed(rows)
+    }
+
+    private func makeGroupBox(language: AppLanguage) -> NSView {
+        groupPetStack.orientation = .vertical
+        groupPetStack.alignment = .leading
+        groupPetStack.spacing = 9
+        let note = NSTextField(wrappingLabelWithString: "Choose the companions that appear together. Group Play uses each pet’s validated image atlas so they can roam and react independently.")
+        note.font = .systemFont(ofSize: 12)
+        note.textColor = .secondaryLabelColor
+        note.maximumNumberOfLines = 3
+        let rows = NSStackView(views: [
+            makeToggleRow(title: "Group Play", toggle: groupPlaySwitch, action: #selector(groupPlayChanged(_:))),
+            separator(),
+            note,
+            groupPetStack
         ])
         return boxed(rows)
     }
@@ -395,6 +417,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .appearance: "Appearance & Animation"
         case .behavior: "Behavior"
         case .interaction: "Desktop Interaction"
+        case .group: "Pet Group"
         case .speech: "Speech"
         }
     }
@@ -405,6 +428,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .appearance: "sparkles.rectangle.stack.fill"
         case .behavior: "figure.walk.motion"
         case .interaction: "macwindow.badge.plus"
+        case .group: "pawprint.circle.fill"
         case .speech: "bubble.left.and.bubble.right.fill"
         }
     }
@@ -425,7 +449,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .general: "Adjust pet size and window behavior."
         case .appearance: "Choose an asset appearance and tune transitions for continuous video."
         case .behavior: "Choose how your pet watches, follows, and explores."
-        case .interaction: "Let it discover, nibble, and carry files briefly. Moving Finder icons remains a separate opt-in."
+        case .interaction: "The pet may look at item names and icons, but the real files and Finder layout always remain untouched."
+        case .group: "Let several selected pets roam together and respond to one another."
         case .speech: "Control speaking frequency and preview the calmer, polished bubble."
         }
     }
@@ -449,6 +474,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                 if self.onAppearanceSelected?(id) == true {
                     self.snapshot = AppearanceSettingsSnapshot(
                         appearances: self.snapshot.appearances,
+                        pets: self.snapshot.pets,
                         selectedAppearanceID: id,
                         language: self.snapshot.language,
                         crossfadeEnabled: self.snapshot.crossfadeEnabled,
@@ -456,14 +482,15 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                         freeRoam: self.snapshot.freeRoam,
                         directionalLook: self.snapshot.directionalLook,
                         desktopInteractions: self.snapshot.desktopInteractions,
-                        allowIconRearrangement: self.snapshot.allowIconRearrangement,
                         alwaysOnTop: self.snapshot.alwaysOnTop,
                         petScale: self.snapshot.petScale,
                         fullPassThrough: self.snapshot.fullPassThrough,
                         autoBehavior: self.snapshot.autoBehavior,
                         speechBubbles: self.snapshot.speechBubbles,
                         talkativeness: self.snapshot.talkativeness,
-                        canChangeAppearance: self.snapshot.canChangeAppearance
+                        canChangeAppearance: self.snapshot.canChangeAppearance,
+                        groupPlayEnabled: self.snapshot.groupPlayEnabled,
+                        groupPetIDs: self.snapshot.groupPetIDs
                     )
                     self.applySnapshot()
                 }
@@ -476,8 +503,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         roamSwitch.state = snapshot.freeRoam ? .on : .off
         lookSwitch.state = snapshot.directionalLook ? .on : .off
         desktopInteractionsSwitch.state = snapshot.desktopInteractions ? .on : .off
-        iconRearrangementSwitch.state = snapshot.allowIconRearrangement ? .on : .off
-        iconRearrangementSwitch.isEnabled = snapshot.desktopInteractions
         alwaysOnTopSwitch.state = snapshot.alwaysOnTop ? .on : .off
         passThroughSwitch.state = snapshot.fullPassThrough ? .on : .off
         autoBehaviorSwitch.state = snapshot.autoBehavior ? .on : .off
@@ -488,6 +513,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         talkativenessValue.stringValue = "\(Int((snapshot.talkativeness * 100).rounded()))%"
         talkativenessSlider.isEnabled = snapshot.speechBubbles
         previewSpeechButton.isEnabled = snapshot.speechBubbles
+        rebuildGroupPetSelection()
 
         crossfadeSwitch.target = self
         crossfadeSwitch.action = #selector(crossfadeChanged(_:))
@@ -499,8 +525,6 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         lookSwitch.action = #selector(lookChanged(_:))
         desktopInteractionsSwitch.target = self
         desktopInteractionsSwitch.action = #selector(desktopInteractionsChanged(_:))
-        iconRearrangementSwitch.target = self
-        iconRearrangementSwitch.action = #selector(iconRearrangementChanged(_:))
 
         let isVideo = snapshot.appearances.first(where: {
             $0.id == snapshot.selectedAppearanceID
@@ -528,18 +552,48 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     }
 
     @objc private func desktopInteractionsChanged(_ sender: NSSwitch) {
-        iconRearrangementSwitch.isEnabled = sender.state == .on
-        if sender.state == .off { iconRearrangementSwitch.state = .off }
         onDesktopInteractionsChanged?(sender.state == .on)
-        if sender.state == .off { onIconRearrangementChanged?(false) }
-    }
-
-    @objc private func iconRearrangementChanged(_ sender: NSSwitch) {
-        onIconRearrangementChanged?(sender.state == .on)
     }
 
     @objc private func inspectTrashNow() { onInspectTrashNow?() }
     @objc private func playWithDesktopItemNow() { onPlayWithDesktopItemNow?() }
+
+    @objc private func groupPlayChanged(_ sender: NSSwitch) {
+        onGroupPlayChanged?(sender.state == .on)
+    }
+
+    @objc private func groupPetChanged(_ sender: NSButton) {
+        guard let petID = sender.identifier?.rawValue else { return }
+        var selected = snapshot.groupPetIDs
+        if sender.state == .on { selected.insert(petID) } else { selected.remove(petID) }
+        if selected.isEmpty {
+            sender.state = .on
+            return
+        }
+        onGroupPetSelectionChanged?(selected)
+    }
+
+    private func rebuildGroupPetSelection() {
+        groupPlaySwitch.state = snapshot.groupPlayEnabled ? .on : .off
+        groupPetStack.arrangedSubviews.forEach {
+            groupPetStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        groupPetCheckboxes.removeAll()
+        for pet in snapshot.pets {
+            let supported = PetAssetCatalog.imageCapablePetIDs.contains(pet.id)
+            let button = NSButton(
+                checkboxWithTitle: "\(pet.name)  ·  \(supported ? "Ready" : "No image atlas")",
+                target: self,
+                action: #selector(groupPetChanged(_:))
+            )
+            button.identifier = NSUserInterfaceItemIdentifier(pet.id)
+            button.state = snapshot.groupPetIDs.contains(pet.id) ? .on : .off
+            button.isEnabled = supported
+            groupPetStack.addArrangedSubview(button)
+            groupPetCheckboxes[pet.id] = button
+        }
+    }
 
     @objc private func alwaysOnTopChanged(_ sender: NSSwitch) { onAlwaysOnTopChanged?(sender.state == .on) }
     @objc private func passThroughChanged(_ sender: NSSwitch) { onPassThroughChanged?(sender.state == .on) }
@@ -582,6 +636,8 @@ final class AppearanceCardView: NSControl {
         selected = isSelected
         super.init(frame: .zero)
         self.isEnabled = isEnabled
+        target = self
+        action = #selector(selectCard)
         wantsLayer = true
         layer?.cornerRadius = 15
         layer?.borderWidth = isSelected ? 1.5 : 1
@@ -645,11 +701,6 @@ final class AppearanceCardView: NSControl {
 
     required init?(coder: NSCoder) {
         nil
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isEnabled else { return }
-        onSelect(optionID)
     }
 
     override func updateTrackingAreas() {

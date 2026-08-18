@@ -1,8 +1,11 @@
 import AppKit
 
 /// Plans lightweight, spatial interactions with familiar desktop landmarks.
-/// Reading icon names is local and non-destructive. Finder icon movement is a
-/// separate opt-in operation because it changes the user's desktop layout.
+///
+/// Safety invariant: this service is read-only. It may enumerate visible item
+/// names and ask AppKit for icons, but it never tells Finder to move an item and
+/// never writes, renames, trashes, or deletes a file or folder. The pet carries
+/// an app-owned visual proxy while the real desktop item remains untouched.
 struct DesktopInteractionService {
     struct Destination {
         enum Kind {
@@ -59,24 +62,6 @@ struct DesktopInteractionService {
             trashPoint = NSPoint(x: frame.maxX - max(28, rightInset / 2), y: frame.minY + 34)
         }
         return Destination(kind: .trash, point: trashPoint, itemName: nil, itemURL: nil)
-    }
-
-    func nudgeDesktopItem(named name: String, from appKitPoint: NSPoint, in screen: NSScreen) -> Bool {
-        let escaped = name.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let finderX = Int(appKitPoint.x - screen.frame.minX + 46)
-        let finderY = Int(screen.frame.maxY - appKitPoint.y + 24)
-        let source = """
-        tell application "Finder"
-            set matches to every item of desktop whose name is "\(escaped)"
-            if (count of matches) is 0 then return "missing"
-            set desktop position of item 1 of matches to {\(finderX), \(finderY)}
-            return "moved"
-        end tell
-        """
-        var error: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
-        return error == nil && result?.stringValue == "moved"
     }
 
     private func desktopItems() -> [URL] {
