@@ -168,8 +168,10 @@ final class PetSpeechBubble {
         lastMotionTime = now
 
         let current = panel.frame
-        let stiffness: CGFloat = 118
-        let damping: CGFloat = 21.0
+        // Deliberately softer than the pet motion. The bubble should feel
+        // attached, but it must not echo every one-frame silhouette change.
+        let stiffness: CGFloat = 78
+        let damping: CGFloat = 18.5
         let accelerationX = (targetFrame.minX - current.minX) * stiffness - motionVelocity.dx * damping
         let accelerationY = (targetFrame.minY - current.minY) * stiffness - motionVelocity.dy * damping
         motionVelocity.dx += accelerationX * deltaTime
@@ -178,7 +180,7 @@ final class PetSpeechBubble {
         var next = current
         next.origin.x += motionVelocity.dx * deltaTime
         next.origin.y += motionVelocity.dy * deltaTime
-        let sizeResponse = min(1, deltaTime * 9)
+        let sizeResponse = min(1, deltaTime * 6.5)
         next.size.width += (targetFrame.width - current.width) * sizeResponse
         next.size.height += (targetFrame.height - current.height) * sizeResponse
 
@@ -349,7 +351,7 @@ private final class SpeechBubbleView: NSView {
 
         // 对话正文
         messageLabel.alignment = .left
-        messageLabel.maximumNumberOfLines = 3
+        messageLabel.maximumNumberOfLines = 4
         messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.drawsBackground = false
         addSubview(messageLabel)
@@ -473,6 +475,10 @@ private final class SpeechBubbleView: NSView {
         // 4. 绘制气泡顶部镜面微高光线（Top Sheen），赋予果冻/玻璃通透感
         drawTopSheen(body: body, radius: cornerRadius)
 
+        // A compact mood capsule gives the bubble a friendly product voice
+        // without competing with the message itself.
+        drawMoodCapsule(body: body, theme: theme)
+
         // 5. 绘制右下角精致小星芒 / 心动微光标
         drawSparkleDecoration(body: body, theme: theme)
     }
@@ -487,20 +493,17 @@ private final class SpeechBubbleView: NSView {
         pop.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.9, 0.32, 1.2)
         layer.add(pop, forKey: "speech-pop")
 
-        // 微微悬浮呼吸微动效（Subtle Bobbing）
-        let float = CABasicAnimation(keyPath: "transform.translation.y")
-        float.fromValue = 0.0
-        float.toValue = 2.4 * displayScale
-        float.duration = 1.8
-        float.autoreverses = true
-        float.repeatCount = .infinity
-        float.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.add(float, forKey: "speech-float")
+        let settle = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        settle.values = [-5 * displayScale, 1.2 * displayScale, 0]
+        settle.keyTimes = [0, 0.62, 1]
+        settle.duration = 0.38
+        settle.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.9, 0.32, 1)
+        layer.add(settle, forKey: "speech-settle")
     }
 
     func stopAnimations() {
         layer?.removeAnimation(forKey: "speech-pop")
-        layer?.removeAnimation(forKey: "speech-float")
+        layer?.removeAnimation(forKey: "speech-settle")
         layer?.removeAnimation(forKey: "speech-theme-transition")
     }
 
@@ -630,6 +633,38 @@ private final class SpeechBubbleView: NSView {
         )
         sheenGradient?.draw(in: sheenPath, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func drawMoodCapsule(body: NSRect, theme: Theme) {
+        let textWidth = min(
+            body.width * 0.58,
+            ceil(tagLabel.intrinsicContentSize.width) + 7 * displayScale
+        )
+        let capsule = NSRect(
+            x: body.minX + 10 * displayScale,
+            y: body.maxY - 34 * displayScale,
+            width: max(62 * displayScale, textWidth + 28 * displayScale),
+            height: 24 * displayScale
+        )
+        let path = NSBezierPath(
+            roundedRect: capsule,
+            xRadius: capsule.height / 2,
+            yRadius: capsule.height / 2
+        )
+        theme.badgeBackground.setFill()
+        path.fill()
+        theme.accentColor.withAlphaComponent(0.16).setStroke()
+        path.lineWidth = 0.8 * displayScale
+        path.stroke()
+
+        let dot = NSBezierPath(ovalIn: NSRect(
+            x: capsule.maxX - 9 * displayScale,
+            y: capsule.midY - 2 * displayScale,
+            width: 4 * displayScale,
+            height: 4 * displayScale
+        ))
+        theme.accentColor.withAlphaComponent(0.72).setFill()
+        dot.fill()
     }
 
     private func drawSparkleDecoration(body: NSRect, theme: Theme) {

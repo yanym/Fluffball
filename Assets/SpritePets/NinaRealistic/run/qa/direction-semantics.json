@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "reviewer": "parent-labeled-normal-size-review",
+  "directions": [
+    {"degrees": 0, "verdict": "pass", "horizontal": "center", "vertical": "up", "reason": "nose and eyes clearly aim above the head center"},
+    {"degrees": 22.5, "verdict": "pass", "horizontal": "right", "vertical": "up", "reason": "first even clockwise step toward screen-right"},
+    {"degrees": 45, "verdict": "pass", "horizontal": "right", "vertical": "up", "reason": "clear up-right diagonal"},
+    {"degrees": 67.5, "verdict": "pass", "horizontal": "right", "vertical": "up", "reason": "right axis dominates while retaining upward gaze"},
+    {"degrees": 90, "verdict": "pass", "horizontal": "right", "vertical": "center", "reason": "nose and pupils unmistakably point to the screen-right edge"},
+    {"degrees": 112.5, "verdict": "pass", "horizontal": "right", "vertical": "down", "reason": "first even downward step from the right cardinal"},
+    {"degrees": 135, "verdict": "pass", "horizontal": "right", "vertical": "down", "reason": "clear down-right diagonal"},
+    {"degrees": 157.5, "verdict": "pass", "horizontal": "right", "vertical": "down", "reason": "down axis dominates immediately before 180"},
+    {"degrees": 180, "verdict": "pass", "horizontal": "center", "vertical": "down", "reason": "eyes and muzzle clearly aim toward the desktop"},
+    {"degrees": 202.5, "verdict": "warning", "horizontal": "left", "vertical": "down", "reason": "correct down-left quadrant; measured center shift is visible only as normal head turn"},
+    {"degrees": 225, "verdict": "pass", "horizontal": "left", "vertical": "down", "reason": "clear down-left diagonal"},
+    {"degrees": 247.5, "verdict": "warning", "horizontal": "left", "vertical": "down", "reason": "correct quadrant; reported alpha hole is the natural space between grounded legs"},
+    {"degrees": 270, "verdict": "pass", "horizontal": "left", "vertical": "center", "reason": "nose and pupils unmistakably point to the screen-left edge"},
+    {"degrees": 292.5, "verdict": "warning", "horizontal": "left", "vertical": "up", "reason": "correct up-left quadrant; local silhouette diff comes from muzzle elevation"},
+    {"degrees": 315, "verdict": "pass", "horizontal": "left", "vertical": "up", "reason": "clear up-left diagonal"},
+    {"degrees": 337.5, "verdict": "pass", "horizontal": "left", "vertical": "up", "reason": "one restrained up-left step before 000 with matched area and center"}
+  ],
+  "continuityResolution": {
+    "decision": "accept",
+    "reason": "The labeled normal-size loop has no reversal, clipping, scale pop, identity change, or broken attachment. The final 337.5-to-000 area ratio is 1.003 and center shift is 3.61 px after regeneration. Remaining metric warnings correspond to natural head/leg silhouette changes."
+  }
+}

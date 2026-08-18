@@ -1,0 +1,40 @@
+{
+  "petPackVersion": 2,
+  "pet": {
+    "id": "REPLACE-PET-ID",
+    "name": "REPLACE PET NAME",
+    "species": "dog",
+    "assetVersion": 1
+  },
+  "capabilities": {
+    "imageMode": true,
+    "videoMode": false
+  },
+  "formatVersion": 10,
+  "canvas": {
+    "width": 960,
+    "height": 540,
+    "fps": 24
+  },
+  "spriteAtlas": {
+    "file": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp",
+    "spriteVersionNumber": 2,
+    "layout": {"columns": 8, "rows": 11, "cellWidth": 192, "cellHeight": 208},
+    "rendering": {"canvasWidth": 384, "canvasHeight": 216, "bottomPadding": 4},
+    "animations": [],
+    "bindings": [],
+    "lookDirections": [],
+    "actions": []
+  },
+  "appearances": [
+    {
+      "id": "cute-2d",
+      "kind": "sprite-atlas",
+      "title": {"zh-Hans": "可爱 2D", "en": "Cute 2D"},
+      "subtitle": {"zh-Hans": "温暖可爱的图片动画", "en": "Warm and playful image animation"},
+      "systemImage": "sparkles",
+      "isDefault": true,
+      "atlasFile": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp"
+    }
+  ]
+}

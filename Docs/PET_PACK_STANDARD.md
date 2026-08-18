@@ -37,7 +37,7 @@ Pet Pack 把“这是哪只动物”“有哪些素材表示”和“应用如�
 - `lookDirections` 必须完整声明从 0° 起每 22.5° 一个的 16 个方向。0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左；运行时沿相邻格最短路径切换。
 - `actions` 可将图集绑定发布为双语菜单动作，并可声明是否允许自动行为使用。动作标题、帧时长、菜单数量和语义映射均属于素材包，不在 Swift 中按某只宠物硬编码。
 - 视频规格：960×540、24 fps、HEVC with Alpha、`hvc1`、无音轨。`clips` 为每个语义 ID 声明相对路径与循环属性。
-- 同时具备两种表示时默认使用视频，用户可即时切换；纯图片包强制图片模式并将视频开关置灰，纯视频包反之。
+- `appearances` 可以为同一宠物声明一个视频外观与多个图片图集外观；默认项由 `isDefault` 指定。应用只显示实际存在的外观，视频混合设置仅在视频外观中出现。
 - 统一姿态端口：`stand`、`sit`、`lie`、`sleep`。
 - 统一跟踪端口：主体高度、Alpha 加权中心 x 和接地 y。
 - 统一色彩端口：黑毛、棕毛和浅色毛锚点，背景不参与统计。
@@ -68,11 +68,14 @@ MyPet.furballpet/
 
 - 应用会按标准动作 ID 从 `manifest.json` 解析图集动画、PNG 动画和视频片段，并在一个行为状态机下切换渲染器。
 - 图集只解码一次，单元格按需铺到统一 16:9 小画布并缓存为 Metal 纹理；支持可变逐帧时长、每动作短溶解比例、真实左右步态行和程序化 motion 的混合。
-- 图片模式具备同画风的站、坐、趴、睡、醒、真实相位走跑、六类可爱动作和 16 方向视线跟随；右向优先使用真实 `rightAnimation`，缺失时才镜像。
+- 图片模式具备同画风的站、坐、趴、闭眼睡眠、醒来、真实相位走跑、十类可爱动作和 16 方向视线跟随；右向优先使用真实 `rightAnimation`，缺失时才镜像。
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` 可在不重新编译的情况下运行一个外部包，适合制作和测试工具。
+- App 内“宠物素材库”会验证、安装、切换、导出和可恢复地移除 `.furballpet`；Finder 双击宠物包也会进入相同验证路径。用户包安装在 `~/Library/Application Support/Furball2D/Pets/`。
+- “创建 2D 宠物”接受 6–12 张照片、宠物名称/种类和目标风格，输出照片、`REQUEST.json`、双语 Skill、动作注册表与独立验证器。当前明确不生成视频。
+- 同一宠物可拥有真实连续动画、可爱 2D 和写实 2D；Nina 是包含三种外观的内置参考包。
 - `Scripts/validate-pet-pack.swift <pack>` 会按能力解析 PNG 与图集绑定的并集，检查 27 个语义动作、路径安全、循环语义、图集结构/Alpha/方向、PNG 尺寸/Alpha，以及视频分辨率、帧率、编码、音轨和透明像素。纯图集包不必伪造 PNG 或空视频。
 
-这是通用宠物的底层合同，但还不是完整的普通用户生产器。下一阶段是在 App 中加入 Pet Pack 导入/切换菜单，并将身份板生成、AI 提供商适配器、自动重试和 QA 报告组成独立制作向导。在视频 AI 仍会偶发换脸或改变花纹的情况下，“身份板一次确认”不应被取消。
+当前版本已经完成普通用户可操作的图片包导入、导出、切换和创建请求工作流。生成阶段仍由用户选择的图片模型执行：随请求导出的 Skill 强制身份板、两种风格、16 方向、睡眠 flow、透明图集和 QA 合同，结果返回后可直接导入。未来若加入托管模型调用，应复用同一请求与验证合同，而不是另建不兼容格式。
 
 ---
 
@@ -111,7 +114,7 @@ Green screen is an implementation detail, not a user requirement. A provider may
 - `lookDirections` contains all 16 directions from 0° in 22.5° steps. Zero is up, 90° is screen-right, 180° is down, and 270° is screen-left. Runtime transitions along the shortest adjacent-cell path.
 - `actions` exposes atlas bindings as localized menu actions and may opt individual actions into autonomous behavior. Titles, timing, action count, and semantic mapping belong to the pack rather than pet-specific Swift code.
 - Video assets are 960×540, 24 fps, HEVC with Alpha, `hvc1`, and no audio. Each `clips` entry declares a relative file and loop behavior.
-- Dual-mode packs default to video and can switch instantly. Image-only packs force image mode and disable the video toggle; video-only packs do the inverse.
+- `appearances` may declare one video appearance and multiple sprite-atlas appearances for one pet, with exactly one `isDefault`. The app exposes only available appearances, and video-blending controls appear only for a video appearance.
 - Four posture ports: stand, sit, lie, and sleep.
 - Geometry ports use subject height, alpha-weighted center x, and ground y.
 - Color ports use black, tan, and light-fur anchors without background pixels.
@@ -131,8 +134,11 @@ Source photos, chroma footage, and generation logs stay in a private source proj
 
 - Runtime resolves atlas animations, PNG animation descriptors, and video clips by semantic ID under one behavior state machine.
 - The atlas decodes once; requested cells are placed on a shared 16:9 render canvas and cached as Metal textures. Variable frame durations, per-animation blend fractions, true left/right gait rows, and procedural motion can coexist.
-- Image mode now provides one-style stand, sit, lie, sleep, wake, phased locomotion, six cute actions, and 16-direction gaze. Right-facing art prefers `rightAnimation` and mirrors only as a fallback.
+- Image mode now provides one-style stand, sit, lie, closed-eye sleep, wake, phased locomotion, ten cute actions, and 16-direction gaze. Right-facing art prefers `rightAnimation` and mirrors only as a fallback.
 - `FURBALL_PET_PACK=/absolute/path/MyPet.furballpet` runs an unpacked external pack without recompilation for production and QA workflows.
+- Pet Library validates, installs, switches, exports, and recoverably removes `.furballpet` packages. Finder-opened packages use the same validation path. User packs live under `~/Library/Application Support/Furball2D/Pets/`.
+- Create 2D Pet accepts 6–12 photos, name/species, and requested styles, then exports the photos, `REQUEST.json`, bilingual Skill, action registry, and standalone validator. It explicitly does not generate video.
+- One pet may expose Live Motion, Cute 2D, and Realistic 2D; Nina is the built-in three-appearance reference pack.
 - `Scripts/validate-pet-pack.swift <pack>` resolves the union of PNG descriptors and atlas bindings, then validates all 27 semantic actions, safe paths, loop semantics, atlas structure/alpha/directions, PNG dimensions/alpha, and video canvas, frame rate, codec, audio absence, and decoded transparency. A pure-atlas pack does not need placeholder PNGs or empty videos.
 
-This establishes the universal runtime contract, not yet the complete consumer production experience. The next phase is an in-app Pet Pack importer/switcher and a separate production wizard combining identity-board generation, provider adapters, automated retries, and a visual QA report. While video models can still change faces or markings, the single identity-board approval remains a necessary quality gate.
+The current release includes the consumer image-pack import, export, switching, and creation-request workflow. Generation still runs in the user’s chosen image-capable model: the exported Skill enforces an identity board, both styles, 16 directions, the sleep flow, transparent atlases, and QA contract, after which the result imports directly. A future hosted provider should reuse this request and validation contract rather than introduce an incompatible format.

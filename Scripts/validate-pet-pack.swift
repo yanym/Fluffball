@@ -115,6 +115,14 @@ private struct Manifest: Decodable {
         let actions: [Action]?
     }
 
+    struct Appearance: Decodable {
+        let id: String
+        let kind: String
+        let isDefault: Bool?
+        let atlasFile: String?
+        let spriteAtlas: SpriteAtlas?
+    }
+
     let petPackVersion: Int
     let pet: Pet
     let canvas: Canvas
@@ -122,6 +130,7 @@ private struct Manifest: Decodable {
     let imageCanvas: ImageCanvas?
     let imageAnimations: [ImageAnimation]?
     let spriteAtlas: SpriteAtlas?
+    let appearances: [Appearance]?
     let clips: [Clip]?
 }
 
@@ -387,6 +396,18 @@ private func validateSpriteAtlas(
                 try fail("lookDirections \(direction.degrees)° 的单元格越界")
             }
         }
+        // A complete 16-direction atlas is the higher-fidelity replacement for
+        // the legacy nine standalone facing assets. Count the corresponding
+        // semantic slots as covered so a pure v2 atlas needs no placeholder PNGs.
+        for id in [
+            "stand.facing.left-profile", "stand.facing.front-near-profile-left",
+            "stand.facing.front-three-quarter-left", "stand.facing.front-near-center-left",
+            "stand.facing.front", "stand.facing.front-near-center-right",
+            "stand.facing.front-three-quarter-right", "stand.facing.front-near-profile-right",
+            "stand.facing.right-profile"
+        ] {
+            loopsByID[id] = true
+        }
     }
 
     var actionIDs = Set<String>()
@@ -414,6 +435,19 @@ private func safeAssetURL(_ relativePath: String, rootURL: URL) throws -> URL {
         try fail("找不到或越界的素材路径 \(relativePath)")
     }
     return url
+}
+
+private func atlas(_ atlas: Manifest.SpriteAtlas, replacingFile file: String) -> Manifest.SpriteAtlas {
+    Manifest.SpriteAtlas(
+        file: file,
+        spriteVersionNumber: atlas.spriteVersionNumber,
+        layout: atlas.layout,
+        rendering: atlas.rendering,
+        animations: atlas.animations,
+        bindings: atlas.bindings,
+        lookDirections: atlas.lookDirections,
+        actions: atlas.actions
+    )
 }
 
 private func validate(packURL: URL) async throws {
@@ -522,6 +556,28 @@ private func validate(packURL: URL) async throws {
             // descriptors that share the same semantic ID.
             for (id, loops) in validatedAtlas.loopsByID {
                 resolvedLoopsByID[id] = loops
+            }
+        }
+
+        if let appearances = manifest.appearances, !appearances.isEmpty {
+            var ids = Set<String>()
+            guard appearances.allSatisfy({ ids.insert($0.id).inserted }),
+                  appearances.filter({ $0.isDefault == true }).count == 1 else {
+                try fail("appearances 必须使用唯一 ID，且恰好一个 isDefault=true")
+            }
+            guard appearances.contains(where: { $0.kind == "sprite-atlas" }) else {
+                try fail("imageMode=true 时 appearances 至少包含一个 sprite-atlas")
+            }
+            for appearance in appearances where appearance.kind == "sprite-atlas" {
+                let descriptor: Manifest.SpriteAtlas
+                if let explicit = appearance.spriteAtlas {
+                    descriptor = explicit
+                } else if let file = appearance.atlasFile, let base = manifest.spriteAtlas {
+                    descriptor = atlas(base, replacingFile: file)
+                } else {
+                    try fail("appearance \(appearance.id) 缺少 spriteAtlas 或 atlasFile")
+                }
+                _ = try validateSpriteAtlas(descriptor, rootURL: rootURL)
             }
         }
 

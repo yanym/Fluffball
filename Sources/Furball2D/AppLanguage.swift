@@ -43,6 +43,41 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
+    var throwTreatMenu: String {
+        switch self {
+        case .simplifiedChinese: "在鼠标旁丢个零食"
+        case .english: "Toss a Treat by Cursor"
+        }
+    }
+
+    var treatChaseStarted: String {
+        switch self {
+        case .simplifiedChinese: "闻到零食啦！我来啦～ 🦴"
+        case .english: "I smell a treat! Coming! 🦴"
+        }
+    }
+
+    var treatFound: String {
+        switch self {
+        case .simplifiedChinese: "找到啦！你最好了 ✨"
+        case .english: "Found it! You’re the best ✨"
+        }
+    }
+
+    var hoverGreeting: String {
+        switch self {
+        case .simplifiedChinese: "你是不是想摸摸我？"
+        case .english: "Were you about to pet me?"
+        }
+    }
+
+    var highFiveGreeting: String {
+        switch self {
+        case .simplifiedChinese: "击掌！今天也超棒 🙌"
+        case .english: "High five! You’re doing great 🙌"
+        }
+    }
+
     var cuteActionsMenu: String {
         switch self {
         case .simplifiedChinese: "可爱动作"
@@ -94,23 +129,269 @@ enum AppLanguage: String, CaseIterable, Sendable {
         }
     }
 
-    var videoAnimationsMenu: String {
+    var appearanceMenu: String {
         switch self {
-        case .simplifiedChinese: "视频动画（更细腻）"
-        case .english: "Video Animations (More Detailed)"
+        case .simplifiedChinese: "外观"
+        case .english: "Appearance"
         }
     }
 
-    func videoAnimationsTooltip(capabilities: PetPackCapabilities) -> String {
-        switch (self, capabilities.supportsImageMode, capabilities.supportsVideoMode) {
-        case (.simplifiedChinese, true, true): "关闭后使用省资源的图片动画模式"
-        case (.english, true, true): "Turn off to use the lightweight image animation mode"
-        case (.simplifiedChinese, true, false): "此宠物素材包只有图片动画，无法开启视频"
-        case (.english, true, false): "This pet pack only includes image animation"
-        case (.simplifiedChinese, false, true): "此宠物素材包只有视频动画"
-        case (.english, false, true): "This pet pack only includes video animation"
-        case (.simplifiedChinese, false, false): "此宠物素材包没有可用的视觉模式"
-        case (.english, false, false): "This pet pack has no available visual mode"
+    var visualSettingsMenu: String {
+        switch self {
+        case .simplifiedChinese: "视觉与动画设置…"
+        case .english: "Visual & Animation Settings…"
+        }
+    }
+
+    var petLibraryMenu: String {
+        switch self {
+        case .simplifiedChinese: "宠物素材库…"
+        case .english: "Pet Library…"
+        }
+    }
+
+    var petLibraryTitle: String {
+        switch self {
+        case .simplifiedChinese: "宠物素材库"
+        case .english: "Pet Library"
+        }
+    }
+
+    var libraryTab: String {
+        switch self {
+        case .simplifiedChinese: "我的宠物"
+        case .english: "My Pets"
+        }
+    }
+
+    var creatorTab: String {
+        switch self {
+        case .simplifiedChinese: "创建 2D 宠物"
+        case .english: "Create 2D Pet"
+        }
+    }
+
+    var importPetPackButton: String {
+        switch self {
+        case .simplifiedChinese: "导入宠物包…"
+        case .english: "Import Pet Pack…"
+        }
+    }
+
+    var exportPetPackButton: String {
+        switch self {
+        case .simplifiedChinese: "导出…"
+        case .english: "Export…"
+        }
+    }
+
+    var removePetButton: String {
+        switch self {
+        case .simplifiedChinese: "移除"
+        case .english: "Remove"
+        }
+    }
+
+    var usePetButton: String {
+        switch self {
+        case .simplifiedChinese: "使用这只宠物"
+        case .english: "Use This Pet"
+        }
+    }
+
+    var activePetButton: String {
+        switch self {
+        case .simplifiedChinese: "正在使用"
+        case .english: "Active"
+        }
+    }
+
+    var builtInBadge: String {
+        switch self {
+        case .simplifiedChinese: "内置"
+        case .english: "BUILT IN"
+        }
+    }
+
+    var appearanceCountLabel: String {
+        switch self {
+        case .simplifiedChinese: "可用外观"
+        case .english: "AVAILABLE APPEARANCES"
+        }
+    }
+
+    var creatorIntro: String {
+        switch self {
+        case .simplifiedChinese: "选择 6–12 张真实照片，生成一个包含严谨输入、双语 Skill 和验收合同的创建请求。可交给支持图片生成的 ChatGPT、Codex 或其他模型，返回结果可直接导入。"
+        case .english: "Choose 6–12 real photos. Furball creates a request containing strict inputs, a bilingual Skill, and QA contract for ChatGPT, Codex, or another image-capable model. The result imports directly."
+        }
+    }
+
+    var petNameField: String {
+        switch self {
+        case .simplifiedChinese: "宠物名称"
+        case .english: "Pet Name"
+        }
+    }
+
+    var speciesField: String {
+        switch self {
+        case .simplifiedChinese: "种类"
+        case .english: "Species"
+        }
+    }
+
+    var stylesField: String {
+        switch self {
+        case .simplifiedChinese: "生成风格"
+        case .english: "Styles"
+        }
+    }
+
+    var cuteStyleLabel: String {
+        switch self {
+        case .simplifiedChinese: "可爱 2D"
+        case .english: "Cute 2D"
+        }
+    }
+
+    var realisticStyleLabel: String {
+        switch self {
+        case .simplifiedChinese: "写实 2D"
+        case .english: "Realistic 2D"
+        }
+    }
+
+    var choosePhotosButton: String {
+        switch self {
+        case .simplifiedChinese: "选择照片…"
+        case .english: "Choose Photos…"
+        }
+    }
+
+    func selectedPhotosLabel(_ count: Int) -> String {
+        switch self {
+        case .simplifiedChinese: count == 0 ? "尚未选择照片" : "已选择 \(count) 张照片"
+        case .english: count == 0 ? "No photos selected" : "\(count) photos selected"
+        }
+    }
+
+    var exportCreationRequestButton: String {
+        switch self {
+        case .simplifiedChinese: "导出创建请求…"
+        case .english: "Export Creation Request…"
+        }
+    }
+
+    var downloadSkillButton: String {
+        switch self {
+        case .simplifiedChinese: "单独下载创建 Skill…"
+        case .english: "Download Creator Skill…"
+        }
+    }
+
+    var importSuccessTitle: String {
+        switch self {
+        case .simplifiedChinese: "宠物已导入"
+        case .english: "Pet Imported"
+        }
+    }
+
+    func importedPetMessage(_ name: String) -> String {
+        switch self {
+        case .simplifiedChinese: "\(name) 已通过验证并加入素材库。"
+        case .english: "\(name) passed validation and was added to your library."
+        }
+    }
+
+    var invalidCreationInput: String {
+        switch self {
+        case .simplifiedChinese: "请填写名称、至少选择一种风格，并提供 6–12 张清晰照片。"
+        case .english: "Enter a name, choose at least one style, and provide 6–12 clear photos."
+        }
+    }
+
+    var visualSettingsTitle: String {
+        switch self {
+        case .simplifiedChinese: "视觉与动画"
+        case .english: "Visual & Animation"
+        }
+    }
+
+    var visualSettingsSubtitle: String {
+        switch self {
+        case .simplifiedChinese: "选择 Nina 的外观，并只显示当前模式适用的控制项。"
+        case .english: "Choose Nina’s appearance and see only the controls relevant to that mode."
+        }
+    }
+
+    var currentPetLabel: String {
+        switch self {
+        case .simplifiedChinese: "当前宠物"
+        case .english: "CURRENT PET"
+        }
+    }
+
+    var includedPetLabel: String {
+        switch self {
+        case .simplifiedChinese: "内置宠物 · 3 种外观"
+        case .english: "Built-in pet · 3 appearances"
+        }
+    }
+
+    var appearanceSectionTitle: String {
+        switch self {
+        case .simplifiedChinese: "选择外观"
+        case .english: "Choose an Appearance"
+        }
+    }
+
+    var displaySectionTitle: String {
+        switch self {
+        case .simplifiedChinese: "显示"
+        case .english: "Display"
+        }
+    }
+
+    var behaviorSectionTitle: String {
+        switch self {
+        case .simplifiedChinese: "桌面互动"
+        case .english: "Desktop Interaction"
+        }
+    }
+
+    var videoOptionsTitle: String {
+        switch self {
+        case .simplifiedChinese: "连续动画选项"
+        case .english: "Live Motion Options"
+        }
+    }
+
+    var videoOptionsUnavailable: String {
+        switch self {
+        case .simplifiedChinese: "图片动画不需要视频混合设置，因此已自动隐藏。"
+        case .english: "Image animation does not use video blending controls, so they are hidden."
+        }
+    }
+
+    var closeButton: String {
+        switch self {
+        case .simplifiedChinese: "完成"
+        case .english: "Done"
+        }
+    }
+
+    func appearanceChanged(_ title: String) -> String {
+        switch self {
+        case .simplifiedChinese: "换成「\(title)」啦 ✨"
+        case .english: "Switched to \(title) ✨"
+        }
+    }
+
+    var appearanceBusy: String {
+        switch self {
+        case .simplifiedChinese: "等我停稳后再换外观哦～"
+        case .english: "Let me finish this move before changing appearance."
         }
     }
 

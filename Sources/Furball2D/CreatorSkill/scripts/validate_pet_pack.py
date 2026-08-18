@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Portable structural validator for Furball Pet Pack v2 image-only packages."""
+
+from __future__ import annotations
+
+import json
+import re
+import struct
+import sys
+from pathlib import Path
+
+REQUIRED = {
+    "stand.idle", "stand.look.images", "stand.to.sit", "sit.idle", "sit.to.lie",
+    "lie.idle", "lie.to.sleep", "sleep.idle", "sleep.to.stand",
+    "walk.start", "walk.loop", "walk.stop", "slow-run.start", "slow-run.loop",
+    "slow-run.stop", "fast-run.start", "fast-run.loop", "fast-run.stop",
+}
+FACING = {
+    "stand.facing.left-profile", "stand.facing.front-near-profile-left",
+    "stand.facing.front-three-quarter-left", "stand.facing.front-near-center-left",
+    "stand.facing.front", "stand.facing.front-near-center-right",
+    "stand.facing.front-three-quarter-right", "stand.facing.front-near-profile-right",
+    "stand.facing.right-profile",
+}
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"ERROR: {message}")
+
+
+def safe_file(root: Path, relative: str) -> Path:
+    if not relative or relative.startswith(("/", "\\")) or "\\" in relative:
+        fail(f"unsafe path: {relative!r}")
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        fail(f"path escapes package: {relative}")
+    if not candidate.is_file() or candidate.is_symlink():
+        fail(f"missing file or symlink: {relative}")
+    return candidate
+
+
+def webp_dimensions(path: Path) -> tuple[int, int, bool]:
+    data = path.read_bytes()[:64]
+    if len(data) < 30 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        fail(f"not a WebP: {path.name}")
+    kind = data[12:16]
+    if kind == b"VP8X":
+        flags = data[20]
+        width = 1 + int.from_bytes(data[24:27], "little")
+        height = 1 + int.from_bytes(data[27:30], "little")
+        return width, height, bool(flags & 0x10)
+    if kind == b"VP8L" and data[20] == 0x2F:
+        packed = int.from_bytes(data[21:25], "little")
+        width = 1 + (packed & 0x3FFF)
+        height = 1 + ((packed >> 14) & 0x3FFF)
+        alpha_used = bool((packed >> 28) & 1)
+        return width, height, alpha_used
+    fail(f"WebP must be lossless VP8L or extended VP8X with alpha: {path.name}")
+
+
+def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str]) -> None:
+    if atlas.get("spriteVersionNumber") != 2:
+        fail("spriteVersionNumber must be 2")
+    layout = atlas.get("layout", {})
+    if layout != {"columns": 8, "rows": 11, "cellWidth": 192, "cellHeight": 208}:
+        fail("atlas layout must be 8x11 with 192x208 cells")
+    file = atlas.get("file")
+    if not isinstance(file, str):
+        fail("spriteAtlas.file is required")
+    files.add(file)
+    animations = {a.get("id"): a for a in atlas.get("animations", [])}
+    if len(animations) < 9:
+        fail("all nine standard animation rows are required")
+    for binding in atlas.get("bindings", []):
+        if binding.get("animation") not in animations:
+            fail(f"binding {binding.get('id')} references a missing animation")
+        semantic.add(binding.get("id", ""))
+    directions = atlas.get("lookDirections", [])
+    degrees = {float(d.get("degrees")) for d in directions if "degrees" in d}
+    if degrees != {i * 22.5 for i in range(16)}:
+        fail("lookDirections must contain 0..337.5 in 22.5-degree steps")
+    semantic.update(FACING)
+    actions = {a.get("id") for a in atlas.get("actions", [])}
+    bindings = {b.get("id") for b in atlas.get("bindings", [])}
+    if not actions.issubset(bindings):
+        fail("every published action must have a binding")
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        fail("usage: validate_pet_pack.py <MyPet.furballpet>")
+    root = Path(sys.argv[1]).expanduser().resolve()
+    manifest_path = root / "manifest.json"
+    if not root.is_dir() or not manifest_path.is_file():
+        fail("select a .furballpet directory containing manifest.json")
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    if manifest.get("petPackVersion") != 2:
+        fail("petPackVersion must be 2")
+    pet = manifest.get("pet", {})
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,63}", pet.get("id", "")):
+        fail("pet.id must be lowercase kebab-case")
+    if pet.get("species") not in {"dog", "cat", "other"}:
+        fail("pet.species must be dog, cat, or other")
+    capabilities = manifest.get("capabilities", {})
+    if capabilities.get("imageMode") is not True or capabilities.get("videoMode") is not False:
+        fail("creator output must be imageMode=true and videoMode=false")
+
+    semantic: set[str] = set()
+    atlas_files: set[str] = set()
+    atlas = manifest.get("spriteAtlas")
+    if not isinstance(atlas, dict):
+        fail("top-level spriteAtlas is required")
+    atlas_contract(root, atlas, semantic, atlas_files)
+    for appearance in manifest.get("appearances", []):
+        if appearance.get("kind") != "sprite-atlas":
+            fail("creator output appearances must be sprite-atlas")
+        if isinstance(appearance.get("spriteAtlas"), dict):
+            atlas_contract(root, appearance["spriteAtlas"], semantic, atlas_files)
+        elif isinstance(appearance.get("atlasFile"), str):
+            atlas_files.add(appearance["atlasFile"])
+        else:
+            fail(f"appearance {appearance.get('id')} has no atlas")
+    if not REQUIRED.issubset(semantic):
+        fail("missing semantic IDs: " + ", ".join(sorted(REQUIRED - semantic)))
+    if len(manifest.get("appearances", [])) not in {1, 2}:
+        fail("output must contain one or two requested image appearances")
+    if sum(bool(a.get("isDefault")) for a in manifest["appearances"]) != 1:
+        fail("exactly one appearance must be default")
+    for relative in atlas_files:
+        image = safe_file(root, relative)
+        width, height, alpha = webp_dimensions(image)
+        if (width, height) != (1536, 2288) or not alpha:
+            fail(f"{relative}: expected 1536x2288 WebP with alpha")
+    print(f"OK: {pet.get('name')} — {len(manifest['appearances'])} appearance(s), 27 semantic slots")
+
+
+if __name__ == "__main__":
+    main()

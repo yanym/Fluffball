@@ -1,0 +1,550 @@
+import AppKit
+import UniformTypeIdentifiers
+
+@MainActor
+final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
+    var onSelectPet: ((String) -> Bool)?
+    var onLibraryChanged: (() -> Void)?
+
+    private var language: AppLanguage
+    private var pets: [PetLibraryPet] = []
+    private var selectedPetID: String?
+    private var selectedPhotos: [URL] = []
+
+    private let segmented = NSSegmentedControl(labels: ["", ""], trackingMode: .selectOne, target: nil, action: nil)
+    private let contentContainer = NSView()
+    private let libraryPage = NSView()
+    private let creatorPage = NSView()
+    private let tableView = NSTableView()
+    private let petName = NSTextField(labelWithString: "")
+    private let petMeta = NSTextField(labelWithString: "")
+    private let builtInBadge = NSTextField(labelWithString: "")
+    private let appearanceHeading = NSTextField(labelWithString: "")
+    private let appearanceStack = NSStackView()
+    private let useButton = NSButton()
+    private let importButton = NSButton()
+    private let exportButton = NSButton()
+    private let removeButton = NSButton()
+
+    private let creatorTitle = NSTextField(labelWithString: "")
+    private let creatorIntro = NSTextField(wrappingLabelWithString: "")
+    private let nameField = NSTextField()
+    private let speciesPopup = NSPopUpButton()
+    private let cuteCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let realisticCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let photosLabel = NSTextField(labelWithString: "")
+    private let choosePhotosButton = NSButton()
+    private let createRequestButton = NSButton()
+    private let downloadSkillButton = NSButton()
+
+    init(language: AppLanguage) {
+        self.language = language
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 830, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.minSize = NSSize(width: 760, height: 550)
+        window.center()
+        super.init(window: window)
+        window.delegate = self
+        buildInterface()
+        refresh(language: language)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func refresh(language: AppLanguage) {
+        self.language = language
+        pets = PetAssetCatalog.availablePets
+        selectedPetID = selectedPetID.flatMap { id in pets.contains(where: { $0.id == id }) ? id : nil }
+            ?? PetAssetCatalog.activePet?.id
+            ?? pets.first?.id
+        applyLanguage()
+        tableView.reloadData()
+        if let selectedPetID, let row = pets.firstIndex(where: { $0.id == selectedPetID }) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            tableView.scrollRowToVisible(row)
+        }
+        updateDetails()
+    }
+
+    func present() {
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        VisualQACapture.schedule(view: window?.contentView, name: segmented.selectedSegment == 0 ? "pet-library" : "pet-creator")
+    }
+
+    func presentCreator() {
+        segmented.selectedSegment = 1
+        libraryPage.isHidden = true
+        creatorPage.isHidden = false
+        present()
+    }
+
+    private func buildInterface() {
+        guard let window else { return }
+        let root = NSVisualEffectView()
+        root.material = .contentBackground
+        root.blendingMode = .behindWindow
+        root.state = .active
+        window.contentView = root
+
+        segmented.target = self
+        segmented.action = #selector(tabChanged(_:))
+        segmented.selectedSegment = 0
+        segmented.segmentStyle = .capsule
+        segmented.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(segmented)
+        root.addSubview(contentContainer)
+
+        for page in [libraryPage, creatorPage] {
+            page.translatesAutoresizingMaskIntoConstraints = false
+            contentContainer.addSubview(page)
+            NSLayoutConstraint.activate([
+                page.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+                page.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+                page.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+                page.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+            ])
+        }
+        creatorPage.isHidden = true
+        buildLibraryPage()
+        buildCreatorPage()
+
+        NSLayoutConstraint.activate([
+            segmented.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            segmented.topAnchor.constraint(equalTo: root.topAnchor, constant: 48),
+            segmented.widthAnchor.constraint(equalToConstant: 280),
+            contentContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            contentContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            contentContainer.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 14),
+            contentContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+    }
+
+    private func buildLibraryPage() {
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("pets"))
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+        tableView.rowHeight = 58
+        tableView.style = .sourceList
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.backgroundColor = .clear
+
+        let scroll = NSScrollView()
+        scroll.documentView = tableView
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        let sidebar = NSVisualEffectView()
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .withinWindow
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(scroll)
+
+        importButton.bezelStyle = .rounded
+        importButton.target = self
+        importButton.action = #selector(importPack)
+        importButton.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(importButton)
+
+        let details = NSView()
+        details.translatesAutoresizingMaskIntoConstraints = false
+        petName.font = .systemFont(ofSize: 28, weight: .bold)
+        petMeta.font = .systemFont(ofSize: 12.5, weight: .medium)
+        petMeta.textColor = .secondaryLabelColor
+        builtInBadge.font = .systemFont(ofSize: 10, weight: .bold)
+        builtInBadge.textColor = .systemOrange
+        appearanceHeading.font = .systemFont(ofSize: 11, weight: .semibold)
+        appearanceHeading.textColor = .secondaryLabelColor
+        appearanceStack.orientation = .vertical
+        appearanceStack.spacing = 8
+        appearanceStack.alignment = .leading
+
+        useButton.bezelStyle = .rounded
+        useButton.keyEquivalent = "\r"
+        useButton.target = self
+        useButton.action = #selector(useSelectedPet)
+        exportButton.bezelStyle = .rounded
+        exportButton.target = self
+        exportButton.action = #selector(exportSelectedPet)
+        removeButton.bezelStyle = .rounded
+        removeButton.contentTintColor = .systemRed
+        removeButton.target = self
+        removeButton.action = #selector(removeSelectedPet)
+
+        let buttonRow = NSStackView(views: [useButton, exportButton, removeButton, NSView()])
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 8
+        let detailsStack = NSStackView(views: [
+            petName, petMeta, builtInBadge, appearanceHeading, appearanceStack, NSView(), buttonRow
+        ])
+        detailsStack.orientation = .vertical
+        detailsStack.alignment = .leading
+        detailsStack.spacing = 7
+        detailsStack.setCustomSpacing(22, after: builtInBadge)
+        detailsStack.translatesAutoresizingMaskIntoConstraints = false
+        details.addSubview(detailsStack)
+
+        libraryPage.addSubview(sidebar)
+        libraryPage.addSubview(details)
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: libraryPage.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: libraryPage.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: libraryPage.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 250),
+            scroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 8),
+            scroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
+            scroll.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 8),
+            scroll.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -10),
+            importButton.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
+            importButton.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -14),
+            importButton.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -18),
+            details.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            details.trailingAnchor.constraint(equalTo: libraryPage.trailingAnchor),
+            details.topAnchor.constraint(equalTo: libraryPage.topAnchor),
+            details.bottomAnchor.constraint(equalTo: libraryPage.bottomAnchor),
+            detailsStack.leadingAnchor.constraint(equalTo: details.leadingAnchor, constant: 34),
+            detailsStack.trailingAnchor.constraint(equalTo: details.trailingAnchor, constant: -34),
+            detailsStack.topAnchor.constraint(equalTo: details.topAnchor, constant: 32),
+            detailsStack.bottomAnchor.constraint(equalTo: details.bottomAnchor, constant: -24),
+            appearanceStack.widthAnchor.constraint(equalTo: detailsStack.widthAnchor),
+            buttonRow.widthAnchor.constraint(equalTo: detailsStack.widthAnchor)
+        ])
+    }
+
+    private func buildCreatorPage() {
+        creatorTitle.font = .systemFont(ofSize: 27, weight: .bold)
+        creatorIntro.font = .systemFont(ofSize: 13)
+        creatorIntro.textColor = .secondaryLabelColor
+        creatorIntro.maximumNumberOfLines = 4
+
+        nameField.placeholderString = "Nina"
+        nameField.controlSize = .large
+        speciesPopup.addItems(withTitles: ["Dog", "Cat", "Other"])
+        cuteCheckbox.state = .on
+        realisticCheckbox.state = .on
+
+        choosePhotosButton.bezelStyle = .rounded
+        choosePhotosButton.target = self
+        choosePhotosButton.action = #selector(choosePhotos)
+        createRequestButton.bezelStyle = .rounded
+        createRequestButton.keyEquivalent = "\r"
+        createRequestButton.target = self
+        createRequestButton.action = #selector(exportCreationRequest)
+        downloadSkillButton.bezelStyle = .rounded
+        downloadSkillButton.target = self
+        downloadSkillButton.action = #selector(downloadCreatorSkill)
+        photosLabel.textColor = .secondaryLabelColor
+
+        let form = NSGridView(views: [
+            [formLabel("pet-name"), nameField],
+            [formLabel("species"), speciesPopup],
+            [formLabel("styles"), NSStackView(views: [cuteCheckbox, realisticCheckbox])],
+            [formLabel("photos"), NSStackView(views: [choosePhotosButton, photosLabel])]
+        ])
+        form.rowSpacing = 13
+        form.columnSpacing = 18
+        form.column(at: 0).xPlacement = .trailing
+        form.column(at: 1).xPlacement = .fill
+        form.column(at: 1).width = 380
+
+        let buttons = NSStackView(views: [createRequestButton, downloadSkillButton, NSView()])
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+        let stack = NSStackView(views: [creatorTitle, creatorIntro, form, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 18
+        stack.setCustomSpacing(6, after: creatorTitle)
+        stack.setCustomSpacing(28, after: creatorIntro)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        creatorPage.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: creatorPage.leadingAnchor, constant: 52),
+            stack.trailingAnchor.constraint(equalTo: creatorPage.trailingAnchor, constant: -52),
+            stack.topAnchor.constraint(equalTo: creatorPage.topAnchor, constant: 34),
+            creatorIntro.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+    }
+
+    private func formLabel(_ identifier: String) -> NSTextField {
+        let label = NSTextField(labelWithString: "")
+        label.identifier = NSUserInterfaceItemIdentifier(identifier)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    private func applyLanguage() {
+        segmented.setLabel(language.libraryTab, forSegment: 0)
+        segmented.setLabel(language.creatorTab, forSegment: 1)
+        window?.title = language.petLibraryTitle
+        importButton.title = language.importPetPackButton
+        exportButton.title = language.exportPetPackButton
+        removeButton.title = language.removePetButton
+        appearanceHeading.stringValue = language.appearanceCountLabel
+        builtInBadge.stringValue = language.builtInBadge
+        creatorTitle.stringValue = language.creatorTab
+        creatorIntro.stringValue = language.creatorIntro
+        cuteCheckbox.title = language.cuteStyleLabel
+        realisticCheckbox.title = language.realisticStyleLabel
+        choosePhotosButton.title = language.choosePhotosButton
+        photosLabel.stringValue = language.selectedPhotosLabel(selectedPhotos.count)
+        createRequestButton.title = language.exportCreationRequestButton
+        downloadSkillButton.title = language.downloadSkillButton
+        (creatorPage.viewWithIdentifier("pet-name") as? NSTextField)?.stringValue = language.petNameField
+        (creatorPage.viewWithIdentifier("species") as? NSTextField)?.stringValue = language.speciesField
+        (creatorPage.viewWithIdentifier("styles") as? NSTextField)?.stringValue = language.stylesField
+        (creatorPage.viewWithIdentifier("photos") as? NSTextField)?.stringValue = language.choosePhotosButton
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { pets.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard pets.indices.contains(row) else { return nil }
+        let pet = pets[row]
+        let cell = NSTableCellView()
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: pet.species == "cat" ? "cat.fill" : "dog.fill", accessibilityDescription: nil)
+            ?? NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)
+        icon.contentTintColor = pet.id == PetAssetCatalog.activePet?.id ? .controlAccentColor : .secondaryLabelColor
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
+        let name = NSTextField(labelWithString: pet.name)
+        name.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        let meta = NSTextField(labelWithString: "\(pet.appearances.count) · \(pet.species.capitalized)")
+        meta.font = .systemFont(ofSize: 10.5)
+        meta.textColor = .secondaryLabelColor
+        for view in [icon, name, meta] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),
+            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 32),
+            icon.heightAnchor.constraint(equalToConstant: 32),
+            name.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            name.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+            name.topAnchor.constraint(equalTo: cell.topAnchor, constant: 10),
+            meta.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+            meta.trailingAnchor.constraint(equalTo: name.trailingAnchor),
+            meta.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 2)
+        ])
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow
+        guard pets.indices.contains(row) else { return }
+        selectedPetID = pets[row].id
+        updateDetails()
+    }
+
+    private func updateDetails() {
+        guard let pet = selectedPet else {
+            petName.stringValue = "—"
+            return
+        }
+        petName.stringValue = pet.name
+        let species = language == .simplifiedChinese
+            ? (["dog": "狗狗", "cat": "猫咪", "other": "其他"] [pet.species] ?? pet.species)
+            : pet.species.capitalized
+        petMeta.stringValue = "\(species) · v\(pet.assetVersion)"
+        builtInBadge.isHidden = !pet.isBundled
+        appearanceStack.arrangedSubviews.forEach {
+            appearanceStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for appearance in pet.appearances {
+            let icon = NSImageView()
+            icon.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
+            icon.contentTintColor = .controlAccentColor
+            icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            let title = NSTextField(labelWithString: appearance.title(for: language))
+            title.font = .systemFont(ofSize: 13, weight: .semibold)
+            let subtitle = NSTextField(labelWithString: appearance.subtitle(for: language))
+            subtitle.font = .systemFont(ofSize: 11)
+            subtitle.textColor = .secondaryLabelColor
+            let row = NSStackView(views: [icon, title, subtitle, NSView()])
+            row.orientation = .horizontal
+            row.spacing = 8
+            appearanceStack.addArrangedSubview(row)
+        }
+        let isActive = pet.id == PetAssetCatalog.activePet?.id
+        useButton.title = isActive ? language.activePetButton : language.usePetButton
+        useButton.isEnabled = !isActive
+        removeButton.isHidden = pet.isBundled
+        removeButton.isEnabled = !isActive
+    }
+
+    private var selectedPet: PetLibraryPet? {
+        selectedPetID.flatMap { id in pets.first(where: { $0.id == id }) }
+    }
+
+    @objc private func tabChanged(_ sender: NSSegmentedControl) {
+        libraryPage.isHidden = sender.selectedSegment != 0
+        creatorPage.isHidden = sender.selectedSegment != 1
+    }
+
+    @objc private func useSelectedPet() {
+        guard let pet = selectedPet, onSelectPet?(pet.id) == true else { return }
+        refresh(language: language)
+    }
+
+    @objc private func importPack() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = language == .simplifiedChinese ? "导入" : "Import"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let summary = try PetPackLibraryManager.installPack(from: url)
+            handleSuccessfulImport(summary)
+        } catch PetPackLibraryError.petAlreadyExists(let name) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = language == .simplifiedChinese ? "替换 \(name)？" : "Replace \(name)?"
+            alert.informativeText = language == .simplifiedChinese
+                ? "新版本通过完整验证后才会原子替换现有宠物包。"
+                : "The existing pack is atomically replaced only after the new version passes validation."
+            alert.addButton(withTitle: language == .simplifiedChinese ? "替换" : "Replace")
+            alert.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            do {
+                let summary = try PetPackLibraryManager.installPack(from: url, replacingExisting: true)
+                handleSuccessfulImport(summary)
+            } catch { show(error) }
+        } catch { show(error) }
+    }
+
+    private func handleSuccessfulImport(_ summary: ValidatedPetPack) {
+        onLibraryChanged?()
+        selectedPetID = summary.id
+        refresh(language: language)
+        let alert = NSAlert()
+        alert.messageText = language.importSuccessTitle
+        alert.informativeText = language.importedPetMessage(summary.name)
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc private func exportSelectedPet() {
+        guard let pet = selectedPet else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = language == .simplifiedChinese ? "导出到这里" : "Export Here"
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        do {
+            let output = try PetPackLibraryManager.exportPet(pet, to: directory)
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } catch { show(error) }
+    }
+
+    @objc private func removeSelectedPet() {
+        guard let pet = selectedPet, !pet.isBundled else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = language == .simplifiedChinese ? "移除 \(pet.name)？" : "Remove \(pet.name)?"
+        alert.informativeText = language == .simplifiedChinese
+            ? "宠物包会移到废纸篓，可以恢复。"
+            : "The pet pack will move to Trash and can be recovered."
+        alert.addButton(withTitle: language.removePetButton)
+        alert.addButton(withTitle: language == .simplifiedChinese ? "取消" : "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try PetPackLibraryManager.removePet(pet)
+            onLibraryChanged?()
+            selectedPetID = PetAssetCatalog.activePet?.id
+            refresh(language: language)
+        } catch { show(error) }
+    }
+
+    @objc private func choosePhotos() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        panel.prompt = language == .simplifiedChinese ? "选择照片" : "Choose Photos"
+        guard panel.runModal() == .OK else { return }
+        guard (6...12).contains(panel.urls.count) else {
+            showMessage(language.invalidCreationInput)
+            return
+        }
+        selectedPhotos = panel.urls
+        photosLabel.stringValue = language.selectedPhotosLabel(selectedPhotos.count)
+    }
+
+    @objc private func exportCreationRequest() {
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let styles = [
+            cuteCheckbox.state == .on ? "cute-2d" : nil,
+            realisticCheckbox.state == .on ? "realistic-2d" : nil
+        ].compactMap { $0 }
+        guard !name.isEmpty, !styles.isEmpty, (6...12).contains(selectedPhotos.count) else {
+            showMessage(language.invalidCreationInput)
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = language == .simplifiedChinese ? "创建到这里" : "Create Here"
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        let species = ["dog", "cat", "other"][max(0, speciesPopup.indexOfSelectedItem)]
+        do {
+            let output = try PetPackLibraryManager.makeCreationRequest(
+                name: name,
+                species: species,
+                styles: styles,
+                photos: selectedPhotos,
+                in: directory
+            )
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } catch { show(error) }
+    }
+
+    @objc private func downloadCreatorSkill() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = language == .simplifiedChinese ? "下载到这里" : "Download Here"
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        do {
+            let output = try PetPackLibraryManager.exportCreatorSkill(to: directory)
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } catch { show(error) }
+    }
+
+    private func show(_ error: Error) {
+        let alert = NSAlert(error: error)
+        alert.runModal()
+    }
+
+    private func showMessage(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}

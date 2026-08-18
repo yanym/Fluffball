@@ -11,7 +11,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Furball2D",
-            resources: [.copy("Assets")],
+            resources: [
+                .copy("Assets"),
+                .copy("CreatorSkill")
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),

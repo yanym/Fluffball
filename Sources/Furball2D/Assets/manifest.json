@@ -2,7 +2,7 @@
   "petPackVersion": 2,
   "pet": {
     "id": "furball-demo-dog",
-    "name": "Furball",
+    "name": "Nina",
     "species": "dog",
     "assetVersion": 3
   },
@@ -20,7 +20,7 @@
     "animationEngine": "sprite-atlas-v2-with-legacy-frame-fallback"
   },
   "spriteAtlas": {
-    "file": "Sprites/Furball/spritesheet.webp",
+    "file": "Sprites/Nina/cute/spritesheet.webp",
     "spriteVersionNumber": 2,
     "layout": {
       "columns": 8,
@@ -50,10 +50,10 @@
       { "id": "stand.to.sit", "animation": "waiting", "frameIndices": [0], "loop": false, "frameDurationScale": 2.50 },
       { "id": "sit.idle", "animation": "waiting", "loop": true, "frameDurationScale": 1.40 },
       { "id": "sit.to.lie", "animation": "failed", "frameIndices": [0, 1, 2, 3, 4], "loop": false },
-      { "id": "lie.idle", "animation": "failed", "frameIndices": [4, 5], "loop": true, "frameDurationScale": 3.60 },
+      { "id": "lie.idle", "animation": "failed", "frameIndices": [4], "loop": true, "frameDurationScale": 3.60 },
       { "id": "lie.to.sleep", "animation": "failed", "frameIndices": [4, 5], "loop": false, "frameDurationScale": 0.80 },
-      { "id": "sleep.idle", "animation": "failed", "frameIndices": [4, 5], "loop": true, "motion": "sleep", "frameDurationScale": 6.00, "frameBlendFraction": 0.22 },
-      { "id": "sleep.to.stand", "animation": "jumping", "loop": false },
+      { "id": "sleep.idle", "animation": "failed", "frameIndices": [5], "loop": true, "motion": "sleep", "frameDurationScale": 6.00, "frameBlendFraction": 0.00 },
+      { "id": "sleep.to.stand", "animation": "failed", "frameIndices": [5, 4, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.78 },
       { "id": "walk.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 1.18 },
       { "id": "walk.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 1.18 },
       { "id": "walk.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 1.18 },
@@ -68,7 +68,11 @@
       { "id": "gesture.failed", "animation": "failed", "loop": false },
       { "id": "gesture.waiting", "animation": "waiting", "loop": false },
       { "id": "gesture.working", "animation": "working", "loop": false },
-      { "id": "gesture.review", "animation": "review", "loop": false }
+      { "id": "gesture.review", "animation": "review", "loop": false },
+      { "id": "gesture.play-bow", "animation": "jumping", "frameIndices": [0, 1, 0], "loop": false, "frameDurationScale": 1.15 },
+      { "id": "gesture.head-tilt", "animation": "review", "frameIndices": [0, 1, 2, 1, 0], "loop": false, "frameDurationScale": 1.10 },
+      { "id": "gesture.sniff", "animation": "working", "frameIndices": [0, 1, 2, 3, 4, 5], "loop": false, "motion": "look", "frameDurationScale": 1.15 },
+      { "id": "gesture.high-five", "animation": "waving", "frameIndices": [0, 1, 2, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.92 }
     ],
     "lookDirections": [
       { "degrees": 0, "rowIndex": 9, "columnIndex": 0 },
@@ -94,9 +98,39 @@
       { "id": "gesture.failed", "title": { "zh-Hans": "委屈一下", "en": "A Little Sad" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.waiting", "title": { "zh-Hans": "期待地等", "en": "Wait Hopefully" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.working", "title": { "zh-Hans": "认真寻找", "en": "Search Carefully" }, "resultingPosture": "stand", "autonomous": true },
-      { "id": "gesture.review", "title": { "zh-Hans": "仔细检查", "en": "Inspect Closely" }, "resultingPosture": "stand", "autonomous": true }
+      { "id": "gesture.review", "title": { "zh-Hans": "仔细检查", "en": "Inspect Closely" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.play-bow", "title": { "zh-Hans": "邀请你玩", "en": "Play Bow" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.head-tilt", "title": { "zh-Hans": "歪头好奇", "en": "Curious Head Tilt" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.sniff", "title": { "zh-Hans": "闻闻桌面", "en": "Sniff Around" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.high-five", "title": { "zh-Hans": "击个掌", "en": "High Five" }, "resultingPosture": "stand", "autonomous": false }
     ]
   },
+  "appearances": [
+    {
+      "id": "continuous-video",
+      "kind": "continuous-video",
+      "title": { "zh-Hans": "真实连续动画", "en": "Live Motion" },
+      "subtitle": { "zh-Hans": "真实视频质感，动作最细腻", "en": "The most detailed, lifelike video motion" },
+      "systemImage": "film.stack.fill",
+      "isDefault": true
+    },
+    {
+      "id": "cute-2d",
+      "kind": "sprite-atlas",
+      "title": { "zh-Hans": "可爱 2D", "en": "Cute 2D" },
+      "subtitle": { "zh-Hans": "温暖可爱的轻量图片动画", "en": "Warm, playful lightweight animation" },
+      "systemImage": "sparkles",
+      "atlasFile": "Sprites/Nina/cute/spritesheet.webp"
+    },
+    {
+      "id": "realistic-2d",
+      "kind": "sprite-atlas",
+      "title": { "zh-Hans": "写实 2D", "en": "Realistic 2D" },
+      "subtitle": { "zh-Hans": "真实毛发与自然姿态的图片动画", "en": "Natural poses with photorealistic fur" },
+      "systemImage": "camera.macro",
+      "atlasFile": "Sprites/Nina/realistic/spritesheet.webp"
+    }
+  ],
   "normalization": {
     "workCanvas": { "width": 1600, "height": 900 },
     "anchors": ["subjectHeight", "alphaCenterX", "groundY"],

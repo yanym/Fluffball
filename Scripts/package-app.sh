@@ -98,12 +98,18 @@ cp "$BUILD_DIR/Furball2D" "$STAGE_APP/Contents/MacOS/Furball2D"
 cp "$PROJECT_DIR/Support/Info.plist" "$STAGE_APP/Contents/Info.plist"
 cp "$PROJECT_DIR/Support/AppIcon.icns" "$STAGE_APP/Contents/Resources/AppIcon.icns"
 cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/Assets" "$STAGE_APP/Contents/Resources/Assets"
+cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/CreatorSkill" "$STAGE_APP/Contents/Resources/CreatorSkill"
 find "$STAGE_APP" -type f -name '.DS_Store' -delete
 
 # Desktop 由 File Provider 管理，会主动给新 .app 写 FinderInfo。先在 /tmp 的干净
 # 暂存区完成签名和严格校验，再制作不携带扩展属性的 ZIP，避免签名竞争。
 xattr -cr "$STAGE_APP"
-codesign --force --deep --sign - "$STAGE_APP"
+SIGN_IDENTITY="${FURBALL_CODESIGN_IDENTITY:--}"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  codesign --force --deep --sign - "$STAGE_APP"
+else
+  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$STAGE_APP"
+fi
 codesign --verify --deep --strict "$STAGE_APP"
 
 mkdir -p "$PROJECT_DIR/dist"
@@ -111,6 +117,23 @@ if [[ -e "$ARCHIVE_PATH" ]]; then
   rm -f "$ARCHIVE_PATH"
 fi
 ditto -c -k --keepParent --norsrc --noextattr "$STAGE_APP" "$ARCHIVE_PATH"
+
+# Optional commercial release path. Configure a notarytool keychain profile
+# once, then package with FURBALL_CODESIGN_IDENTITY and
+# FURBALL_NOTARY_PROFILE. Local preview builds remain ad-hoc signed.
+if [[ -n "${FURBALL_NOTARY_PROFILE:-}" ]]; then
+  if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    print -u2 "FURBALL_NOTARY_PROFILE requires a Developer ID signing identity"
+    exit 1
+  fi
+  xcrun notarytool submit "$ARCHIVE_PATH" \
+    --keychain-profile "$FURBALL_NOTARY_PROFILE" \
+    --wait
+  xcrun stapler staple "$STAGE_APP"
+  codesign --verify --deep --strict "$STAGE_APP"
+  rm -f "$ARCHIVE_PATH"
+  ditto -c -k --keepParent --norsrc --noextattr "$STAGE_APP" "$ARCHIVE_PATH"
+fi
 
 # 保留一个可直接双击运行的副本。即使 File Provider 随后添加展示元数据，也不会
 # 影响本机运行；需要传输或复验签名时使用上面的 ZIP。

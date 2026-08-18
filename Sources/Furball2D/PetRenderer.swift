@@ -59,6 +59,13 @@ private final class PetVideoChannel: @unchecked Sendable {
     deinit { invalidate() }
 
     func start() {
+        // AVPlayerItemVideoOutput is pull-driven. Asking for media-data changes
+        // before playback avoids a blank first frame when a menu-bar app is
+        // launched in the background and MTKView's display link starts late.
+        if let item = player.currentItem,
+           let output = videoOutputs[ObjectIdentifier(item)] {
+            output.requestNotificationOfMediaDataChange(withAdvanceInterval: 0.03)
+        }
         player.playImmediately(atRate: 1)
     }
 
@@ -71,14 +78,16 @@ private final class PetVideoChannel: @unchecked Sendable {
         let output = videoOutputs[ObjectIdentifier(item)]
         guard let output else { return (latestPixelBuffer(), false) }
 
-        let itemTime = output.itemTime(forHostTime: hostTime)
-        guard output.hasNewPixelBuffer(forItemTime: itemTime),
-              let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else {
-            return (latestPixelBuffer(), false)
+        let hostItemTime = output.itemTime(forHostTime: hostTime)
+        let playerItemTime = item.currentTime()
+        for itemTime in [hostItemTime, playerItemTime] where itemTime.isValid {
+            if output.hasNewPixelBuffer(forItemTime: itemTime),
+               let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
+                lastPixelBuffer = buffer
+                return (buffer, true)
+            }
         }
-
-        lastPixelBuffer = buffer
-        return (buffer, true)
+        return (latestPixelBuffer(), false)
     }
 
     func latestPixelBuffer() -> CVPixelBuffer? {
@@ -203,6 +212,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     private var textureCache: CVMetalTextureCache?
     private var isMirrored = false
     private var lastPlayRequest: PlayRequest?
+    private var lastDrawCallbackTime: CFTimeInterval = 0
 
     private static let shaderSource = """
     #include <metal_stdlib>
@@ -334,7 +344,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     }
 
     func setVisualMode(_ mode: PetVisualMode, replaying replayClip: PetClip? = nil) throws {
-        guard visualMode != mode else { return }
+        if visualMode == mode {
+            if let replayClip {
+                try play(replayClip)
+            }
+            return
+        }
         visualMode = mode
         if let replayClip {
             try play(replayClip)
@@ -390,6 +405,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
+        lastDrawCallbackTime = now
         if visualMode == .images {
             drawImage(in: view, at: now)
             return
@@ -545,6 +561,17 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         return max(alphaA * (1 - weight), alphaB * weight)
     }
 
+    /// MTKView normally drives itself from CVDisplayLink. Accessory/menu-bar
+    /// apps can briefly have no active display link during login, Space changes,
+    /// or a background LaunchServices launch. The controller already ticks for
+    /// hit testing, so use that tick as a low-cost rendering watchdog instead of
+    /// allowing the pet to remain permanently transparent.
+    func ensureDisplayRefresh() {
+        let now = CACurrentMediaTime()
+        guard now - lastDrawCallbackTime > 0.10 else { return }
+        view.draw()
+    }
+
     /// Returns the pet's current non-transparent silhouette in view coordinates.
     /// Sampling both decoder lanes keeps placement stable during a crossfade.
     func visibleContentRect(alphaThreshold: UInt8 = 18) -> NSRect? {
@@ -554,12 +581,18 @@ final class PetRenderer: NSObject, MTKViewDelegate {
                 .intersection(view.bounds)
         }
 
+        // Visibility checks run even before MTKView receives its first display
+        // callback. Pull once here so startup recovery measures the decoder's
+        // real state rather than mistaking a late display link for missing media.
+        let now = CACurrentMediaTime()
         channelLock.lock()
-        let buffers = [
-            primaryChannel?.latestPixelBuffer(),
-            secondaryChannel?.latestPixelBuffer()
-        ].compactMap { $0 }
+        let primary = primaryChannel
+        let secondary = secondaryChannel
         channelLock.unlock()
+        let buffers = [
+            primary?.updatePixelBuffer(hostTime: now).buffer,
+            secondary?.updatePixelBuffer(hostTime: now).buffer
+        ].compactMap { $0 }
 
         let rects = buffers.compactMap { visibleRect(in: $0, alphaThreshold: alphaThreshold) }
         guard var result = rects.first else { return nil }

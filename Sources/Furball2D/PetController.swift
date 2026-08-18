@@ -80,6 +80,9 @@ final class PetController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private let speechBubble = PetSpeechBubble()
+    private let desktopTreat = DesktopTreat()
+    private var appearanceSettingsController: AppearanceSettingsWindowController?
+    private var petLibraryWindowController: PetLibraryWindowController?
 
     private var posture: PetPosture = .stand
     private var isTransitioning = false
@@ -97,6 +100,9 @@ final class PetController: NSObject, NSMenuDelegate {
     private var freeRoamTimer: Timer?
     private var facingTimer: Timer?
     private var statusItemHealthTimer: Timer?
+    private var treatChaseTimer: Timer?
+    private var hoverActionTimer: Timer?
+    private var startupVisibilityGeneration = 0
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
     private var patrolDirection: CGFloat = -1
@@ -130,6 +136,11 @@ final class PetController: NSObject, NSMenuDelegate {
     private var freeRoamTarget: NSPoint?
     private var freeRoamPauseUntil: TimeInterval = 0
     private var lastFreeRoamSampleTime: TimeInterval = 0
+    private var treatTarget: NSPoint?
+    private var treatLastSampleTime: TimeInterval = 0
+    private var resumeFollowingAfterTreat = false
+    private var resumeRoamingAfterTreat = false
+    private var lastHoverActionTime: TimeInterval = 0
     private var autonomousActionFacingUntil: TimeInterval = 0
     private var restFacingPreparedEpoch: Int?
     private let behaviorTimeScale: Double = ProcessInfo.processInfo.environment["FURBALL_FAST_BEHAVIOR"] == "1" ? 0.08 : 1
@@ -185,14 +196,9 @@ final class PetController: NSObject, NSMenuDelegate {
         imageFacingEnabled = defaults.object(forKey: PreferenceKey.imageFacing) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.imageFacing)
-        let capabilities = PetAssetCatalog.capabilities
-        if capabilities.supportsModeSwitching {
-            videoAnimationsEnabled = defaults.object(forKey: Self.videoAnimationsPreferenceKey) == nil
-                ? true
-                : defaults.bool(forKey: Self.videoAnimationsPreferenceKey)
-        } else {
-            videoAnimationsEnabled = capabilities.supportsVideoMode
-        }
+        // Appearance selection is the source of truth. The old Boolean is
+        // retained only so existing installs keep their previous preference.
+        videoAnimationsEnabled = PetAssetCatalog.activeAppearance.kind == .continuousVideo
         appLanguage = AppLanguage.stored
 
         let size = NSSize(width: Self.basePetSize.width * initialScale, height: Self.basePetSize.height * initialScale)
@@ -212,7 +218,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     func start() {
-        panel.orderFrontRegardless()
+        showPetWindow()
         do {
             try renderer.play(PetClips.idle(for: posture))
         } catch {
@@ -220,8 +226,14 @@ final class PetController: NSObject, NSMenuDelegate {
             return
         }
 
+        // A borderless accessory panel can be on screen while its first Metal/
+        // AV frame is still empty. Verify actual rendered content after launch
+        // and recover from a stale display or unavailable preferred renderer.
+        scheduleStartupVisibilityChecks()
+
         hitTestTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.renderer.ensureDisplayRefresh()
                 self?.updateClickThrough()
             }
         }
@@ -235,6 +247,119 @@ final class PetController: NSObject, NSMenuDelegate {
             scheduleWake(epoch: behaviorEpoch)
         }
         scheduleNextSpeech(after: 1.4)
+
+        // Opt-in visual QA hooks used by packaging checks; normal launches do
+        // not set these environment variables.
+        if ProcessInfo.processInfo.environment["FURBALL_OPEN_VISUAL_SETTINGS"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                self?.showVisualSettings()
+            }
+        } else if ProcessInfo.processInfo.environment["FURBALL_OPEN_PET_CREATOR"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                self?.showPetCreatorForQA()
+            }
+        } else if ProcessInfo.processInfo.environment["FURBALL_OPEN_PET_LIBRARY"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                self?.showPetLibrary()
+            }
+        }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_SMOKE_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) { [weak self] in
+                self?.writeSmokeReport(to: reportPath)
+            }
+        }
+    }
+
+    private func writeSmokeReport(to path: String) {
+        var animationErrors: [String] = []
+        if renderer.visualMode == .images {
+            let clips: [PetClip] = [
+                PetClips.standIdle, PetClips.lookAroundImages, PetClips.sitDown,
+                PetClips.sitIdle, PetClips.sitToLie, PetClips.lieIdle,
+                PetClips.lieToSleep, PetClips.sleepIdle, PetClips.sleepToStand,
+                PetClips.walk.start, PetClips.walk.loop, PetClips.walk.stop,
+                PetClips.slowRun.start, PetClips.slowRun.loop, PetClips.slowRun.stop,
+                PetClips.fastRun.start, PetClips.fastRun.loop, PetClips.fastRun.stop
+            ] + PetAssetCatalog.imageActions.map(PetClips.imageAction)
+            for clip in clips {
+                do { _ = try clip.imageAnimation }
+                catch { animationErrors.append("\(clip.id): \(error.localizedDescription)") }
+            }
+            for index in 0..<PetLookDirection.count {
+                let clip = PetClips.lookDirection(PetLookDirection(index: index))
+                do { _ = try clip.imageAnimation }
+                catch { animationErrors.append("\(clip.id): \(error.localizedDescription)") }
+            }
+        }
+        let rect = renderer.visibleContentRect()
+        let report: [String: Any] = [
+            "appearance": PetAssetCatalog.activeAppearance.id,
+            "mode": renderer.visualMode == .video ? "video" : "images",
+            "panelVisible": panel.isVisible,
+            "contentVisible": rect != nil,
+            "contentRect": rect.map(NSStringFromRect) ?? NSNull(),
+            "statusItemAvailable": statusItem?.button != nil,
+            "publishedImageActions": PetAssetCatalog.imageActions.count,
+            "animationErrors": animationErrors
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            NSLog("Furball2D smoke report: %@", path)
+        } catch {
+            NSLog("Furball2D smoke report failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_SMOKE_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func showPetWindow() {
+        panel.alphaValue = 1
+        panel.setFrameOrigin(clampedOrigin(panel.frame.origin))
+        panel.orderFrontRegardless()
+    }
+
+    private func scheduleStartupVisibilityChecks() {
+        startupVisibilityGeneration += 1
+        let generation = startupVisibilityGeneration
+        for (attempt, delay) in [0.45, 1.40, 3.00, 4.80].enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.startupVisibilityGeneration == generation else { return }
+                self.recoverStartupVisibilityIfNeeded(attempt: attempt)
+            }
+        }
+    }
+
+    private func recoverStartupVisibilityIfNeeded(attempt: Int) {
+        showPetWindow()
+        let contentRect = renderer.visibleContentRect()
+        guard contentRect == nil else {
+            startupVisibilityGeneration += 1
+            return
+        }
+
+        do {
+            if attempt >= 2,
+               ProcessInfo.processInfo.environment["FURBALL_APPEARANCE"] == nil,
+               renderer.visualMode == .video,
+               let fallback = PetAssetCatalog.availableAppearances.first(where: {
+                   $0.kind == .spriteAtlas
+               }),
+               PetAssetCatalog.selectAppearance(id: fallback.id) {
+                videoAnimationsEnabled = false
+                try renderer.setVisualMode(.images, replaying: PetClips.idle(for: posture))
+            } else if attempt >= 3, posture != .stand {
+                posture = .stand
+                renderer.setMirrored(false)
+                try renderer.play(PetClips.standIdle, fadeDuration: 0)
+            } else {
+                try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            }
+        } catch {
+            NSLog("Furball2D startup visibility recovery failed: %@", error.localizedDescription)
+        }
     }
 
     private func configureInput() {
@@ -242,6 +367,8 @@ final class PetController: NSObject, NSMenuDelegate {
         renderer.view.onMouseDragged = { [weak self] event in self?.mouseDragged(event) }
         renderer.view.onMouseUp = { [weak self] event in self?.mouseUp(event) }
         renderer.view.onRightMouseDown = { [weak self] event in self?.showContextMenu(event) }
+        renderer.view.onMouseEntered = { [weak self] event in self?.mouseEnteredPet(event) }
+        renderer.view.onMouseExited = { [weak self] event in self?.mouseExitedPet(event) }
     }
 
     private func configureMenu() {
@@ -321,6 +448,9 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: appLanguage.interactMenu, action: #selector(interactFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: appLanguage.speakMenu, action: #selector(speakFromMenu), keyEquivalent: "")
+        if renderer.visualMode == .images {
+            menu.addItem(withTitle: appLanguage.throwTreatMenu, action: #selector(throwTreatFromMenu), keyEquivalent: "")
+        }
         if !PetAssetCatalog.imageActions.isEmpty {
             menu.addItem(makeCuteActionsMenuItem())
         }
@@ -329,17 +459,18 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: appLanguage.visibilityMenu(isVisible: panel.isVisible), action: #selector(toggleVisibility), keyEquivalent: "")
         menu.addItem(.separator())
 
-        let capabilities = PetAssetCatalog.capabilities
-        let videoItem = menu.addItem(
-            withTitle: appLanguage.videoAnimationsMenu,
-            action: #selector(toggleVideoAnimations),
+        menu.addItem(makeAppearanceMenuItem())
+        menu.addItem(
+            withTitle: appLanguage.visualSettingsMenu,
+            action: #selector(showVisualSettings),
+            keyEquivalent: ","
+        )
+        menu.addItem(
+            withTitle: appLanguage.petLibraryMenu,
+            action: #selector(showPetLibrary),
             keyEquivalent: ""
         )
-        videoItem.state = renderer.visualMode == .video ? .on : .off
-        videoItem.isEnabled = capabilities.supportsModeSwitching
-            && !isTransitioning
-            && locomotionMode == .none
-        videoItem.toolTip = appLanguage.videoAnimationsTooltip(capabilities: capabilities)
+        menu.addItem(.separator())
 
         let passItem = menu.addItem(withTitle: appLanguage.passThroughMenu, action: #selector(togglePassThrough), keyEquivalent: "")
         passItem.state = fullPassThrough ? .on : .off
@@ -355,8 +486,10 @@ final class PetController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         facingItem.state = imageFacingEnabled ? .on : .off
-        let fadeItem = menu.addItem(withTitle: appLanguage.crossfadeMenu, action: #selector(toggleCrossfade), keyEquivalent: "")
-        fadeItem.state = renderer.crossfadeEnabled ? .on : .off
+        if PetAssetCatalog.activeAppearance.kind == .continuousVideo {
+            let fadeItem = menu.addItem(withTitle: appLanguage.crossfadeMenu, action: #selector(toggleCrossfade), keyEquivalent: "")
+            fadeItem.state = renderer.crossfadeEnabled ? .on : .off
+        }
         let levelItem = menu.addItem(withTitle: appLanguage.alwaysOnTopMenu, action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
         levelItem.state = panel.level == .floating ? .on : .off
 
@@ -422,6 +555,30 @@ final class PetController: NSObject, NSMenuDelegate {
         return item
     }
 
+    private func makeAppearanceMenuItem() -> NSMenuItem {
+        let root = NSMenuItem(title: appLanguage.appearanceMenu, action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu(title: appLanguage.appearanceMenu)
+        let activeID = PetAssetCatalog.activeAppearance.id
+        let canSwitch = !isTransitioning && locomotionMode == .none
+
+        for appearance in PetAssetCatalog.availableAppearances {
+            let item = NSMenuItem(
+                title: appearance.title(for: appLanguage),
+                action: #selector(selectAppearanceFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = appearance.id
+            item.state = appearance.id == activeID ? .on : .off
+            item.isEnabled = canSwitch
+            item.toolTip = appearance.subtitle(for: appLanguage)
+            item.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
+            appearanceMenu.addItem(item)
+        }
+        root.submenu = appearanceMenu
+        return root
+    }
+
     private func makeCuteActionsMenuItem() -> NSMenuItem {
         let root = NSMenuItem(title: appLanguage.cuteActionsMenu, action: nil, keyEquivalent: "")
         let actionMenu = NSMenu(title: appLanguage.cuteActionsMenu)
@@ -478,11 +635,46 @@ final class PetController: NSObject, NSMenuDelegate {
             lastCursorSampleTime = ProcessInfo.processInfo.systemUptime
             smoothedCursorSpeed = 0
         }
-        if totalDragDistance < 6 {
+        if totalDragDistance < 6, event.clickCount >= 2,
+           renderer.visualMode == .images,
+           let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.high-five" }) {
+            showSpeech(appLanguage.highFiveGreeting)
+            performImageAction(action)
+        } else if totalDragDistance < 6 {
             speakRandomly()
             if !followCursor, !freeRoamEnabled { advanceBehavior() }
         }
         registerUserActivity()
+    }
+
+    private func mouseEnteredPet(_ event: NSEvent) {
+        hoverActionTimer?.invalidate()
+        guard renderer.visualMode == .images,
+              posture == .stand,
+              !followCursor,
+              !freeRoamEnabled,
+              treatTarget == nil,
+              ProcessInfo.processInfo.systemUptime - lastHoverActionTime > 12 else { return }
+        hoverActionTimer = Timer.scheduledTimer(withTimeInterval: 0.72, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self,
+                      !self.isTransitioning,
+                      self.locomotionMode == .none,
+                      self.panel.frame.contains(NSEvent.mouseLocation) else { return }
+                let local = self.panel.convertPoint(fromScreen: NSEvent.mouseLocation)
+                guard (self.renderer.alpha(at: local) ?? 0) > 0.08,
+                      let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.head-tilt" })
+                else { return }
+                self.lastHoverActionTime = ProcessInfo.processInfo.systemUptime
+                self.showSpeech(self.appLanguage.hoverGreeting)
+                self.performImageAction(action)
+            }
+        }
+    }
+
+    private func mouseExitedPet(_ event: NSEvent) {
+        hoverActionTimer?.invalidate()
+        hoverActionTimer = nil
     }
 
     private func clampedOrigin(_ proposed: NSPoint, panelSize: NSSize? = nil) -> NSPoint {
@@ -719,7 +911,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private var usesDirectionalLook: Bool {
-        renderer.visualMode == .images && PetAssetCatalog.capabilities.supportsDirectionalLook
+        renderer.visualMode == .images && PetAssetCatalog.supportsDirectionalLook
     }
 
     private var actionProfileLookDirection: PetLookDirection {
@@ -756,7 +948,7 @@ final class PetController: NSObject, NSMenuDelegate {
             return
         }
 
-        if renderer.visualMode == .images, PetAssetCatalog.capabilities.supportsDirectionalLook {
+        if renderer.visualMode == .images, PetAssetCatalog.supportsDirectionalLook {
             updateDirectionalLookTowardCursor()
         } else {
             updateLegacyFacingTowardCursor()
@@ -1357,7 +1549,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func continueToStandForMovement() {
-        guard (followCursor || freeRoamEnabled), !isTransitioning else { return }
+        guard (followCursor || freeRoamEnabled || treatTarget != nil), !isTransitioning else { return }
         switch posture {
         case .stand:
             return
@@ -1505,6 +1697,102 @@ final class PetController: NSObject, NSMenuDelegate {
             now: now,
             deltaTime: deltaTime
         )
+    }
+
+    private func beginTreatChase() {
+        guard renderer.visualMode == .images,
+              panel.isVisible,
+              !isTransitioning,
+              treatTarget == nil else { return }
+        registerUserActivity()
+        resumeFollowingAfterTreat = followCursor
+        resumeRoamingAfterTreat = freeRoamEnabled
+        cursorFollowTimer?.invalidate()
+        cursorFollowTimer = nil
+        freeRoamTimer?.invalidate()
+        freeRoamTimer = nil
+        behaviorTimer?.invalidate()
+        stopPatrol()
+
+        let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        treatTarget = desktopTreat.show(
+            at: NSEvent.mouseLocation,
+            level: panel.level,
+            in: visibleFrame
+        )
+        showSpeech(appLanguage.treatChaseStarted)
+        treatLastSampleTime = ProcessInfo.processInfo.systemUptime
+        treatChaseTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateTreatChase() }
+        }
+        treatChaseTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        continueToStandForMovement()
+    }
+
+    private func updateTreatChase() {
+        guard let target = treatTarget, panel.isVisible, !isDragging else { return }
+        guard posture == .stand, !isTransitioning else {
+            if !isTransitioning { continueToStandForMovement() }
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - treatLastSampleTime))
+        treatLastSampleTime = now
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let distance = hypot(target.x - center.x, target.y - center.y)
+        let deadZone = 62 * petScale
+        guard distance > deadZone else {
+            finishTreatChase()
+            return
+        }
+        updateMovement(
+            toward: target,
+            demand: max(180, distance * 1.15),
+            deadZone: deadZone,
+            now: now,
+            deltaTime: deltaTime
+        )
+    }
+
+    private func finishTreatChase() {
+        treatChaseTimer?.invalidate()
+        treatChaseTimer = nil
+        treatTarget = nil
+        desktopTreat.hide()
+        setLocomotionMode(.none, direction: locomotionDirection)
+        showSpeech(appLanguage.treatFound)
+        let completion: () -> Void = { [weak self] in
+            self?.resumeAfterTreatChase()
+        }
+        if let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.sniff" }) {
+            performImageAction(action, completion: completion)
+        } else {
+            completion()
+        }
+    }
+
+    private func resumeAfterTreatChase() {
+        if resumeFollowingAfterTreat, followCursor {
+            beginCursorFollowing()
+        } else if resumeRoamingAfterTreat, freeRoamEnabled {
+            beginFreeRoaming()
+        } else {
+            restartAutonomy()
+        }
+        resumeFollowingAfterTreat = false
+        resumeRoamingAfterTreat = false
+    }
+
+    private func cancelTreatChase(resume: Bool) {
+        guard treatTarget != nil else { return }
+        treatChaseTimer?.invalidate()
+        treatChaseTimer = nil
+        treatTarget = nil
+        desktopTreat.hide()
+        setLocomotionMode(.none, direction: locomotionDirection)
+        if resume { resumeAfterTreatChase() }
     }
 
     private func makeRandomRoamTarget() -> NSPoint? {
@@ -1872,6 +2160,40 @@ final class PetController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
 
+    func importPetPack(at url: URL) {
+        do {
+            let summary = try PetPackLibraryManager.installPack(from: url)
+            rebuildMenu()
+            petLibraryWindowController?.refresh(language: appLanguage)
+            _ = switchPet(to: summary.id)
+            let alert = NSAlert()
+            alert.messageText = appLanguage.importSuccessTitle
+            alert.informativeText = appLanguage.importedPetMessage(summary.name)
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch PetPackLibraryError.petAlreadyExists(let name) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = appLanguage == .simplifiedChinese ? "替换 \(name)？" : "Replace \(name)?"
+            alert.informativeText = appLanguage == .simplifiedChinese
+                ? "现有宠物包会被新版本替换。"
+                : "The existing pet pack will be replaced by this version."
+            alert.addButton(withTitle: appLanguage == .simplifiedChinese ? "替换" : "Replace")
+            alert.addButton(withTitle: appLanguage == .simplifiedChinese ? "取消" : "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            do {
+                let summary = try PetPackLibraryManager.installPack(from: url, replacingExisting: true)
+                rebuildMenu()
+                petLibraryWindowController?.refresh(language: appLanguage)
+                _ = switchPet(to: summary.id)
+            } catch {
+                present(error)
+            }
+        } catch {
+            present(error)
+        }
+    }
+
     private func performImageAction(_ action: PetImageAction, completion: (() -> Void)? = nil) {
         guard renderer.visualMode == .images,
               posture == .stand,
@@ -1922,6 +2244,11 @@ final class PetController: NSObject, NSMenuDelegate {
         speakRandomly()
     }
 
+    @objc private func throwTreatFromMenu() {
+        panel.orderFrontRegardless()
+        beginTreatChase()
+    }
+
     @objc private func performCuteActionFromMenu(_ sender: NSMenuItem) {
         guard let actionID = sender.representedObject as? String,
               let action = PetAssetCatalog.imageActions.first(where: { $0.id == actionID }) else { return }
@@ -1955,6 +2282,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @objc private func sleepFromMenu() {
         panel.orderFrontRegardless()
+        cancelTreatChase(resume: false)
         if followCursor {
             followCursor = false
             stopCursorFollowing()
@@ -1975,45 +2303,197 @@ final class PetController: NSObject, NSMenuDelegate {
         appLanguage = language
         statusItem?.button?.toolTip = language.statusTooltip
         rebuildMenu()
+        refreshAppearanceSettings()
+        petLibraryWindowController?.refresh(language: language)
         showSpeech(language.languageChanged)
+    }
+
+    @objc private func selectAppearanceFromMenu(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        _ = switchAppearance(to: id)
+    }
+
+    @objc private func showVisualSettings() {
+        let controller: AppearanceSettingsWindowController
+        if let existing = appearanceSettingsController {
+            controller = existing
+            controller.update(snapshot: appearanceSettingsSnapshot())
+        } else {
+            controller = AppearanceSettingsWindowController(snapshot: appearanceSettingsSnapshot())
+            controller.onAppearanceSelected = { [weak self] id in
+                self?.switchAppearance(to: id) ?? false
+            }
+            controller.onScaleChanged = { [weak self] scale in
+                self?.setScale(scale)
+            }
+            controller.onCrossfadeChanged = { [weak self] enabled in
+                guard let self, self.renderer.crossfadeEnabled != enabled else { return }
+                self.renderer.crossfadeEnabled = enabled
+                self.rebuildMenu()
+            }
+            controller.onAlwaysOnTopChanged = { [weak self] enabled in
+                guard let self, (self.panel.level == .floating) != enabled else { return }
+                self.toggleAlwaysOnTop()
+            }
+            controller.onFollowCursorChanged = { [weak self] enabled in
+                guard let self, self.followCursor != enabled else { return }
+                self.toggleCursorFollowing()
+                self.refreshAppearanceSettings()
+            }
+            controller.onFreeRoamChanged = { [weak self] enabled in
+                guard let self, self.freeRoamEnabled != enabled else { return }
+                self.toggleFreeRoaming()
+                self.refreshAppearanceSettings()
+            }
+            controller.onDirectionalLookChanged = { [weak self] enabled in
+                guard let self, self.imageFacingEnabled != enabled else { return }
+                self.toggleImageFacing()
+            }
+            appearanceSettingsController = controller
+        }
+        controller.present()
+    }
+
+    @objc private func showPetLibrary() {
+        let controller: PetLibraryWindowController
+        if let existing = petLibraryWindowController {
+            controller = existing
+            controller.refresh(language: appLanguage)
+        } else {
+            controller = PetLibraryWindowController(language: appLanguage)
+            controller.onSelectPet = { [weak self] id in
+                self?.switchPet(to: id) ?? false
+            }
+            controller.onLibraryChanged = { [weak self] in
+                guard let self else { return }
+                self.rebuildMenu()
+                self.refreshAppearanceSettings()
+            }
+            petLibraryWindowController = controller
+        }
+        controller.present()
+    }
+
+    private func showPetCreatorForQA() {
+        showPetLibrary()
+        petLibraryWindowController?.presentCreator()
+    }
+
+    private func appearanceSettingsSnapshot() -> AppearanceSettingsSnapshot {
+        AppearanceSettingsSnapshot(
+            petName: PetAssetCatalog.petName,
+            appearances: PetAssetCatalog.availableAppearances,
+            selectedAppearanceID: PetAssetCatalog.activeAppearance.id,
+            language: appLanguage,
+            petScale: petScale,
+            crossfadeEnabled: renderer.crossfadeEnabled,
+            alwaysOnTop: panel.level == .floating,
+            followCursor: followCursor,
+            freeRoam: freeRoamEnabled,
+            directionalLook: imageFacingEnabled,
+            canChangeAppearance: !isTransitioning && locomotionMode == .none
+        )
+    }
+
+    private func refreshAppearanceSettings() {
+        appearanceSettingsController?.update(snapshot: appearanceSettingsSnapshot())
+    }
+
+    @discardableResult
+    private func switchAppearance(to id: String) -> Bool {
+        guard !isTransitioning, locomotionMode == .none else {
+            showSpeech(appLanguage.appearanceBusy)
+            return false
+        }
+        let previous = PetAssetCatalog.activeAppearance
+        guard previous.id != id else { return true }
+        guard let next = PetAssetCatalog.availableAppearances.first(where: { $0.id == id }),
+              PetAssetCatalog.selectAppearance(id: id) else { return false }
+
+        do {
+            cancelTreatChase(resume: false)
+            hideSpeechBubble(animated: false)
+            isUsingImageFacing = false
+            pendingFacingView = nil
+            pendingLookDirection = nil
+            directionalLookIsEngaged = false
+            videoAnimationsEnabled = next.kind == .continuousVideo
+            try renderer.setVisualMode(next.kind.visualMode, replaying: PetClips.idle(for: posture))
+            renderer.setMirrored(actionFacing.isMirrored)
+            repositionSpeechBubble(resetSilhouette: true)
+            rebuildMenu()
+            refreshAppearanceSettings()
+            showSpeech(appLanguage.appearanceChanged(next.title(for: appLanguage)))
+            return true
+        } catch {
+            _ = PetAssetCatalog.selectAppearance(id: previous.id)
+            videoAnimationsEnabled = previous.kind == .continuousVideo
+            try? renderer.setVisualMode(previous.kind.visualMode, replaying: PetClips.idle(for: posture))
+            rebuildMenu()
+            refreshAppearanceSettings()
+            present(error)
+            return false
+        }
+    }
+
+    @discardableResult
+    private func switchPet(to id: String) -> Bool {
+        guard !isTransitioning, locomotionMode == .none else {
+            showSpeech(appLanguage.appearanceBusy)
+            return false
+        }
+        guard let previousPet = PetAssetCatalog.activePet else { return false }
+        guard previousPet.id != id else { return true }
+        let previousAppearance = PetAssetCatalog.activeAppearance
+        guard PetAssetCatalog.selectPet(id: id), let nextPet = PetAssetCatalog.activePet else { return false }
+        let nextAppearance = PetAssetCatalog.activeAppearance
+
+        do {
+            cancelTreatChase(resume: false)
+            hideSpeechBubble(animated: false)
+            behaviorEpoch += 1
+            behaviorTimer?.invalidate()
+            stopPatrol()
+            isUsingImageFacing = false
+            pendingFacingView = nil
+            pendingLookDirection = nil
+            directionalLookIsEngaged = false
+            videoAnimationsEnabled = nextAppearance.kind == .continuousVideo
+            try renderer.setVisualMode(nextAppearance.kind.visualMode)
+            try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            renderer.setMirrored(actionFacing.isMirrored)
+            rebuildMenu()
+            refreshAppearanceSettings()
+            petLibraryWindowController?.refresh(language: appLanguage)
+            showSpeech(appLanguage.appearanceChanged(nextPet.name))
+            restartAutonomy()
+            return true
+        } catch {
+            _ = PetAssetCatalog.selectPet(id: previousPet.id)
+            _ = PetAssetCatalog.selectAppearance(id: previousAppearance.id)
+            videoAnimationsEnabled = previousAppearance.kind == .continuousVideo
+            try? renderer.setVisualMode(previousAppearance.kind.visualMode)
+            try? renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            rebuildMenu()
+            refreshAppearanceSettings()
+            petLibraryWindowController?.refresh(language: appLanguage)
+            present(error)
+            return false
+        }
     }
 
     @objc private func toggleVisibility() {
         if panel.isVisible {
+            cancelTreatChase(resume: false)
             hideSpeechBubble(animated: false)
             panel.orderOut(nil)
         } else {
-            panel.orderFrontRegardless()
-        }
-    }
-
-    @objc private func toggleVideoAnimations() {
-        let capabilities = PetAssetCatalog.capabilities
-        guard capabilities.supportsModeSwitching,
-              !isTransitioning,
-              locomotionMode == .none else { return }
-
-        let previousValue = videoAnimationsEnabled
-        let previousMode = renderer.visualMode
-        videoAnimationsEnabled.toggle()
-        do {
-            isUsingImageFacing = false
-            pendingFacingView = nil
-            pendingLookDirection = nil
-            try renderer.setVisualMode(
-                videoAnimationsEnabled ? .video : .images,
-                replaying: PetClips.idle(for: posture)
-            )
-            showSpeech(
-                videoAnimationsEnabled
-                    ? appLanguage.videoModeEnabled
-                    : appLanguage.imageModeEnabled
-            )
-            repositionSpeechBubble(resetSilhouette: true)
-        } catch {
-            videoAnimationsEnabled = previousValue
-            try? renderer.setVisualMode(previousMode, replaying: PetClips.idle(for: posture))
-            present(error)
+            showPetWindow()
+            do {
+                try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
+            } catch {
+                present(error)
+            }
         }
     }
 
@@ -2028,6 +2508,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleCursorFollowing() {
+        cancelTreatChase(resume: false)
         if followCursor {
             followCursor = false
             stopCursorFollowing()
@@ -2043,6 +2524,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleFreeRoaming() {
+        cancelTreatChase(resume: false)
         if freeRoamEnabled {
             freeRoamEnabled = false
             stopFreeRoaming()

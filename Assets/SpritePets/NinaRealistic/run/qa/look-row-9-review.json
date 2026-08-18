@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "order": ["000", "022.5", "045", "067.5", "090", "112.5", "135", "157.5"],
+  "registration": "look-row-9-registration.json",
+  "semanticReview": [
+    {"direction": "000", "verdict": "pass", "horizontal": "centered", "vertical": "nose and eyes clearly above head center"},
+    {"direction": "022.5", "verdict": "pass", "horizontal": "slightly screen-right", "vertical": "strongly up"},
+    {"direction": "045", "verdict": "pass", "horizontal": "screen-right", "vertical": "up"},
+    {"direction": "067.5", "verdict": "pass", "horizontal": "strongly screen-right", "vertical": "slightly up"},
+    {"direction": "090", "verdict": "pass", "horizontal": "nose and pupils clearly screen-right", "vertical": "centered"},
+    {"direction": "112.5", "verdict": "pass", "horizontal": "strongly screen-right", "vertical": "slightly down"},
+    {"direction": "135", "verdict": "pass", "horizontal": "screen-right", "vertical": "down"},
+    {"direction": "157.5", "verdict": "pass", "horizontal": "slightly screen-right", "vertical": "strongly down"}
+  ],
+  "continuityReview": "Paws and baseline remain anchored; the eyes, nose, head, folded ears and ruff advance clockwise without reversal or identity replacement. No registered cell clips an edge."
+}

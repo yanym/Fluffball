@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "chroma_key": {
+    "hex": "#FF00FF",
+    "rgb": [
+      255,
+      0,
+      255
+    ],
+    "threshold": 96.0
+  },
+  "rows": [
+    {
+      "state": "failed",
+      "frames": [
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/00.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/01.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/02.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/03.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/04.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/05.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/06.png",
+        "/Users/bot/Desktop/Furball2D/Assets/SpritePets/NinaRealistic/run/qa/rows/failed/frames-retry/failed/07.png"
+      ],
+      "method": "components"
+    }
+  ]
+}

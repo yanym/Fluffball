@@ -3,6 +3,9 @@ import Foundation
 private struct PetAssetManifest: Decodable {
     struct PetDescriptor: Decodable {
         let id: String
+        let name: String?
+        let species: String?
+        let assetVersion: Int?
     }
 
     struct CapabilitiesDescriptor: Decodable {
@@ -95,19 +98,74 @@ private struct PetAssetManifest: Decodable {
         let actions: [ActionDescriptor]?
     }
 
+    struct AppearanceDescriptor: Decodable {
+        struct LocalizedText: Decodable {
+            let zhHans: String
+            let en: String
+
+            private enum CodingKeys: String, CodingKey {
+                case zhHans = "zh-Hans"
+                case en
+            }
+        }
+
+        let id: String
+        let kind: PetAppearanceKind
+        let title: LocalizedText
+        let subtitle: LocalizedText
+        let systemImage: String?
+        let isDefault: Bool?
+        let atlasFile: String?
+        let spriteAtlas: SpriteAtlasDescriptor?
+    }
+
     let pet: PetDescriptor?
     let capabilities: CapabilitiesDescriptor?
     let clips: [ClipDescriptor]?
     let imageAnimations: [ImageAnimationDescriptor]?
     let spriteAtlas: SpriteAtlasDescriptor?
+    let appearances: [AppearanceDescriptor]?
 }
 
-struct PetPackCapabilities {
-    let supportsImageMode: Bool
-    let supportsVideoMode: Bool
-    let supportsDirectionalLook: Bool
+enum PetAppearanceKind: String, Decodable {
+    case continuousVideo = "continuous-video"
+    case spriteAtlas = "sprite-atlas"
 
-    var supportsModeSwitching: Bool { supportsImageMode && supportsVideoMode }
+    var visualMode: PetVisualMode {
+        switch self {
+        case .continuousVideo: .video
+        case .spriteAtlas: .images
+        }
+    }
+}
+
+struct PetAppearanceOption: Equatable {
+    let id: String
+    let kind: PetAppearanceKind
+    let zhHansTitle: String
+    let englishTitle: String
+    let zhHansSubtitle: String
+    let englishSubtitle: String
+    let systemImage: String
+    let isDefault: Bool
+
+    func title(for language: AppLanguage) -> String {
+        language == .simplifiedChinese ? zhHansTitle : englishTitle
+    }
+
+    func subtitle(for language: AppLanguage) -> String {
+        language == .simplifiedChinese ? zhHansSubtitle : englishSubtitle
+    }
+}
+
+struct PetLibraryPet: Equatable {
+    let id: String
+    let name: String
+    let species: String
+    let assetVersion: Int
+    let isBundled: Bool
+    let rootURL: URL
+    let appearances: [PetAppearanceOption]
 }
 
 enum PetImageMotion: String, Decodable {
@@ -227,18 +285,20 @@ enum PetAssetCatalog {
     private struct LoadedCatalog {
         let rootURL: URL
         let petID: String
-        let capabilities: PetPackCapabilities
+        let petName: String
+        let species: String
+        let assetVersion: Int
+        let isBundled: Bool
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
         let imagesByID: [String: PetAssetManifest.ImageAnimationDescriptor]
-        let spriteAtlas: ResolvedSpriteAtlas?
+        let appearances: [(option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)]
     }
 
-    private static let loaded: LoadedCatalog? = {
-        for rootURL in candidateAssetRoots() {
+    private static func loadCatalog(at rootURL: URL) -> LoadedCatalog? {
             let manifestURL = rootURL.appendingPathComponent("manifest.json")
             guard let data = try? Data(contentsOf: manifestURL),
                   let manifest = try? JSONDecoder().decode(PetAssetManifest.self, from: data) else {
-                continue
+                return nil
             }
 
             var clipsByID: [String: PetAssetManifest.ClipDescriptor] = [:]
@@ -250,9 +310,10 @@ enum PetAssetCatalog {
                 imagesByID[animation.id] = animation
             }
 
-            let spriteAtlas: ResolvedSpriteAtlas?
-            if let descriptor = manifest.spriteAtlas,
-               let url = try? existingAssetURL(descriptor.file, in: rootURL) {
+            func resolveAtlas(
+                _ descriptor: PetAssetManifest.SpriteAtlasDescriptor
+            ) -> ResolvedSpriteAtlas? {
+                guard let url = try? existingAssetURL(descriptor.file, in: rootURL) else { return nil }
                 var animationsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.AnimationDescriptor] = [:]
                 for animation in descriptor.animations where animationsByID[animation.id] == nil {
                     animationsByID[animation.id] = animation
@@ -278,7 +339,7 @@ enum PetAssetCatalog {
                         mayRunAutonomously: action.autonomous ?? false
                     )
                 }
-                spriteAtlas = ResolvedSpriteAtlas(
+                return ResolvedSpriteAtlas(
                     url: url,
                     descriptor: descriptor,
                     animationsByID: animationsByID,
@@ -286,39 +347,194 @@ enum PetAssetCatalog {
                     lookDirectionsByKey: lookDirectionsByKey,
                     actions: actions
                 )
-            } else {
-                spriteAtlas = nil
             }
 
-            let supportsDirectionalLook = spriteAtlas?.lookDirectionsByKey.count == PetLookDirection.count
-            let supportsImagesByDefault = !imagesByID.isEmpty || spriteAtlas != nil
-            let capabilities = PetPackCapabilities(
-                supportsImageMode: manifest.capabilities?.imageMode ?? supportsImagesByDefault,
-                supportsVideoMode: manifest.capabilities?.videoMode ?? !clipsByID.isEmpty,
-                supportsDirectionalLook: supportsDirectionalLook
-            )
+            var appearances: [(option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)] = []
+            for descriptor in manifest.appearances ?? [] {
+                var appearanceAtlasDescriptor = descriptor.spriteAtlas
+                if appearanceAtlasDescriptor == nil,
+                   let atlasFile = descriptor.atlasFile,
+                   let base = manifest.spriteAtlas {
+                    appearanceAtlasDescriptor = PetAssetManifest.SpriteAtlasDescriptor(
+                        file: atlasFile,
+                        spriteVersionNumber: base.spriteVersionNumber,
+                        layout: base.layout,
+                        rendering: base.rendering,
+                        animations: base.animations,
+                        bindings: base.bindings,
+                        lookDirections: base.lookDirections,
+                        actions: base.actions
+                    )
+                }
+                let atlas = appearanceAtlasDescriptor.flatMap(resolveAtlas)
+                if descriptor.kind == .continuousVideo, clipsByID.isEmpty { continue }
+                if descriptor.kind == .spriteAtlas, atlas == nil { continue }
+                appearances.append((
+                    PetAppearanceOption(
+                        id: descriptor.id,
+                        kind: descriptor.kind,
+                        zhHansTitle: descriptor.title.zhHans,
+                        englishTitle: descriptor.title.en,
+                        zhHansSubtitle: descriptor.subtitle.zhHans,
+                        englishSubtitle: descriptor.subtitle.en,
+                        systemImage: descriptor.systemImage ?? "pawprint.fill",
+                        isDefault: descriptor.isDefault ?? false
+                    ),
+                    atlas
+                ))
+            }
+
+            if appearances.isEmpty {
+                let legacyAtlas = manifest.spriteAtlas.flatMap(resolveAtlas)
+                if manifest.capabilities?.videoMode ?? !clipsByID.isEmpty {
+                    appearances.append((
+                        PetAppearanceOption(
+                            id: "continuous-video",
+                            kind: .continuousVideo,
+                            zhHansTitle: "真实连续动画",
+                            englishTitle: "Live Motion",
+                            zhHansSubtitle: "最细腻的视频动作",
+                            englishSubtitle: "Detailed continuous video",
+                            systemImage: "film.stack.fill",
+                            isDefault: true
+                        ),
+                        nil
+                    ))
+                }
+                if let legacyAtlas {
+                    appearances.append((
+                        PetAppearanceOption(
+                            id: "cute-2d",
+                            kind: .spriteAtlas,
+                            zhHansTitle: "可爱 2D",
+                            englishTitle: "Cute 2D",
+                            zhHansSubtitle: "轻巧灵动的图片动画",
+                            englishSubtitle: "Lightweight illustrated animation",
+                            systemImage: "sparkles",
+                            isDefault: appearances.isEmpty
+                        ),
+                        legacyAtlas
+                    ))
+                }
+            }
+
             return LoadedCatalog(
                 rootURL: rootURL.standardizedFileURL,
                 petID: manifest.pet?.id ?? "legacy-pet",
-                capabilities: capabilities,
+                petName: manifest.pet?.name ?? manifest.pet?.id ?? "Pet",
+                species: manifest.pet?.species ?? "pet",
+                assetVersion: manifest.pet?.assetVersion ?? 1,
+                isBundled: isBundledAssetRoot(rootURL),
                 clipsByID: clipsByID,
                 imagesByID: imagesByID,
-                spriteAtlas: spriteAtlas
+                appearances: appearances
             )
-        }
-        return nil
-    }()
+    }
 
-    static var capabilities: PetPackCapabilities {
-        loaded?.capabilities ?? PetPackCapabilities(
-            supportsImageMode: false,
-            supportsVideoMode: true,
-            supportsDirectionalLook: false
+    private static var loadedCatalogs: [LoadedCatalog] = loadCatalogs()
+
+    private static var loaded: LoadedCatalog? {
+        guard !loadedCatalogs.isEmpty else { return nil }
+        if let selectedID = UserDefaults.standard.string(forKey: "selectedPetID"),
+           let selected = loadedCatalogs.first(where: { $0.petID == selectedID }) {
+            return selected
+        }
+        return loadedCatalogs.first(where: { $0.isBundled }) ?? loadedCatalogs[0]
+    }
+
+    private static var selectedAppearance: (option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)? {
+        guard let loaded, !loaded.appearances.isEmpty else { return nil }
+        if let forcedID = ProcessInfo.processInfo.environment["FURBALL_APPEARANCE"],
+           let forced = loaded.appearances.first(where: { $0.option.id == forcedID }) {
+            return forced
+        }
+        let preferenceKey = "selectedAppearance.\(loaded.petID)"
+        if let selectedID = UserDefaults.standard.string(forKey: preferenceKey),
+           let selected = loaded.appearances.first(where: { $0.option.id == selectedID }) {
+            return selected
+        }
+
+        // Preserve the user's previous image/video choice during migration to
+        // the richer three-appearance selector.
+        let legacyKey = "videoAnimationsEnabled.\(loaded.petID)"
+        if UserDefaults.standard.object(forKey: legacyKey) != nil,
+           !UserDefaults.standard.bool(forKey: legacyKey),
+           let image = loaded.appearances.first(where: { $0.option.kind == .spriteAtlas }) {
+            return image
+        }
+        return loaded.appearances.first(where: { $0.option.isDefault }) ?? loaded.appearances[0]
+    }
+
+    static var supportsDirectionalLook: Bool {
+        selectedAppearance?.spriteAtlas?.lookDirectionsByKey.count == PetLookDirection.count
+    }
+
+    static var availableAppearances: [PetAppearanceOption] {
+        loaded?.appearances.map(\.option) ?? []
+    }
+
+    static var activeAppearance: PetAppearanceOption {
+        selectedAppearance?.option ?? PetAppearanceOption(
+            id: "continuous-video",
+            kind: .continuousVideo,
+            zhHansTitle: "真实连续动画",
+            englishTitle: "Live Motion",
+            zhHansSubtitle: "最细腻的视频动作",
+            englishSubtitle: "Detailed continuous video",
+            systemImage: "film.stack.fill",
+            isDefault: true
         )
     }
 
+    static var availablePets: [PetLibraryPet] {
+        loadedCatalogs.map {
+            PetLibraryPet(
+                id: $0.petID,
+                name: $0.petName,
+                species: $0.species,
+                assetVersion: $0.assetVersion,
+                isBundled: $0.isBundled,
+                rootURL: $0.rootURL,
+                appearances: $0.appearances.map(\.option)
+            )
+        }
+    }
+
+    static var activePet: PetLibraryPet? {
+        guard let loaded else { return nil }
+        return PetLibraryPet(
+            id: loaded.petID,
+            name: loaded.petName,
+            species: loaded.species,
+            assetVersion: loaded.assetVersion,
+            isBundled: loaded.isBundled,
+            rootURL: loaded.rootURL,
+            appearances: loaded.appearances.map(\.option)
+        )
+    }
+
+    @discardableResult
+    static func selectPet(id: String) -> Bool {
+        guard loadedCatalogs.contains(where: { $0.petID == id }) else { return false }
+        UserDefaults.standard.set(id, forKey: "selectedPetID")
+        return true
+    }
+
+    static func reload() {
+        loadedCatalogs = loadCatalogs()
+    }
+
+    @discardableResult
+    static func selectAppearance(id: String) -> Bool {
+        guard let loaded,
+              loaded.appearances.contains(where: { $0.option.id == id }) else { return false }
+        UserDefaults.standard.set(id, forKey: "selectedAppearance.\(loaded.petID)")
+        return true
+    }
+
     static var petID: String { loaded?.petID ?? "legacy-pet" }
-    static var imageActions: [PetImageAction] { loaded?.spriteAtlas?.actions ?? [] }
+    static var petName: String { loaded?.petName ?? "Pet" }
+    static var imageActions: [PetImageAction] { selectedAppearance?.spriteAtlas?.actions ?? [] }
 
     static func loops(for id: String, fallback: Bool) -> Bool {
         loaded?.clipsByID[id]?.loop ?? fallback
@@ -347,7 +563,7 @@ enum PetAssetCatalog {
             throw PetAppError.missingAsset("image animation: \(id)")
         }
 
-        if let atlas = loaded.spriteAtlas {
+        if let atlas = selectedAppearance?.spriteAtlas {
             if let binding = atlas.bindingsByID[id] {
                 return try spriteAnimation(for: binding, in: atlas)
             }
@@ -505,6 +721,33 @@ enum PetAssetCatalog {
         return candidate
     }
 
+    static var userPetPacksDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base
+            .appendingPathComponent("Furball2D", isDirectory: true)
+            .appendingPathComponent("Pets", isDirectory: true)
+    }
+
+    private static func loadCatalogs() -> [LoadedCatalog] {
+        var seenPaths = Set<String>()
+        var seenPetIDs = Set<String>()
+        var result: [LoadedCatalog] = []
+        for root in candidateAssetRoots() {
+            let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+            guard seenPaths.insert(canonical.path).inserted,
+                  let catalog = loadCatalog(at: canonical),
+                  seenPetIDs.insert(catalog.petID).inserted else { continue }
+            result.append(catalog)
+        }
+        return result
+    }
+
+    private static func isBundledAssetRoot(_ rootURL: URL) -> Bool {
+        let rootPath = rootURL.standardizedFileURL.path
+        let bundlePath = Bundle.main.bundleURL.standardizedFileURL.path
+        return rootPath == bundlePath || rootPath.hasPrefix(bundlePath + "/")
+    }
+
     private static func candidateAssetRoots() -> [URL] {
         var roots: [URL] = []
 
@@ -512,6 +755,14 @@ enum PetAssetCatalog {
         // `.furballpet` directory without recompiling the application.
         if let override = ProcessInfo.processInfo.environment["FURBALL_PET_PACK"], !override.isEmpty {
             roots.append(URL(fileURLWithPath: override, isDirectory: true))
+        }
+
+        if let installed = try? FileManager.default.contentsOfDirectory(
+            at: userPetPacksDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            roots.append(contentsOf: installed.sorted { $0.lastPathComponent < $1.lastPathComponent })
         }
 
         if let resourceURL = Bundle.main.resourceURL {

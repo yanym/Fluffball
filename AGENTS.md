@@ -29,7 +29,7 @@
 4. 最后两行必须提供完整 16 方向：0° 为上、90° 为屏幕右、180° 为下、270° 为屏幕左，每 22.5° 一格。四个主方向先单独批准，再生成两条连续方向行。
 5. 视线动作保持脚、下躯干和基线稳定；眼睛先动，口鼻和头颈随后，耳朵、面颊毛与胸毛轻微滞后。不得旋转整个 sprite 冒充转头。
 6. `manifest.json` 的 `spriteAtlas.animations` 声明逐帧时长、循环、motion 和短溶解比例；`bindings` 将 27 个标准语义 ID 映射到图集动作。可用 `frameIndices`、`rightAnimation` 和 `frameDurationScale` 复用动作，不得在 Swift 中写某只宠物的路径。
-7. `actions` 可发布任意数量的双语可爱动作。标题、是否自动触发和结果姿态属于素材包；图片模式菜单自动读取，视频模式自动置灰。
+7. `actions` 可发布任意数量的双语可爱动作。当前创建 Skill 的动作注册表版本为 `2026-08-17.2`，内置动作包括 wave、jump、failed、waiting、working、review、play-bow、head-tilt、sniff 和 high-five。标题、是否自动触发和结果姿态属于素材包；图片模式菜单自动读取，视频模式自动置灰。增加动作时必须同时更新 `Sources/Furball2D/CreatorSkill/` 的合同、Skill 和验证器。
 8. 运行时看向鼠标时每次只走一个相邻方向，首次稳定约 0.15 秒，相邻冷却约 0.085–0.12 秒。进入走跑前沿最短路径抵达匹配的 90° 或 270° 侧面；移动期间不切换视线格。
 9. 方向格只在鼠标最近发生移动时接管画面；鼠标静止约 2.4 秒后必须回到完整 idle 行，不能让单张方向格永久遮住呼吸和眨眼。进入坐下等正面动作前先短暂回到 idle 端口。
 10. 鼠标跟随和自由漫游继续使用二维目标、速度迟滞和横纵边界。图集有真实起步帧时桌面位移无需等待视频的首个抬爪时间，但保留约 0.14 秒平滑加速。
@@ -352,7 +352,7 @@ When the user explicitly rejects AI-generated video, prefer a Codex-compatible P
 4. Rows 9–10 contain all 16 directions: 0° up, 90° screen-right, 180° down, and 270° screen-left at 22.5° steps. Approve the four cardinals before synthesizing both coherent direction rows.
 5. Keep paws, lower torso, and baseline stable during look motion. Eyes lead, muzzle/head/neck follow, and ears, cheek fur, and ruff lag subtly. Never rotate the whole sprite to fake a head turn.
 6. `spriteAtlas.animations` declares per-frame timing, loop, motion, and short blend fraction. `bindings` maps the 27 standard semantic IDs and may use `frameIndices`, `rightAnimation`, and `frameDurationScale`. Never hardcode a pet-specific path in Swift.
-7. `actions` may publish any number of localized cute actions. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them.
+7. `actions` may publish any number of localized cute actions. The current creator-Skill action registry is `2026-08-17.2`, covering wave, jump, failed, waiting, working, review, play-bow, head-tilt, sniff, and high-five. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them. Adding an action also requires updating the contract, Skill, and validator under `Sources/Furball2D/CreatorSkill/`.
 8. Cursor gaze advances one adjacent direction at a time, using roughly 0.15 seconds of initial stability and a 0.085–0.12-second adjacent cooldown. Before locomotion, take the shortest route to the matching 90° or 270° profile. Do not change look cells during movement.
 9. Direction cells take over only after recent pointer movement. After roughly 2.4 seconds of pointer stillness, return to the full idle row so one static gaze cannot permanently hide breathing and blinking. Briefly return through the idle port before a front-facing posture action such as sitting.
 10. Cursor following and free roam retain one two-dimensional target, gait hysteresis, and horizontal/vertical bounds. A sprite gait with real start frames does not need a video first-paw delay, but retains the roughly 0.14-second image-mode acceleration ramp.

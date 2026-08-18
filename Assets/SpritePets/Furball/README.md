@@ -14,7 +14,7 @@
 应用实际加载的运行时副本位于：
 
 ```text
-Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp
+Sources/Furball2D/Assets/Sprites/Nina/cute/spritesheet.webp
 ```
 
 成品遵循 Codex `spriteVersionNumber: 2`：1536×2288、8 列×11 行、每格 192×208、透明无损 WebP。
@@ -41,7 +41,7 @@ This directory preserves traceable generation and QA material for the Furball im
 The copy loaded by the app at runtime is:
 
 ```text
-Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp
+Sources/Furball2D/Assets/Sprites/Nina/cute/spritesheet.webp
 ```
 
 It follows the Codex `spriteVersionNumber: 2` contract: a transparent lossless WebP at 1536×2288, 8 columns × 11 rows, and 192×208 cells.

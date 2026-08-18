@@ -10,7 +10,7 @@
 
 `Scripts/build-image-assets.sh` 会独立构建真正的图片运行时素材，不把 PNG 再编码成视频。输出位于 `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`：站姿来自已归一化的 9 个视角，坐/趴/睡来自 `generation-ready/` 姿态图并离线抠像。`ImageMode/qa/contact-sheet.png` 是本次 17 张运行时图片的接触表。`manifest.json.imageAnimations` 再把同一组 27 个语义动作映射到这些图片与程序化 motion。
 
-`SpritePets/Furball/` 保存新 Codex v2 图片宠物的生成与 QA 工作区。应用实际使用的成品复制到 `Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp`：1536×2288、8×11、192×208 单元格，包含 9 类标准动画和 16 个视线方向。该图集优先覆盖 `manifest.json.spriteAtlas.bindings` 中的语义，旧 PNG 只为未绑定语义或旧素材包兼容保留。
+`SpritePets/Furball/` 保存原可爱 Codex v2 图片宠物的生成记录；`SpritePets/NinaRealistic/` 保存 Nina 写实 2D 的完整生成、接触表、方向连续性和 Alpha QA。运行时成品位于 `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`。两张图集都是 1536×2288、8×11、192×208 单元格，使用同一组动作绑定与 16 个视线方向，因此切换风格不会改变行为语义。
 
 图集/PNG 图片表示与视频表示并列。`capabilities.imageMode` 和 `capabilities.videoMode` 决定素材包支持哪一种；纯图片包可以完全不带 `Clips/`。两者都存在时应用默认视频并允许用户切换。当前图集具有独立左右步态行和真实脚掌相位，不再用单张站姿的程序化弹跳冒充走跑。
 
@@ -87,7 +87,7 @@ All original videos are organized by `view/action`. Directory and file names use
 
 `Scripts/build-image-assets.sh` independently builds true image-runtime assets; it does not encode the PNGs back into video. Outputs live under `Sources/Furball2D/Assets/Images/{stand,sit,lie,sleep}/`. Standing views come from the normalized nine-angle set, while sit/lie/sleep sources under `generation-ready/` are keyed offline. `ImageMode/qa/contact-sheet.png` reviews the current 17 runtime images. `manifest.json.imageAnimations` maps the same 27 semantic actions to these images and procedural motion types.
 
-`SpritePets/Furball/` holds the new Codex v2 image-pet generation and QA workspace. The runtime copy is `Sources/Furball2D/Assets/Sprites/Furball/spritesheet.webp`: 1536×2288, 8×11, 192×208 cells, nine standard animation families, and 16 gaze directions. It overrides semantics listed in `manifest.json.spriteAtlas.bindings`; legacy PNGs remain only for unbound semantics and old-pack compatibility.
+`SpritePets/Furball/` preserves the original cute Codex v2 generation record. `SpritePets/NinaRealistic/` contains Nina Realistic 2D generation, contact sheets, direction-continuity review, and alpha QA. Runtime atlases live at `Sources/Furball2D/Assets/Sprites/Nina/{cute,realistic}/spritesheet.webp`. Both are 1536×2288, 8×11 atlases using the same semantic bindings and 16 gaze directions, so style changes never alter behavior semantics.
 
 Atlas/PNG image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what the pack supports; an image-only pack may omit `Clips/` completely. When both exist, the app defaults to video and lets the user switch. The current atlas has independent left/right gait rows with real footfall phases instead of moving a procedurally bouncing standing still.
 
