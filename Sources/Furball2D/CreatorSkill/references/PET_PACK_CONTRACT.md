@@ -62,6 +62,11 @@ fast-run.loop
 fast-run.stop
 ```
 
+Each `*.start` gait binding contains at least four ordered poses. Each `*.loop` binding contains
+all eight distinct gait cells in cyclic contact order and begins at the pose immediately after
+the start binding. The three speed tiers keep this pose order and vary only cadence, allowing
+phase-continuous live tier changes without a leg snap.
+
 The complete 16-direction `lookDirections` map fulfills these nine legacy view slots:
 
 ```text

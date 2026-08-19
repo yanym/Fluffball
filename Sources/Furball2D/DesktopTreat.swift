@@ -6,6 +6,7 @@ final class DesktopTreat {
     private let panel: NSPanel
     private let view: TreatView
     private var animationGeneration = 0
+    private var throwTimer: Timer?
 
     var isVisible: Bool { panel.isVisible }
 
@@ -50,9 +51,63 @@ final class DesktopTreat {
         return NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
     }
 
+    func throwTreat(
+        from start: NSPoint,
+        to requestedEnd: NSPoint,
+        level: NSWindow.Level,
+        in visibleFrame: NSRect,
+        completion: @escaping (NSPoint) -> Void
+    ) {
+        animationGeneration += 1
+        let generation = animationGeneration
+        throwTimer?.invalidate()
+        let size = panel.frame.size
+        let end = NSPoint(
+            x: min(visibleFrame.maxX - size.width / 2, max(visibleFrame.minX + size.width / 2, requestedEnd.x)),
+            y: min(visibleFrame.maxY - size.height / 2, max(visibleFrame.minY + size.height / 2, requestedEnd.y))
+        )
+        panel.level = NSWindow.Level(rawValue: level.rawValue + 1)
+        panel.setFrameOrigin(NSPoint(x: start.x - size.width / 2, y: start.y - size.height / 2))
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        view.stopAnimation()
+        view.setThrowing(true)
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let distance = hypot(end.x - start.x, end.y - start.y)
+        let duration = min(0.78, max(0.42, 0.38 + TimeInterval(distance / 1_300)))
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.animationGeneration == generation else {
+                    timer.invalidate()
+                    return
+                }
+                let linear = min(1, (ProcessInfo.processInfo.systemUptime - startedAt) / duration)
+                let eased = linear * linear * (3 - 2 * linear)
+                let arc = sin(Double.pi * linear) * min(92, max(42, distance * 0.16))
+                let center = NSPoint(
+                    x: start.x + (end.x - start.x) * eased,
+                    y: start.y + (end.y - start.y) * eased + arc
+                )
+                self.panel.setFrameOrigin(NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2))
+                self.view.setThrowProgress(CGFloat(linear))
+                if linear >= 1 {
+                    timer.invalidate()
+                    self.throwTimer = nil
+                    self.view.setThrowing(false)
+                    self.view.startAnimation()
+                    completion(end)
+                }
+            }
+        }
+        throwTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     func hide() {
         guard panel.isVisible else { return }
         animationGeneration += 1
+        throwTimer?.invalidate()
+        throwTimer = nil
         let generation = animationGeneration
         view.stopAnimation()
         NSAnimationContext.runAnimationGroup { context in
@@ -76,6 +131,7 @@ final class DesktopTreat {
 }
 
 private final class TreatView: NSView {
+    private lazy var treatImage: NSImage? = Self.loadTreatImage()
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -86,64 +142,11 @@ private final class TreatView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let transform = NSAffineTransform()
-        transform.translateX(by: bounds.midX, yBy: bounds.midY)
-        transform.rotate(byDegrees: -9)
-        transform.translateX(by: -bounds.midX, yBy: -bounds.midY)
-        transform.concat()
-
         let shadowPath = NSBezierPath(ovalIn: NSRect(x: 9, y: 7, width: 39, height: 11))
         NSColor.black.withAlphaComponent(0.13).setFill()
         shadowPath.fill()
-
-        let bone = NSBezierPath()
-        bone.move(to: NSPoint(x: 16, y: 18))
-        bone.curve(to: NSPoint(x: 11, y: 20), controlPoint1: NSPoint(x: 14, y: 19), controlPoint2: NSPoint(x: 13, y: 20))
-        bone.curve(to: NSPoint(x: 6, y: 25), controlPoint1: NSPoint(x: 7, y: 20), controlPoint2: NSPoint(x: 5, y: 22))
-        bone.curve(to: NSPoint(x: 9, y: 31), controlPoint1: NSPoint(x: 6, y: 28), controlPoint2: NSPoint(x: 7, y: 30))
-        bone.curve(to: NSPoint(x: 15, y: 31), controlPoint1: NSPoint(x: 11, y: 33), controlPoint2: NSPoint(x: 14, y: 33))
-        bone.curve(to: NSPoint(x: 19, y: 28), controlPoint1: NSPoint(x: 17, y: 30), controlPoint2: NSPoint(x: 18, y: 29))
-        bone.line(to: NSPoint(x: 37, y: 28))
-        bone.curve(to: NSPoint(x: 41, y: 31), controlPoint1: NSPoint(x: 38, y: 29), controlPoint2: NSPoint(x: 39, y: 30))
-        bone.curve(to: NSPoint(x: 47, y: 31), controlPoint1: NSPoint(x: 43, y: 33), controlPoint2: NSPoint(x: 46, y: 33))
-        bone.curve(to: NSPoint(x: 50, y: 25), controlPoint1: NSPoint(x: 49, y: 30), controlPoint2: NSPoint(x: 50, y: 28))
-        bone.curve(to: NSPoint(x: 45, y: 20), controlPoint1: NSPoint(x: 51, y: 22), controlPoint2: NSPoint(x: 49, y: 20))
-        bone.curve(to: NSPoint(x: 40, y: 18), controlPoint1: NSPoint(x: 43, y: 20), controlPoint2: NSPoint(x: 42, y: 19))
-        bone.curve(to: NSPoint(x: 37, y: 21), controlPoint1: NSPoint(x: 39, y: 18), controlPoint2: NSPoint(x: 38, y: 19))
-        bone.line(to: NSPoint(x: 19, y: 21))
-        bone.curve(to: NSPoint(x: 16, y: 18), controlPoint1: NSPoint(x: 18, y: 20), controlPoint2: NSPoint(x: 17, y: 19))
-        bone.close()
-
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.20)
-        shadow.shadowBlurRadius = 6
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        shadow.set()
-        NSGradient(
-            colors: [
-                NSColor(calibratedRed: 0.98, green: 0.77, blue: 0.36, alpha: 1),
-                NSColor(calibratedRed: 0.87, green: 0.50, blue: 0.16, alpha: 1)
-            ]
-        )?.draw(in: bone, angle: -90)
-        NSGraphicsContext.restoreGraphicsState()
-
-        NSColor(calibratedRed: 0.49, green: 0.27, blue: 0.09, alpha: 0.92).setStroke()
-        bone.lineWidth = 1.35
-        bone.stroke()
-
-        NSColor.white.withAlphaComponent(0.38).setStroke()
-        let highlight = NSBezierPath()
-        highlight.move(to: NSPoint(x: 18, y: 26.5))
-        highlight.curve(to: NSPoint(x: 38, y: 26.5), controlPoint1: NSPoint(x: 24, y: 28), controlPoint2: NSPoint(x: 32, y: 28))
-        highlight.lineWidth = 1.2
-        highlight.lineCapStyle = .round
-        highlight.stroke()
-
-        NSColor(calibratedRed: 0.45, green: 0.23, blue: 0.08, alpha: 0.38).setFill()
-        for center in [NSPoint(x: 24, y: 23.6), NSPoint(x: 31.5, y: 24.2)] {
-            NSBezierPath(ovalIn: NSRect(x: center.x - 1.15, y: center.y - 1.15, width: 2.3, height: 2.3)).fill()
-        }
+        treatImage?.draw(in: NSRect(x: 5, y: 7, width: bounds.width - 10, height: bounds.height - 8),
+                         from: .zero, operation: .sourceOver, fraction: 1)
     }
 
     func startAnimation() {
@@ -160,5 +163,89 @@ private final class TreatView: NSView {
 
     func stopAnimation() {
         layer?.removeAnimation(forKey: "treat-bounce")
+    }
+
+    func setThrowing(_ throwing: Bool) {
+        if !throwing { layer?.setAffineTransform(.identity) }
+    }
+
+    func setThrowProgress(_ progress: CGFloat) {
+        let rotation = CGFloat.pi * 4.2 * progress
+        let scale = 0.86 + sin(.pi * progress) * 0.24
+        layer?.setAffineTransform(CGAffineTransform(rotationAngle: rotation).scaledBy(x: scale, y: scale))
+    }
+
+    static func loadTreatImage() -> NSImage? {
+        let candidates = [
+            Bundle.module.url(forResource: "treat-bone", withExtension: "png", subdirectory: "Assets/UI"),
+            Bundle.main.resourceURL?.appendingPathComponent("Assets/UI/treat-bone.png")
+        ]
+        return candidates.compactMap { $0 }.first(where: { FileManager.default.fileExists(atPath: $0.path) }).flatMap(NSImage.init(contentsOf:))
+    }
+}
+
+@MainActor
+final class TreatPlacementOverlay {
+    private var panels: [NSPanel] = []
+
+    var isActive: Bool { !panels.isEmpty }
+
+    func begin(level: NSWindow.Level, onSelect: @escaping (NSPoint) -> Void, onCancel: @escaping () -> Void) {
+        cancel()
+        let image = TreatView.loadTreatImage()?.resized(to: NSSize(width: 42, height: 42))
+        let cursor = image.map { NSCursor(image: $0, hotSpot: NSPoint(x: 21, y: 21)) } ?? .crosshair
+        for screen in NSScreen.screens {
+            let panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let view = TreatPlacementView(frame: NSRect(origin: .zero, size: screen.frame.size), cursor: cursor)
+            view.onSelect = { [weak self] localPoint in
+                let point = NSPoint(x: screen.frame.minX + localPoint.x, y: screen.frame.minY + localPoint.y)
+                self?.cancel()
+                onSelect(point)
+            }
+            view.onCancel = { [weak self] in self?.cancel(); onCancel() }
+            panel.contentView = view
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.level = NSWindow.Level(rawValue: level.rawValue + 3)
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            panel.orderFrontRegardless()
+            panels.append(panel)
+        }
+    }
+
+    func cancel() {
+        panels.forEach { $0.orderOut(nil) }
+        panels.removeAll()
+    }
+}
+
+private final class TreatPlacementView: NSView {
+    let cursor: NSCursor
+    var onSelect: ((NSPoint) -> Void)?
+    var onCancel: (() -> Void)?
+
+    init(frame: NSRect, cursor: NSCursor) {
+        self.cursor = cursor
+        super.init(frame: frame)
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    required init?(coder: NSCoder) { nil }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: cursor) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onSelect?(convert(event.locationInWindow, from: nil)) }
+    override func rightMouseDown(with event: NSEvent) { onCancel?() }
+}
+
+private extension NSImage {
+    func resized(to size: NSSize) -> NSImage {
+        let output = NSImage(size: size)
+        output.lockFocus()
+        draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+        output.unlockFocus()
+        return output
     }
 }

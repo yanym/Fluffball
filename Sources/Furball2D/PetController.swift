@@ -25,6 +25,7 @@ final class PetController: NSObject, NSMenuDelegate {
         static let speechBubbleStyle = "speechBubbleStyle"
         static let groupPlay = "groupPlayEnabled"
         static let groupPetIDs = "groupPlayPetIDs"
+        static let alwaysSleep = "alwaysSleep"
     }
 
     private static var videoAnimationsPreferenceKey: String {
@@ -97,6 +98,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let speechBubble = PetSpeechBubble()
     private let desktopTreat = DesktopTreat()
+    private let treatPlacementOverlay = TreatPlacementOverlay()
     private let desktopCarriedItem = DesktopCarriedItem()
     private let groupPlayController = PetGroupPlayController()
     private let desktopInteractionService = DesktopInteractionService()
@@ -261,6 +263,10 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(groupPetIDs.sorted(), forKey: PreferenceKey.groupPetIDs) }
     }
 
+    private var alwaysSleepEnabled: Bool {
+        didSet { UserDefaults.standard.set(alwaysSleepEnabled, forKey: PreferenceKey.alwaysSleep) }
+    }
+
     private var videoAnimationsEnabled: Bool {
         didSet {
             UserDefaults.standard.set(
@@ -309,6 +315,8 @@ final class PetController: NSObject, NSMenuDelegate {
         speechBubbleStyle = defaults.string(forKey: PreferenceKey.speechBubbleStyle)
             .flatMap(PetSpeechBubbleStyle.init(rawValue:)) ?? .cloud
         groupPlayEnabled = defaults.bool(forKey: PreferenceKey.groupPlay)
+        alwaysSleepEnabled = defaults.bool(forKey: PreferenceKey.alwaysSleep)
+        if alwaysSleepEnabled { groupPlayEnabled = false }
         let imageCapableIDs = PetAssetCatalog.imageCapablePetIDs
         let savedGroupIDs = Set(defaults.stringArray(forKey: PreferenceKey.groupPetIDs) ?? [])
         let validSavedGroupIDs = savedGroupIDs.intersection(imageCapableIDs)
@@ -388,7 +396,9 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         startMindTracking()
         startFacingTracking()
-        if freeRoamEnabled {
+        if alwaysSleepEnabled {
+            requestSleep()
+        } else if freeRoamEnabled {
             beginFreeRoaming()
         } else if followCursor {
             beginCursorFollowing()
@@ -987,16 +997,14 @@ final class PetController: NSObject, NSMenuDelegate {
             for item in menu.items where item.action != nil { item.target = self }
             return
         }
-        menu.addItem(makeMenuItem(title: appLanguage.interactMenu, symbol: "hand.point.up.left.fill", action: #selector(interactFromMenu)))
-        menu.addItem(makeMenuItem(title: appLanguage.speakMenu, symbol: "bubble.left.fill", action: #selector(speakFromMenu)))
-        if renderer.visualMode == .images {
-            menu.addItem(makeMenuItem(title: appLanguage.throwTreatMenu, symbol: "circle.hexagongrid.fill", action: #selector(throwTreatFromMenu)))
-        }
-        if !PetAssetCatalog.imageActions.isEmpty {
-            menu.addItem(makeCuteActionsMenuItem())
-        }
-        menu.addItem(makeMenuItem(title: appLanguage.imageTurnMenu, symbol: "eye.fill", action: #selector(imageTurnFromMenu)))
-        menu.addItem(makeMenuItem(title: appLanguage.sleepMenu, symbol: "bed.double.fill", action: #selector(sleepFromMenu)))
+        menu.addItem(makeQuickActionsMenuItem())
+        let alwaysSleepItem = makeMenuItem(
+            title: appLanguage.alwaysSleepMenu,
+            symbol: "moon.zzz.fill",
+            action: #selector(toggleAlwaysSleep)
+        )
+        alwaysSleepItem.state = alwaysSleepEnabled ? .on : .off
+        menu.addItem(alwaysSleepItem)
         menu.addItem(makeMenuItem(
             title: appLanguage.visibilityMenu(isVisible: panel.isVisible),
             symbol: panel.isVisible ? "eye.slash.fill" : "eye.fill",
@@ -1008,6 +1016,28 @@ final class PetController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: appLanguage.quitMenu, symbol: "moon.zzz.fill", action: #selector(quit), keyEquivalent: "q"))
         for item in menu.items where item.action != nil { item.target = self }
+    }
+
+    private func makeQuickActionsMenuItem() -> NSMenuItem {
+        let root = NSMenuItem(title: appLanguage.actionsMenu, action: nil, keyEquivalent: "")
+        root.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        let actions = NSMenu(title: appLanguage.actionsMenu)
+        actions.addItem(makeMenuItem(title: appLanguage.interactMenu, symbol: "hand.point.up.left.fill", action: #selector(interactFromMenu)))
+        actions.addItem(makeMenuItem(title: appLanguage.speakMenu, symbol: "bubble.left.fill", action: #selector(speakFromMenu)))
+        if renderer.visualMode == .images {
+            actions.addItem(makeMenuItem(title: appLanguage.throwTreatMenu, symbol: "bone.fill", action: #selector(throwTreatFromMenu)))
+        }
+        if !PetAssetCatalog.imageActions.isEmpty {
+            actions.addItem(makeCuteActionsMenuItem())
+        }
+        actions.addItem(makeMenuItem(title: appLanguage.imageTurnMenu, symbol: "eye.fill", action: #selector(imageTurnFromMenu)))
+        actions.addItem(makeMenuItem(title: appLanguage.sleepMenu, symbol: "bed.double.fill", action: #selector(sleepFromMenu)))
+        for item in actions.items where item.action != nil {
+            item.target = self
+            item.isEnabled = !alwaysSleepEnabled || item.action == #selector(speakFromMenu)
+        }
+        root.submenu = actions
+        return root
     }
 
     private func makeMenuHeaderItem() -> NSMenuItem {
@@ -1950,7 +1980,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
-        guard autoBehavior, !followCursor, !freeRoamEnabled else { return }
+        guard !alwaysSleepEnabled, autoBehavior, !followCursor, !freeRoamEnabled else { return }
         schedule(after: personalityRestDelay, epoch: epoch) { [weak self] in
             self?.settleDown(epoch: epoch)
         }
@@ -2079,6 +2109,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func scheduleWake(epoch: Int) {
+        guard !alwaysSleepEnabled else { return }
         let traits = petMind.traits
         let state = petMind.state
         let center = 30 + (1 - state.energy) * 26 + traits.composure * 12 - traits.vitality * 8
@@ -2089,6 +2120,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func beginOuting(epoch: Int) {
+        guard !alwaysSleepEnabled else { return }
         guard behaviorEpoch == epoch, posture == .sleep, !isTransitioning else {
             schedule(after: 5, epoch: epoch) { [weak self] in self?.beginOuting(epoch: epoch) }
             return
@@ -2240,7 +2272,8 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func continueToStandForMovement() {
-        guard (followCursor || freeRoamEnabled || treatTarget != nil
+        guard !alwaysSleepEnabled,
+              (followCursor || freeRoamEnabled || treatTarget != nil
                || immediateDesktopInteractionResume != nil),
               !isTransitioning else { return }
         switch posture {
@@ -2629,8 +2662,15 @@ final class PetController: NSObject, NSMenuDelegate {
                 let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
                 if elapsed < biteDuration {
                     let progress = CGFloat(elapsed / biteDuration)
+                    let eased = progress * progress * (3 - 2 * progress)
+                    let mouth = self.desktopCarryMouthPoint(direction: direction)
+                    let pickupAnchor = NSPoint(
+                        x: destination.point.x + (mouth.x - destination.point.x) * eased,
+                        y: destination.point.y + (mouth.y - destination.point.y) * eased
+                            + sin(.pi * progress) * 18 * self.renderedPetScale
+                    )
                     self.desktopCarriedItem.update(
-                        anchor: self.desktopCarryMouthPoint(direction: direction),
+                        anchor: pickupAnchor,
                         phase: progress,
                         biting: true
                     )
@@ -2685,11 +2725,22 @@ final class PetController: NSObject, NSMenuDelegate {
         desktopInteractionTimer?.invalidate()
         desktopInteractionTimer = nil
         setLocomotionMode(.none, direction: locomotionDirection)
-        desktopCarriedItem.hide()
-        desktopInteractionInProgress = false
-        freeRoamPauseUntil = ProcessInfo.processInfo.systemUptime + 2.4
-        showSpeech("Hehe—I carried a safe little picture of “\(name)”. The real item never moved.")
-        finishImmediateDesktopInteractionIfNeeded()
+        let dropPoint = NSPoint(
+            x: panel.frame.midX + locomotionDirection * panel.frame.width * 0.28,
+            y: panel.frame.minY + panel.frame.height * 0.18
+        )
+        desktopCarriedItem.setDown(at: dropPoint) { [weak self] in
+            guard let self else { return }
+            self.desktopCarriedItem.hide()
+            self.desktopInteractionInProgress = false
+            self.freeRoamPauseUntil = ProcessInfo.processInfo.systemUptime + 2.4
+            self.showSpeech("Hehe—I carried a safe little picture of “\(name)”. The real item never moved.")
+            if let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.happy-dance" }) {
+                self.performImageAction(action) { [weak self] in self?.finishImmediateDesktopInteractionIfNeeded() }
+            } else {
+                self.finishImmediateDesktopInteractionIfNeeded()
+            }
+        }
     }
 
     private func cancelDesktopItemInteraction() {
@@ -2821,11 +2872,12 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     @discardableResult
-    private func beginTreatChase(at requestedPoint: NSPoint? = nil) -> Bool {
+    private func beginTreatChase(at requestedPoint: NSPoint? = nil, treatAlreadyVisible: Bool = false) -> Bool {
         guard renderer.visualMode == .images,
               panel.isVisible,
               !isTransitioning,
-              treatTarget == nil else { return false }
+              treatTarget == nil,
+              !alwaysSleepEnabled else { return false }
         registerUserActivity()
         resumeFollowingAfterTreat = followCursor
         resumeRoamingAfterTreat = freeRoamEnabled
@@ -2837,11 +2889,14 @@ final class PetController: NSObject, NSMenuDelegate {
         stopPatrol()
 
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
-        treatTarget = desktopTreat.show(
-            at: requestedPoint ?? NSEvent.mouseLocation,
-            level: panel.level,
-            in: visibleFrame
-        )
+        treatTarget = treatAlreadyVisible
+            ? requestedPoint
+            : desktopTreat.show(
+                at: requestedPoint ?? NSEvent.mouseLocation,
+                level: panel.level,
+                in: visibleFrame
+            )
+        guard treatTarget != nil else { return false }
         showSpeech(appLanguage.treatChaseStarted)
         treatLastSampleTime = ProcessInfo.processInfo.systemUptime
         treatDeadline = treatLastSampleTime + 18
@@ -3278,11 +3333,11 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         case .lie:
             playTransition(PetClips.lieToSleep) { [weak self] in
-                guard let self, self.autoBehavior else { return }
+                guard let self, self.autoBehavior, !self.alwaysSleepEnabled else { return }
                 self.scheduleWake(epoch: epoch)
             }
         case .sleep:
-            if autoBehavior { scheduleWake(epoch: epoch) }
+            if autoBehavior, !alwaysSleepEnabled { scheduleWake(epoch: epoch) }
         }
     }
 
@@ -3291,6 +3346,10 @@ final class PetController: NSObject, NSMenuDelegate {
         let epoch = behaviorEpoch
         behaviorTimer?.invalidate()
         stopPatrol()
+        if alwaysSleepEnabled {
+            forceSleep(epoch: epoch)
+            return
+        }
         guard autoBehavior, !followCursor, !freeRoamEnabled else { return }
         if posture == .sleep {
             scheduleWake(epoch: epoch)
@@ -3512,7 +3571,33 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @objc private func throwTreatFromMenu() {
         panel.orderFrontRegardless()
-        beginTreatChase()
+        guard renderer.visualMode == .images, !alwaysSleepEnabled, !treatPlacementOverlay.isActive else { return }
+        let throwOrigin = NSEvent.mouseLocation
+        showSpeech(appLanguage.treatPlacementHint)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.treatPlacementOverlay.begin(
+                level: self.panel.level,
+                onSelect: { [weak self] target in
+                    guard let self else { return }
+                    let visible = NSScreen.screens.first(where: { $0.frame.contains(target) })?.visibleFrame
+                        ?? self.panel.screen?.visibleFrame
+                        ?? self.panel.frame
+                    self.desktopTreat.throwTreat(
+                        from: throwOrigin,
+                        to: target,
+                        level: self.panel.level,
+                        in: visible
+                    ) { [weak self] landingPoint in
+                        guard let self else { return }
+                        if !self.beginTreatChase(at: landingPoint, treatAlreadyVisible: true) {
+                            self.desktopTreat.hide()
+                        }
+                    }
+                },
+                onCancel: { [weak self] in self?.showSpeech("Treat toss cancelled—saving that biscuit for later. 🦴") }
+            )
+        }
     }
 
     @objc private func performCuteActionFromMenu(_ sender: NSMenuItem) {
@@ -3556,6 +3641,7 @@ final class PetController: NSObject, NSMenuDelegate {
     @objc private func sleepFromMenu() {
         panel.orderFrontRegardless()
         cancelTreatChase(resume: false)
+        treatPlacementOverlay.cancel()
         if followCursor {
             followCursor = false
             stopCursorFollowing()
@@ -3566,6 +3652,39 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         showSpeech(appLanguage.sleepConfirmation)
         requestSleep()
+    }
+
+    @objc private func toggleAlwaysSleep() {
+        alwaysSleepEnabled.toggle()
+        cancelTreatChase(resume: false)
+        treatPlacementOverlay.cancel()
+        cancelDesktopItemInteraction()
+        if alwaysSleepEnabled {
+            if groupPlayEnabled {
+                groupPlayEnabled = false
+                groupPlayController.stop()
+                showPetWindow()
+            }
+            followCursor = false
+            freeRoamEnabled = false
+            stopCursorFollowing()
+            stopFreeRoaming()
+            showSpeech("Sweet dreams mode is on. I’ll stay cozy until you turn it off. 💤")
+            requestSleep()
+        } else {
+            showSpeech("I’m awake! What should we do? ✨")
+            behaviorEpoch += 1
+            let epoch = behaviorEpoch
+            if posture == .sleep, !isTransitioning {
+                playTransition(PetClips.sleepToStand) { [weak self] in self?.restartAutonomy() }
+            } else {
+                schedule(after: 0.1, epoch: epoch, requiresAutoBehavior: false) { [weak self] in
+                    self?.restartAutonomy()
+                }
+            }
+        }
+        rebuildMenu()
+        refreshAppearanceSettings()
     }
 
     @objc private func showVisualSettings() {
@@ -3591,7 +3710,20 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.animationSpeed = min(1.5, max(0.5, value))
                 self.renderer.setAnimationSpeed(self.animationSpeed)
                 self.groupPlayController.setAnimationSpeed(self.animationSpeed)
-                self.refreshAppearanceSettings()
+            }
+            controller.onBodySizeChanged = { [weak self] petID, value in
+                guard let self, PetAssetCatalog.setBodySize(value, forPetID: petID) else { return }
+                if PetAssetCatalog.petID == petID {
+                    self.resizeForActivePet()
+                }
+                if self.groupPlayEnabled {
+                    try? self.groupPlayController.start(
+                        petIDs: self.groupPetIDs,
+                        scale: self.petScale,
+                        animationSpeed: self.animationSpeed,
+                        level: self.panel.level
+                    )
+                }
             }
             controller.onFollowCursorChanged = { [weak self] enabled in
                 guard let self, self.followCursor != enabled else { return }
@@ -3934,6 +4066,7 @@ final class PetController: NSObject, NSMenuDelegate {
         freeRoamTimer = nil
         facingTimer?.invalidate()
         facingTimer = nil
+        treatPlacementOverlay.cancel()
         cancelTreatChase(resume: false)
         cancelDesktopItemInteraction()
         immediateDesktopInteractionResume = nil
@@ -3970,6 +4103,7 @@ final class PetController: NSObject, NSMenuDelegate {
         }
         if panel.isVisible {
             cancelTreatChase(resume: false)
+            treatPlacementOverlay.cancel()
             hideSpeechBubble(animated: false)
             panel.orderOut(nil)
         } else {

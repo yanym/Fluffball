@@ -83,6 +83,10 @@ hallucinate a close-enough identity.
   safety margin at 2×.
 - Inspect eyes, nose, paws, markings, whiskers, and long fur at native scale. Reject halos,
   stair-stepping, waxy denoise, ringing, smearing, color fringe, and compression blocks.
+- Inspect the exact first frame bound to `stand.idle` separately at native scale and in the
+  real appearance-switch path. A sharp contact sheet does not excuse a soft entry cell. Rebuild
+  the complete idle row from the native identity master when that entry frame is soft; never
+  sharpen or replace only one atlas cell.
 - Allow one deterministic registration resample. Regenerate any row requiring more than 1.25×
   enlargement.
 - Sharpen only once, gently, at final resolution. Sharpening cannot rescue missing eye or fur
@@ -94,6 +98,11 @@ hallucinate a close-enough identity.
 ## Animation requirements
 
 - Close locomotion loops on the same contact phase. Never reverse walking or running.
+- Give every gait start at least four ordered authored poses and make its loop continue from the
+  next contact phase. Publish all eight distinct gait poses in cyclic order. Walk/slow-run/fast-run
+  may change timing, but they must share pose order so the runtime can preserve normalized gait
+  phase while changing speed. Never restart at frame zero during a moving tier change, and never
+  add a second whole-body bob or rotation on top of an already articulated gait row.
 - Row 5 must visibly progress from standing through lowering into a genuinely horizontal lie, head-on-paws rest, half-closed eyes, and closed-eye sleep. A standing or sitting pet that merely lowers its head is a `gesture.drowsy`/sniff pose, never `sleep.idle`.
 - Row 5 uses the fixed `furball-image-state-v1` stages: frame 0 standing, frame 1 lowering, frames 2–3 horizontal awake lie, frame 4 head-lowering/eye-close, and frames 5–7 horizontal closed-eye sleep ports. Do not put a wake/rise pose in frames 5–7.
 - Use the exact shared bindings from `references/PET_PACK_CONTRACT.md`. Autonomous `sleep.idle` binds only canonical closed-eye frame `[5]`; the runtime supplies one continuous eight-second micro-breath. Never animate sleeping by cycling atlas poses—multiple image transitions read as repeated body pulses even when the nominal loop duration is long. Validate the actual bound cell, not only the row label.

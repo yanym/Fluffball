@@ -142,6 +142,21 @@ struct PetLibraryPet: Equatable {
     let appearances: [PetAppearanceOption]
 }
 
+private enum PetBodySizePreferences {
+    private static let keyPrefix = "petBodySize."
+
+    static func value(petID: String, fallback: Int) -> Int {
+        let defaults = UserDefaults.standard
+        let key = keyPrefix + petID
+        guard defaults.object(forKey: key) != nil else { return fallback }
+        return min(100, max(1, defaults.integer(forKey: key)))
+    }
+
+    static func set(_ value: Int, petID: String) {
+        UserDefaults.standard.set(min(100, max(1, value)), forKey: keyPrefix + petID)
+    }
+}
+
 enum PetImageMotion: String, Decodable {
     case none
     case idle
@@ -477,7 +492,7 @@ enum PetAssetCatalog {
                 name: $0.petName,
                 species: $0.species,
                 assetVersion: $0.assetVersion,
-                bodySize: $0.bodySize,
+                bodySize: PetBodySizePreferences.value(petID: $0.petID, fallback: $0.bodySize),
                 isBundled: $0.isBundled,
                 rootURL: $0.rootURL,
                 appearances: $0.appearances.map(\.option)
@@ -492,7 +507,7 @@ enum PetAssetCatalog {
             name: loaded.petName,
             species: loaded.species,
             assetVersion: loaded.assetVersion,
-            bodySize: loaded.bodySize,
+            bodySize: PetBodySizePreferences.value(petID: loaded.petID, fallback: loaded.bodySize),
             isBundled: loaded.isBundled,
             rootURL: loaded.rootURL,
             appearances: loaded.appearances.map(\.option)
@@ -513,6 +528,13 @@ enum PetAssetCatalog {
     }
 
     @discardableResult
+    static func setBodySize(_ value: Int, forPetID petID: String) -> Bool {
+        guard loadedCatalogs.contains(where: { $0.petID == petID }) else { return false }
+        PetBodySizePreferences.set(value, petID: petID)
+        return true
+    }
+
+    @discardableResult
     static func selectAppearance(id: String) -> Bool {
         guard let loaded,
               let selection = loaded.appearances.first(where: { $0.option.id == id }) else { return false }
@@ -527,7 +549,10 @@ enum PetAssetCatalog {
 
     static var petID: String { loaded?.petID ?? "legacy-pet" }
     static var petName: String { loaded?.petName ?? "Pet" }
-    static var bodySize: Int { loaded?.bodySize ?? 60 }
+    static var bodySize: Int {
+        guard let loaded else { return 60 }
+        return PetBodySizePreferences.value(petID: loaded.petID, fallback: loaded.bodySize)
+    }
     static var intrinsicBodyScale: CGFloat { CGFloat(bodySize) / 60.0 }
     static var imageActions: [PetImageAction] { selectedAppearance?.spriteAtlas?.actions ?? [] }
 

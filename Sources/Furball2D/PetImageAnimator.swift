@@ -130,6 +130,8 @@ final class PetImageAnimator {
         completion: (() -> Void)?
     ) throws {
         let now = CACurrentMediaTime()
+        let previousElapsed = animationElapsed(at: now)
+        let previousAnimation = playback?.animation
         let previous = currentFrame(at: now)
         let previousMirrored = effectiveMirroring(for: playback)
         let leftFrames = try animation.frames.map(loadFrame)
@@ -147,7 +149,15 @@ final class PetImageAnimator {
             fadeDuration: max(0, fadeDuration)
         )
         timelineAnchorHostTime = now
-        timelineAnchorElapsed = 0
+        if let previousAnimation,
+           previousAnimation.isGaitLoop,
+           animation.isGaitLoop {
+            let oldPhase = previousElapsed.truncatingRemainder(dividingBy: previousAnimation.cycleDuration)
+                / previousAnimation.cycleDuration
+            timelineAnchorElapsed = oldPhase * animation.cycleDuration
+        } else {
+            timelineAnchorElapsed = 0
+        }
         completionHandler = completion
         scheduleCompletionTimer()
     }
@@ -559,5 +569,11 @@ final class PetImageAnimator {
         }
         sourceImageCache[url] = image
         return image
+    }
+}
+
+private extension PetImageAnimation {
+    var isGaitLoop: Bool {
+        loops && (id == "walk.loop" || id == "slow-run.loop" || id == "fast-run.loop")
     }
 }

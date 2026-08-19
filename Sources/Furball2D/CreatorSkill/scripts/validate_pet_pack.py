@@ -143,6 +143,15 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
         binding = binding_map.get(binding_id, {})
         if (binding.get("animation"), binding.get("frameIndices"), binding.get("loop"), binding.get("motion")) != (animation, frames, loops, motion):
             fail(f"{binding_id} does not match {IMAGE_STATE_MODEL}")
+    for tier in ("walk", "slow-run", "fast-run"):
+        start_indices = binding_map.get(f"{tier}.start", {}).get("frameIndices", [])
+        loop_indices = binding_map.get(f"{tier}.loop", {}).get("frameIndices", [])
+        if len(start_indices) < 4:
+            fail(f"{tier}.start must contain at least four ordered authored poses")
+        if len(loop_indices) != 8 or len(set(loop_indices)) != 8:
+            fail(f"{tier}.loop must publish all eight distinct gait poses in cyclic order")
+        if loop_indices[0] != (start_indices[-1] + 1) % 8:
+            fail(f"{tier}.loop must continue from the pose after {tier}.start")
     directions = atlas.get("lookDirections", [])
     degrees = {float(d.get("degrees")) for d in directions if "degrees" in d}
     if degrees != {i * 22.5 for i in range(16)}:

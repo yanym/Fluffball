@@ -31,9 +31,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case general
         case appearance
         case behavior
-        case interaction
         case group
-        case speech
     }
 
     var onAppearanceSelected: ((String) -> Bool)?
@@ -238,10 +236,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         switch page {
         case .general: body = makeGeneralBox(language: language)
         case .appearance: body = makeAppearanceContent(language: language)
-        case .behavior: body = makeBehaviorBox(language: language)
-        case .interaction: body = makeInteractionBox(language: language)
+        case .behavior: body = makeBehaviorContent(language: language)
         case .group: body = makeGroupBox(language: language)
-        case .speech: body = makeSpeechBox(language: language)
         }
 
         let stack = NSStackView(views: [header, body])
@@ -372,6 +368,31 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
             makeToggleRow(title: language.imageFacingMenu, toggle: lookSwitch, action: #selector(lookChanged(_:)))
         ])
         return boxed(rows)
+    }
+
+    private func makeBehaviorContent(language: AppLanguage) -> NSView {
+        let movementTitle = sectionTitle("Movement & Attention")
+        let interactionTitle = sectionTitle("Desktop Play")
+        let speechTitle = sectionTitle("Speech")
+        let stack = NSStackView(views: [
+            movementTitle, makeBehaviorBox(language: language),
+            interactionTitle, makeInteractionBox(language: language),
+            speechTitle, makeSpeechBox(language: language)
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 9
+        for view in stack.arrangedSubviews where view !== movementTitle && view !== interactionTitle && view !== speechTitle {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        return stack
+    }
+
+    private func sectionTitle(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text.uppercased())
+        label.font = .systemFont(ofSize: 10.5, weight: .bold)
+        label.textColor = .secondaryLabelColor
+        return label
     }
 
     private func makeInteractionBox(language: AppLanguage) -> NSView {
@@ -534,9 +555,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .general: "General"
         case .appearance: "Appearance & Animation"
         case .behavior: "Behavior"
-        case .interaction: "Desktop Interaction"
         case .group: "Group Play"
-        case .speech: "Speech"
         }
     }
 
@@ -545,9 +564,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .general: "slider.horizontal.3"
         case .appearance: "sparkles.rectangle.stack.fill"
         case .behavior: "figure.walk.motion"
-        case .interaction: "macwindow.badge.plus"
         case .group: "pawprint.circle.fill"
-        case .speech: "bubble.left.and.bubble.right.fill"
         }
     }
 
@@ -566,10 +583,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         switch page {
         case .general: "Adjust interface display scale and window behavior. Pet profiles define relative body size."
         case .appearance: "Choose an asset appearance and tune the overall pace of image and video animation."
-        case .behavior: "Choose how your pet watches, follows, and explores, including how long it rests between trips."
-        case .interaction: "The pet may look at item names and icons, but the real files and Finder layout always remain untouched."
+        case .behavior: "Movement, desktop play, and speech live together here. Real files and Finder layout always remain untouched."
         case .group: "Let several selected pets roam together and respond to one another."
-        case .speech: "Control speaking frequency and preview the calmer, polished bubble."
         }
     }
 

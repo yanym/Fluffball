@@ -4,23 +4,29 @@ import AppKit
 final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegate {
     enum Section: Int {
         case general
-        case appearance
-        case behavior
-        case interaction
-        case group
-        case speech
         case library
+        case behavior
+        case group
         case creator
     }
 
     var onAppearanceSelected: ((String) -> Bool)? {
-        didSet { appearanceController.onAppearanceSelected = onAppearanceSelected }
+        didSet {
+            appearanceController.onAppearanceSelected = onAppearanceSelected
+            libraryController.onAppearanceSelected = onAppearanceSelected
+        }
     }
     var onCrossfadeChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onCrossfadeChanged = onCrossfadeChanged }
     }
     var onAnimationSpeedChanged: ((Double) -> Void)? {
-        didSet { appearanceController.onAnimationSpeedChanged = onAnimationSpeedChanged }
+        didSet {
+            appearanceController.onAnimationSpeedChanged = onAnimationSpeedChanged
+            libraryController.onAnimationSpeedChanged = onAnimationSpeedChanged
+        }
+    }
+    var onBodySizeChanged: ((String, Int) -> Void)? {
+        didSet { libraryController.onBodySizeChanged = onBodySizeChanged }
     }
     var onFollowCursorChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onFollowCursorChanged = onFollowCursorChanged }
@@ -89,11 +95,8 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     private let libraryPage: NSView
     private let sidebarTitle = NSTextField(labelWithString: "")
     private let generalButton = NSButton()
-    private let appearanceButton = NSButton()
     private let behaviorButton = NSButton()
-    private let interactionButton = NSButton()
     private let groupButton = NSButton()
-    private let speechButton = NSButton()
     private let libraryButton = NSButton()
     private let creatorButton = NSButton()
     private var language: AppLanguage
@@ -120,6 +123,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         super.init(window: window)
         window.delegate = self
         buildInterface()
+        libraryController.updateProfileControls(animationSpeed: snapshot.animationSpeed)
         applyLanguage()
         select(.general)
     }
@@ -130,6 +134,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         self.language = language
         appearanceController.update(snapshot: snapshot)
         libraryController.refresh(language: language)
+        libraryController.updateProfileControls(animationSpeed: snapshot.animationSpeed)
         applyLanguage()
     }
 
@@ -143,14 +148,12 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
 
     @discardableResult
     func performAppearanceClickForQA(id: String) -> Bool {
-        select(.appearance)
         window?.contentView?.layoutSubtreeIfNeeded()
         return appearanceController.performAppearanceClickForQA(id: id)
     }
 
     @discardableResult
     func performPetSelectionForQA(id: String) -> Bool {
-        select(.appearance)
         window?.contentView?.layoutSubtreeIfNeeded()
         return appearanceController.performPetSelectionForQA(id: id)
     }
@@ -179,23 +182,20 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         brand.spacing = 9
 
         configureSidebarButton(generalButton, symbol: "gearshape", action: #selector(showGeneral))
-        configureSidebarButton(appearanceButton, symbol: "sparkles.rectangle.stack", action: #selector(showAppearance))
         configureSidebarButton(behaviorButton, symbol: "figure.walk.motion", action: #selector(showBehavior))
-        configureSidebarButton(interactionButton, symbol: "macwindow.badge.plus", action: #selector(showInteraction))
         configureSidebarButton(groupButton, symbol: "pawprint.circle", action: #selector(showGroup))
-        configureSidebarButton(speechButton, symbol: "bubble.left.and.bubble.right", action: #selector(showSpeech))
         configureSidebarButton(libraryButton, symbol: "square.grid.2x2", action: #selector(showLibrary))
         configureSidebarButton(creatorButton, symbol: "wand.and.stars", action: #selector(showCreator))
-        let companionLabel = sidebarSectionLabel("COMPANION")
-        let collectionLabel = sidebarSectionLabel("COLLECTION")
+        let companionLabel = sidebarSectionLabel("FURBALL")
+        let creationLabel = sidebarSectionLabel("CREATE")
         let navigation = NSStackView(views: [
-            companionLabel, generalButton, appearanceButton, behaviorButton,
-            interactionButton, groupButton, speechButton, collectionLabel, libraryButton, creatorButton
+            companionLabel, generalButton, libraryButton, behaviorButton, groupButton,
+            creationLabel, creatorButton
         ])
         navigation.orientation = .vertical
         navigation.alignment = .leading
         navigation.spacing = 6
-        navigation.setCustomSpacing(13, after: speechButton)
+        navigation.setCustomSpacing(13, after: groupButton)
 
         for view in [brand, navigation] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -230,11 +230,8 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
             navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
             navigation.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 28),
             generalButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
-            appearanceButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             behaviorButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
-            interactionButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             groupButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
-            speechButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             libraryButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             creatorButton.widthAnchor.constraint(equalTo: navigation.widthAnchor),
             content.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -270,12 +267,9 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     private func applyLanguage() {
         sidebarTitle.stringValue = "Settings"
         generalButton.title = "General"
-        appearanceButton.title = "Appearance & Animation"
         behaviorButton.title = "Behavior"
-        interactionButton.title = "Desktop Interaction"
         groupButton.title = "Group Play"
-        speechButton.title = "Speech"
-        libraryButton.title = language.libraryTab
+        libraryButton.title = "My Pets"
         creatorButton.title = language.creatorTab
         window?.title = sidebarTitle.stringValue
     }
@@ -285,24 +279,21 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         let corePage: AppearanceSettingsWindowController.Page?
         switch section {
         case .general: corePage = .general
-        case .appearance: corePage = .appearance
         case .behavior: corePage = .behavior
-        case .interaction: corePage = .interaction
         case .group: corePage = .group
-        case .speech: corePage = .speech
         case .library, .creator: corePage = nil
         }
         appearancePage.isHidden = corePage == nil
         libraryPage.isHidden = corePage != nil
-        if let corePage { appearanceController.show(page: corePage) }
-        if section == .library { libraryController.showLibraryEmbedded() }
-        if section == .creator { libraryController.showCreatorEmbedded() }
+        if let corePage {
+            appearanceController.show(page: corePage)
+        } else {
+            if section == .library { libraryController.showLibraryEmbedded() }
+            if section == .creator { libraryController.showCreatorEmbedded() }
+        }
         generalButton.state = section == .general ? .on : .off
-        appearanceButton.state = section == .appearance ? .on : .off
         behaviorButton.state = section == .behavior ? .on : .off
-        interactionButton.state = section == .interaction ? .on : .off
         groupButton.state = section == .group ? .on : .off
-        speechButton.state = section == .speech ? .on : .off
         libraryButton.state = section == .library ? .on : .off
         creatorButton.state = section == .creator ? .on : .off
         updateSidebarSelection()
@@ -312,17 +303,13 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         let selectedButton: NSButton
         switch selectedSection {
         case .general: selectedButton = generalButton
-        case .appearance: selectedButton = appearanceButton
-        case .behavior: selectedButton = behaviorButton
-        case .interaction: selectedButton = interactionButton
-        case .group: selectedButton = groupButton
-        case .speech: selectedButton = speechButton
         case .library: selectedButton = libraryButton
+        case .behavior: selectedButton = behaviorButton
+        case .group: selectedButton = groupButton
         case .creator: selectedButton = creatorButton
         }
         for button in [
-            generalButton, appearanceButton, behaviorButton, interactionButton, groupButton,
-            speechButton, libraryButton, creatorButton
+            generalButton, libraryButton, behaviorButton, groupButton, creatorButton
         ] {
             let isSelected = button === selectedButton
             button.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
@@ -334,11 +321,8 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     @objc private func showGeneral() { select(.general) }
-    @objc private func showAppearance() { select(.appearance) }
     @objc private func showBehavior() { select(.behavior) }
-    @objc private func showInteraction() { select(.interaction) }
     @objc private func showGroup() { select(.group) }
-    @objc private func showSpeech() { select(.speech) }
     @objc private func showLibrary() { select(.library) }
     @objc private func showCreator() { select(.creator) }
 }

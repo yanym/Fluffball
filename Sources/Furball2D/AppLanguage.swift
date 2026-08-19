@@ -30,6 +30,9 @@ enum AppLanguage: String, Sendable {
     var imageTurnGreeting: String { "I’m looking at you! 👀" }
     var imageTurnBusy: String { "One moment—finishing this move!" }
     var sleepMenu: String { "Go to Sleep Now" }
+    var alwaysSleepMenu: String { "Always Sleep" }
+    var actionsMenu: String { "Actions" }
+    var treatPlacementHint: String { "Your cursor is a treat—click anywhere to toss it. Right-click to cancel." }
     func visibilityMenu(isVisible: Bool) -> String { isVisible ? "Hide Pet" : "Show Pet" }
     var passThroughMenu: String { "Click Through Completely" }
     var appearanceMenu: String { "Appearance" }

@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 @MainActor
 final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
     var onSelectPet: ((String) -> Bool)?
+    var onAppearanceSelected: ((String) -> Bool)?
+    var onAnimationSpeedChanged: ((Double) -> Void)?
+    var onBodySizeChanged: ((String, Int) -> Void)?
     var onLibraryChanged: (() -> Void)?
 
     private var language: AppLanguage
@@ -23,6 +26,11 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let builtInBadge = NSTextField(labelWithString: "")
     private let appearanceHeading = NSTextField(labelWithString: "")
     private let appearanceStack = NSStackView()
+    private let profileAppearancePopup = NSPopUpButton()
+    private let profileAnimationSpeedSlider = NSSlider(value: 0.82, minValue: 0.5, maxValue: 1.5, target: nil, action: nil)
+    private let profileAnimationSpeedValue = NSTextField(labelWithString: "82%")
+    private let profileBodySizeSlider = NSSlider(value: 60, minValue: 1, maxValue: 100, target: nil, action: nil)
+    private let profileBodySizeValue = NSTextField(labelWithString: "60 / 100")
     private let personalityHeading = NSTextField(labelWithString: "")
     private let personalitySummary = NSTextField(wrappingLabelWithString: "")
     private let personalityStack = NSStackView()
@@ -58,17 +66,23 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     init(language: AppLanguage, embedded: Bool = false) {
         self.language = language
         isEmbedded = embedded
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 830, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
-        window.minSize = NSSize(width: 760, height: 550)
-        window.center()
+        let window: NSWindow?
+        if embedded {
+            window = nil
+        } else {
+            let standaloneWindow = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 830, height: 600),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            standaloneWindow.titlebarAppearsTransparent = true
+            standaloneWindow.titleVisibility = .hidden
+            standaloneWindow.isMovableByWindowBackground = true
+            standaloneWindow.minSize = NSSize(width: 760, height: 550)
+            standaloneWindow.center()
+            window = standaloneWindow
+        }
         super.init(window: window)
         NotificationCenter.default.addObserver(
             self,
@@ -76,8 +90,12 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             name: .petMindDidChange,
             object: nil
         )
-        window.delegate = self
-        buildInterface()
+        window?.delegate = self
+        if embedded {
+            buildEmbeddedInterface()
+        } else {
+            buildInterface()
+        }
         refresh(language: language)
     }
 
@@ -102,6 +120,11 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         updateDetails()
     }
 
+    func updateProfileControls(animationSpeed: Double) {
+        profileAnimationSpeedSlider.doubleValue = min(1.5, max(0.5, animationSpeed))
+        profileAnimationSpeedValue.stringValue = "\(Int((profileAnimationSpeedSlider.doubleValue * 100).rounded()))%"
+    }
+
     func present() {
         window?.center()
         window?.makeKeyAndOrderFront(nil)
@@ -111,33 +134,47 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
 
     func presentCreator() {
         segmented.selectedSegment = 1
-        libraryPage.isHidden = true
-        creatorPage.isHidden = false
+        installPage(creatorPage)
         present()
     }
 
     func showLibraryEmbedded() {
         segmented.selectedSegment = 0
-        libraryPage.isHidden = false
-        creatorPage.isHidden = true
+        installPage(libraryPage)
+        contentContainer.superview?.layoutSubtreeIfNeeded()
+        contentContainer.layoutSubtreeIfNeeded()
         libraryPage.layoutSubtreeIfNeeded()
         VisualQACapture.schedule(view: libraryPage, name: "pet-library-embedded")
     }
 
     func showCreatorEmbedded() {
         segmented.selectedSegment = 1
-        libraryPage.isHidden = true
-        creatorPage.isHidden = false
+        installPage(creatorPage)
+        contentContainer.superview?.layoutSubtreeIfNeeded()
+        contentContainer.layoutSubtreeIfNeeded()
         creatorPage.layoutSubtreeIfNeeded()
         VisualQACapture.schedule(view: creatorPage, name: "pet-creator-embedded")
     }
 
     /// Transfers the library/creator page into the unified Settings window.
     func contentViewForEmbedding() -> NSView {
-        guard let window, let content = window.contentView else { return NSView() }
+        if isEmbedded {
+            contentContainer.translatesAutoresizingMaskIntoConstraints = false
+            return contentContainer
+        }
+        guard let window, let formerRoot = window.contentView else { return NSView() }
+        let formerHostingConstraints = formerRoot.constraints.filter { constraint in
+            (constraint.firstItem as? NSView) === contentContainer
+                || (constraint.secondItem as? NSView) === contentContainer
+        }
+        NSLayoutConstraint.deactivate(formerHostingConstraints)
         window.contentView = NSView()
-        content.removeFromSuperview()
-        return content
+        // Embed the actual page container, not the former NSWindow content root.
+        // A detached NSVisualEffectView can collapse to zero before it joins the
+        // unified hierarchy, leaving My Pets as an empty black page.
+        contentContainer.removeFromSuperview()
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        return contentContainer
     }
 
     private func buildInterface() {
@@ -156,20 +193,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         if !isEmbedded { root.addSubview(segmented) }
         root.addSubview(contentContainer)
-
-        for page in [libraryPage, creatorPage] {
-            page.translatesAutoresizingMaskIntoConstraints = false
-            contentContainer.addSubview(page)
-            NSLayoutConstraint.activate([
-                page.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-                page.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
-                page.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-                page.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
-            ])
-        }
-        creatorPage.isHidden = true
-        buildLibraryPage()
-        buildCreatorPage()
+        buildContentPages()
 
         var constraints = [
             contentContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -189,9 +213,35 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         NSLayoutConstraint.activate(constraints)
     }
 
+    private func buildEmbeddedInterface() {
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        buildContentPages()
+    }
+
+    private func buildContentPages() {
+        buildLibraryPage()
+        buildCreatorPage()
+        installPage(libraryPage)
+    }
+
+    private func installPage(_ page: NSView) {
+        guard page.superview !== contentContainer else {
+            page.isHidden = false
+            return
+        }
+        contentContainer.subviews.forEach { $0.removeFromSuperview() }
+        page.isHidden = false
+        page.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(page)
+        NSLayoutConstraint.activate([
+            page.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            page.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            page.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+        ])
+    }
+
     private func buildLibraryPage() {
-        libraryPage.wantsLayer = true
-        libraryPage.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("pets"))
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
@@ -211,8 +261,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
         let sidebar = NSView()
-        sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(scroll)
 
@@ -225,8 +273,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         sidebar.addSubview(importButton)
 
         let details = NSView()
-        details.wantsLayer = true
-        details.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         details.translatesAutoresizingMaskIntoConstraints = false
         petName.font = .systemFont(ofSize: 28, weight: .bold)
         petMeta.font = .systemFont(ofSize: 12.5, weight: .medium)
@@ -327,6 +373,21 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         personalitySummary.font = .systemFont(ofSize: 12.5, weight: .medium)
         personalitySummary.textColor = .labelColor
         personalitySummary.maximumNumberOfLines = 2
+
+        profileAppearancePopup.target = self
+        profileAppearancePopup.action = #selector(profileAppearanceChanged(_:))
+        profileBodySizeSlider.isContinuous = true
+        profileBodySizeSlider.target = self
+        profileBodySizeSlider.action = #selector(profileBodySizeChanged(_:))
+        profileAnimationSpeedSlider.isContinuous = true
+        profileAnimationSpeedSlider.target = self
+        profileAnimationSpeedSlider.action = #selector(profileAnimationSpeedChanged(_:))
+        for value in [profileBodySizeValue, profileAnimationSpeedValue] {
+            value.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            value.textColor = .secondaryLabelColor
+            value.alignment = .right
+            value.widthAnchor.constraint(equalToConstant: 62).isActive = true
+        }
 
         personalityStack.orientation = .vertical
         personalityStack.spacing = 4
@@ -571,25 +632,77 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             appearanceStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
+        profileAppearancePopup.removeAllItems()
         for appearance in pet.appearances {
-            let icon = NSImageView()
-            icon.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
-            icon.contentTintColor = .controlAccentColor
-            icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-            let title = NSTextField(labelWithString: appearance.title(for: language))
-            title.font = .systemFont(ofSize: 13, weight: .semibold)
-            let subtitle = NSTextField(labelWithString: appearance.subtitle(for: language))
-            subtitle.font = .systemFont(ofSize: 11)
-            subtitle.textColor = .secondaryLabelColor
-            let row = NSStackView(views: [icon, title, subtitle, NSView()])
-            row.orientation = .horizontal
-            row.spacing = 8
-            appearanceStack.addArrangedSubview(row)
+            profileAppearancePopup.addItem(withTitle: appearance.title(for: language))
+            profileAppearancePopup.lastItem?.representedObject = appearance.id
+            profileAppearancePopup.lastItem?.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
+        }
+        let selectedAppearanceID = pet.id == PetAssetCatalog.activePet?.id
+            ? PetAssetCatalog.activeAppearance.id
+            : UserDefaults.standard.string(forKey: "selectedAppearance.\(pet.id)")
+        if let selectedAppearanceID,
+           let item = profileAppearancePopup.itemArray.first(where: { ($0.representedObject as? String) == selectedAppearanceID }) {
+            profileAppearancePopup.select(item)
+        }
+        profileBodySizeSlider.doubleValue = Double(pet.bodySize)
+        profileBodySizeValue.stringValue = "\(pet.bodySize) / 100"
+        let appearanceRow = profileControlRow(title: "Appearance", control: profileAppearancePopup, value: nil)
+        let bodySizeRow = profileControlRow(title: "Body Size", control: profileBodySizeSlider, value: profileBodySizeValue)
+        let speedRow = profileControlRow(title: "Animation Speed", control: profileAnimationSpeedSlider, value: profileAnimationSpeedValue)
+        [appearanceRow, bodySizeRow, speedRow].forEach {
+            appearanceStack.addArrangedSubview($0)
+            $0.widthAnchor.constraint(equalTo: appearanceStack.widthAnchor).isActive = true
         }
         let isActive = pet.id == PetAssetCatalog.activePet?.id
         useButton.title = isActive ? language.activePetButton : language.usePetButton
         useButton.isEnabled = !isActive
         updateMindDetails(for: pet.id)
+    }
+
+    private func profileControlRow(title: String, control: NSView, value: NSTextField?) -> NSStackView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 112).isActive = true
+        if control is NSSlider { control.widthAnchor.constraint(equalToConstant: 190).isActive = true }
+        let views = value.map { [label, control, $0] } ?? [label, control, NSView()]
+        let row = NSStackView(views: views)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 9
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+        return row
+    }
+
+    private func activateSelectedPetIfNeeded() -> Bool {
+        guard let pet = selectedPet else { return false }
+        return pet.id == PetAssetCatalog.activePet?.id || onSelectPet?(pet.id) == true
+    }
+
+    @objc private func profileAppearanceChanged(_ sender: NSPopUpButton) {
+        guard activateSelectedPetIfNeeded(),
+              let id = sender.selectedItem?.representedObject as? String,
+              onAppearanceSelected?(id) == true else {
+            refresh(language: language)
+            return
+        }
+        refresh(language: language)
+    }
+
+    @objc private func profileAnimationSpeedChanged(_ sender: NSSlider) {
+        let value = min(1.5, max(0.5, sender.doubleValue))
+        profileAnimationSpeedValue.stringValue = "\(Int((value * 100).rounded()))%"
+        onAnimationSpeedChanged?(value)
+    }
+
+    @objc private func profileBodySizeChanged(_ sender: NSSlider) {
+        guard let pet = selectedPet else { return }
+        let value = min(100, max(1, Int(sender.doubleValue.rounded())))
+        profileBodySizeValue.stringValue = "\(value) / 100"
+        onBodySizeChanged?(pet.id, value)
+        pets = PetAssetCatalog.availablePets
+        tableView.reloadData()
+        petMeta.stringValue = "\(pet.species.capitalized) · Body size \(value)/100 · v\(pet.assetVersion)"
     }
 
     private func updateMindDetails(for petID: String) {
@@ -657,8 +770,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func tabChanged(_ sender: NSSegmentedControl) {
-        libraryPage.isHidden = sender.selectedSegment != 0
-        creatorPage.isHidden = sender.selectedSegment != 1
+        installPage(sender.selectedSegment == 0 ? libraryPage : creatorPage)
     }
 
     @objc private func useSelectedPet() {
