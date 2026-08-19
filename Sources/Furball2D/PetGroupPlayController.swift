@@ -23,12 +23,19 @@ final class PetGroupPlayController {
         var isMoving = false
         var socialHoldUntil: TimeInterval = 0
 
-        init(pet: PetLibraryPet, origin: NSPoint, size: NSSize, level: NSWindow.Level) throws {
+        init(
+            pet: PetLibraryPet,
+            origin: NSPoint,
+            size: NSSize,
+            animationSpeed: Double,
+            level: NSWindow.Level
+        ) throws {
             petID = pet.id
             name = pet.name
             preciseOrigin = origin
             target = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
             renderer = try PetRenderer(frame: NSRect(origin: .zero, size: size), visualMode: .images)
+            renderer.setAnimationSpeed(animationSpeed)
             panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
             panel.level = level
             panel.ignoresMouseEvents = true
@@ -58,6 +65,7 @@ final class PetGroupPlayController {
     private var socialStage = 0
     private var socialInteractionCount = 0
     private var lastTick = ProcessInfo.processInfo.systemUptime
+    private var animationSpeed = 1.0
 
     var isRunning: Bool { !companions.isEmpty }
     var hasVisibleCompanions: Bool { companions.contains(where: { $0.panel.isVisible }) }
@@ -69,6 +77,11 @@ final class PetGroupPlayController {
         }
     }
 
+    func setAnimationSpeed(_ speed: Double) {
+        animationSpeed = min(1.5, max(0.5, speed))
+        companions.forEach { $0.renderer.setAnimationSpeed(animationSpeed) }
+    }
+
     func snapshot() -> Snapshot {
         Snapshot(
             petIDs: companions.map(\.petID),
@@ -78,8 +91,14 @@ final class PetGroupPlayController {
         )
     }
 
-    func start(petIDs: Set<String>, scale: CGFloat, level: NSWindow.Level) throws {
+    func start(
+        petIDs: Set<String>,
+        scale: CGFloat,
+        animationSpeed: Double,
+        level: NSWindow.Level
+    ) throws {
         stop()
+        setAnimationSpeed(animationSpeed)
         socialInteractionCount = 0
         guard let screen = NSScreen.main else { return }
         let pets = PetAssetCatalog.availablePets.filter {
@@ -102,6 +121,7 @@ final class PetGroupPlayController {
                 pet: pet,
                 origin: clampedOrigin(NSPoint(x: x, y: y), size: size, visible: visible),
                 size: size,
+                animationSpeed: self.animationSpeed,
                 level: level
             )
             companions.append(companion)
@@ -173,9 +193,9 @@ final class PetGroupPlayController {
                     repelY += sy * strength * 1.2
                 }
             }
-            let desiredSpeed = min(118, max(64, distance * 0.48))
+            let desiredSpeed = min(118, max(64, distance * 0.48)) * animationSpeed
             let desiredX = dx * desiredSpeed + repelX
-            let desiredY = dy * min(82, desiredSpeed * 0.66) + repelY
+            let desiredY = dy * min(82 * animationSpeed, desiredSpeed * 0.66) + repelY
             let response = min(1, CGFloat(dt * 4.8))
             companion.velocity.x += (desiredX - companion.velocity.x) * response
             companion.velocity.y += (desiredY - companion.velocity.y) * response
@@ -217,9 +237,14 @@ final class PetGroupPlayController {
         let visible = screen.visibleFrame
         if companions.count == 1 {
             let companion = companions[0]
-            companion.socialHoldUntil = ProcessInfo.processInfo.systemUptime + 1.5
-            try? companion.play(["gesture.play-bow", "gesture.head-tilt", "gesture.happy-dance"].randomElement()!, fade: 0.08)
-            scheduleSocialPlay(after: Double.random(in: 7.5...11.5))
+            companion.socialHoldUntil = .greatestFiniteMagnitude
+            let action = ["gesture.play-bow", "gesture.head-tilt", "gesture.happy-dance"].randomElement()!
+            playSequence([action], on: companion) { [weak self, weak companion] in
+                guard let self, let companion, let screen = NSScreen.main else { return }
+                companion.socialHoldUntil = 0
+                self.chooseRoamTarget(for: companion, visible: screen.visibleFrame)
+                self.scheduleSocialPlay(after: Double.random(in: 12...18))
+            }
             return
         }
         let first = Int.random(in: companions.indices)
@@ -255,23 +280,44 @@ final class PetGroupPlayController {
         b.isMoving = false
         a.setFacing(right: true)
         b.setFacing(right: false)
-        a.socialHoldUntil = now + 2.8
-        b.socialHoldUntil = now + 2.8
-        try? a.play("gesture.play-bow", fade: 0.075)
-        try? b.play("gesture.head-tilt", fade: 0.075)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) { [weak self, weak a, weak b] in
+        a.socialHoldUntil = .greatestFiniteMagnitude
+        b.socialHoldUntil = .greatestFiniteMagnitude
+        var finishedCount = 0
+        let finishOne: () -> Void = { [weak self, weak a, weak b] in
             guard let self, let a, let b else { return }
-            try? a.play("gesture.happy-dance", fade: 0.08)
-            try? b.play("gesture.wave", fade: 0.08)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.45) { [weak self, weak a, weak b] in
-                guard let self, let a, let b else { return }
-                try? a.play("stand.idle", fade: 0.08)
-                try? b.play("stand.idle", fade: 0.08)
-                self.socialPair = nil
-                self.chooseRoamTarget(for: a, visible: visible)
-                self.chooseRoamTarget(for: b, visible: visible)
-                self.scheduleSocialPlay(after: Double.random(in: 7.5...11.5))
+            finishedCount += 1
+            guard finishedCount == 2 else { return }
+            a.socialHoldUntil = 0
+            b.socialHoldUntil = 0
+            self.socialPair = nil
+            self.chooseRoamTarget(for: a, visible: visible)
+            self.chooseRoamTarget(for: b, visible: visible)
+            self.scheduleSocialPlay(after: Double.random(in: 12...18))
+        }
+        playSequence(["gesture.play-bow", "gesture.happy-dance"], on: a, completion: finishOne)
+        playSequence(["gesture.head-tilt", "gesture.wave"], on: b, completion: finishOne)
+    }
+
+    /// Chain on real animation completions. The previous fixed 1.25/1.45 s
+    /// dispatches interrupted longer gestures as soon as their timing improved.
+    private func playSequence(
+        _ semanticIDs: [String],
+        on companion: Companion,
+        completion: @escaping () -> Void
+    ) {
+        guard let first = semanticIDs.first else {
+            try? companion.play("stand.idle", fade: 0.08)
+            completion()
+            return
+        }
+        do {
+            try companion.play(first, fade: 0.08) { [weak self, weak companion] in
+                guard let self, let companion else { return }
+                self.playSequence(Array(semanticIDs.dropFirst()), on: companion, completion: completion)
             }
+        } catch {
+            try? companion.play("stand.idle", fade: 0.08)
+            completion()
         }
     }
 

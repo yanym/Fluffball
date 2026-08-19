@@ -7,8 +7,10 @@ struct AppearanceSettingsSnapshot {
     let selectedAppearanceID: String
     let language: AppLanguage
     let crossfadeEnabled: Bool
+    let animationSpeed: Double
     let followCursor: Bool
     let freeRoam: Bool
+    let freeRoamRestInterval: Double
     let directionalLook: Bool
     let desktopInteractions: Bool
     let alwaysOnTop: Bool
@@ -37,8 +39,10 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onAppearanceSelected: ((String) -> Bool)?
     var onPetSelected: ((String) -> Bool)?
     var onCrossfadeChanged: ((Bool) -> Void)?
+    var onAnimationSpeedChanged: ((Double) -> Void)?
     var onFollowCursorChanged: ((Bool) -> Void)?
     var onFreeRoamChanged: ((Bool) -> Void)?
+    var onFreeRoamRestIntervalChanged: ((Double) -> Void)?
     var onDirectionalLookChanged: ((Bool) -> Void)?
     var onDesktopInteractionsChanged: ((Bool) -> Void)?
     var onInspectTrashNow: (() -> Void)?
@@ -63,8 +67,12 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let appearanceStack = NSStackView()
     private let crossfadeSwitch = NSSwitch()
     private weak var crossfadeRow: NSView?
+    private let animationSpeedSlider = NSSlider()
+    private let animationSpeedValue = NSTextField(labelWithString: "")
     private let followSwitch = NSSwitch()
     private let roamSwitch = NSSwitch()
+    private let roamRestSlider = NSSlider()
+    private let roamRestValue = NSTextField(labelWithString: "")
     private let lookSwitch = NSSwitch()
     private let desktopInteractionsSwitch = NSSwitch()
     private let inspectTrashButton = NSButton()
@@ -313,11 +321,24 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         imageModeNote.font = .systemFont(ofSize: 12)
         imageModeNote.textColor = .tertiaryLabelColor
         imageModeNote.maximumNumberOfLines = 2
+        animationSpeedSlider.minValue = 0.5
+        animationSpeedSlider.maxValue = 1.5
+        animationSpeedSlider.isContinuous = true
+        animationSpeedSlider.target = self
+        animationSpeedSlider.action = #selector(animationSpeedChanged(_:))
         let crossfadeRow = makeToggleRow(title: language.crossfadeMenu, toggle: crossfadeSwitch, action: #selector(crossfadeChanged(_:)))
         self.crossfadeRow = crossfadeRow
         let petRow = makeValueRow(title: "Pet", control: petPopup)
         let modeRow = makeValueRow(title: "Appearance Mode", control: appearancePopup)
-        let stack = NSStackView(views: [petRow, modeRow, appearanceStack, crossfadeRow, imageModeNote])
+        let animationSpeedRow = makeSliderRow(
+            title: "Overall Animation Speed",
+            slider: animationSpeedSlider,
+            value: animationSpeedValue
+        )
+        let stack = NSStackView(views: [
+            petRow, modeRow, appearanceStack, animationSpeedRow,
+            crossfadeRow, imageModeNote
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
@@ -325,15 +346,28 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         appearanceStack.heightAnchor.constraint(equalToConstant: 140).isActive = true
         petRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         modeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        animationSpeedRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         crossfadeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
 
     private func makeBehaviorBox(language: AppLanguage) -> NSView {
+        roamRestSlider.minValue = 4
+        roamRestSlider.maxValue = 30
+        roamRestSlider.isContinuous = true
+        roamRestSlider.target = self
+        roamRestSlider.action = #selector(roamRestIntervalChanged(_:))
+        let roamNote = NSTextField(wrappingLabelWithString: "This is the main pause after each trip. Personality adds only a small natural variation: calm or tired pets may linger a little longer.")
+        roamNote.font = .systemFont(ofSize: 11.5)
+        roamNote.textColor = .tertiaryLabelColor
+        roamNote.maximumNumberOfLines = 3
         let rows = NSStackView(views: [
             makeToggleRow(title: language.followCursorMenu, toggle: followSwitch, action: #selector(followChanged(_:))),
             separator(),
             makeToggleRow(title: language.freeRoamMenu, toggle: roamSwitch, action: #selector(roamChanged(_:))),
+            separator(),
+            makeSliderRow(title: "Rest Between Roam Trips", slider: roamRestSlider, value: roamRestValue),
+            roamNote,
             separator(),
             makeToggleRow(title: language.imageFacingMenu, toggle: lookSwitch, action: #selector(lookChanged(_:)))
         ])
@@ -531,8 +565,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
         switch page {
         case .general: "Adjust interface display scale and window behavior. Pet profiles define relative body size."
-        case .appearance: "Choose an asset appearance and tune transitions for continuous video."
-        case .behavior: "Choose how your pet watches, follows, and explores."
+        case .appearance: "Choose an asset appearance and tune the overall pace of image and video animation."
+        case .behavior: "Choose how your pet watches, follows, and explores, including how long it rests between trips."
         case .interaction: "The pet may look at item names and icons, but the real files and Finder layout always remain untouched."
         case .group: "Let several selected pets roam together and respond to one another."
         case .speech: "Control speaking frequency and preview the calmer, polished bubble."
@@ -579,8 +613,12 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         }
 
         crossfadeSwitch.state = snapshot.crossfadeEnabled ? .on : .off
+        animationSpeedSlider.doubleValue = snapshot.animationSpeed
+        animationSpeedValue.stringValue = "\(Int((snapshot.animationSpeed * 100).rounded()))%"
         followSwitch.state = snapshot.followCursor ? .on : .off
         roamSwitch.state = snapshot.freeRoam ? .on : .off
+        roamRestSlider.doubleValue = snapshot.freeRoamRestInterval
+        roamRestValue.stringValue = String(format: "%.0f s", snapshot.freeRoamRestInterval)
         lookSwitch.state = snapshot.directionalLook ? .on : .off
         desktopInteractionsSwitch.state = snapshot.desktopInteractions ? .on : .off
         alwaysOnTopSwitch.state = snapshot.alwaysOnTop ? .on : .off
@@ -688,8 +726,10 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                 selectedAppearanceID: id,
                 language: snapshot.language,
                 crossfadeEnabled: snapshot.crossfadeEnabled,
+                animationSpeed: snapshot.animationSpeed,
                 followCursor: snapshot.followCursor,
                 freeRoam: snapshot.freeRoam,
+                freeRoamRestInterval: snapshot.freeRoamRestInterval,
                 directionalLook: snapshot.directionalLook,
                 desktopInteractions: snapshot.desktopInteractions,
                 alwaysOnTop: snapshot.alwaysOnTop,
@@ -711,6 +751,11 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         onCrossfadeChanged?(sender.state == .on)
     }
 
+    @objc private func animationSpeedChanged(_ sender: NSSlider) {
+        animationSpeedValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
+        onAnimationSpeedChanged?(sender.doubleValue)
+    }
+
     @objc private func followChanged(_ sender: NSSwitch) {
         if sender.state == .on, roamSwitch.state == .on { roamSwitch.state = .off }
         onFollowCursorChanged?(sender.state == .on)
@@ -719,6 +764,12 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     @objc private func roamChanged(_ sender: NSSwitch) {
         if sender.state == .on, followSwitch.state == .on { followSwitch.state = .off }
         onFreeRoamChanged?(sender.state == .on)
+    }
+
+    @objc private func roamRestIntervalChanged(_ sender: NSSlider) {
+        let rounded = sender.doubleValue.rounded()
+        roamRestValue.stringValue = String(format: "%.0f s", rounded)
+        onFreeRoamRestIntervalChanged?(rounded)
     }
 
     @objc private func lookChanged(_ sender: NSSwitch) {

@@ -1,0 +1,148 @@
+{
+  "canvas": {
+    "width": 1280,
+    "height": 720
+  },
+  "target": {
+    "subjectHeight": 600,
+    "centerX": 667,
+    "groundY": 672
+  },
+  "keyframes": {
+    "left-profile": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/left-profile.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/left-profile.png",
+      "bounds": {
+        "xMin": 268,
+        "yMin": 72,
+        "xMax": 1067,
+        "yMax": 672,
+        "width": 799,
+        "height": 600,
+        "centerX": 667.5,
+        "groundY": 672
+      },
+      "detailScore": 7.917
+    },
+    "front-near-profile-left": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-near-profile-left-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-near-profile-left.png",
+      "bounds": {
+        "xMin": 367,
+        "yMin": 72,
+        "xMax": 967,
+        "yMax": 672,
+        "width": 600,
+        "height": 600,
+        "centerX": 667.0,
+        "groundY": 672
+      },
+      "detailScore": 7.061
+    },
+    "front-three-quarter-left": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-three-quarter-left-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-three-quarter-left.png",
+      "bounds": {
+        "xMin": 372,
+        "yMin": 72,
+        "xMax": 963,
+        "yMax": 672,
+        "width": 591,
+        "height": 600,
+        "centerX": 667.5,
+        "groundY": 672
+      },
+      "detailScore": 7.581
+    },
+    "front-near-center-left": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-near-center-left-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-near-center-left.png",
+      "bounds": {
+        "xMin": 440,
+        "yMin": 72,
+        "xMax": 894,
+        "yMax": 672,
+        "width": 454,
+        "height": 600,
+        "centerX": 667.0,
+        "groundY": 672
+      },
+      "detailScore": 7.663
+    },
+    "front": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-neutral-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front.png",
+      "bounds": {
+        "xMin": 518,
+        "yMin": 72,
+        "xMax": 816,
+        "yMax": 672,
+        "width": 298,
+        "height": 600,
+        "centerX": 667.0,
+        "groundY": 672
+      },
+      "detailScore": 9.246
+    },
+    "front-near-center-right": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-near-center-right-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-near-center-right.png",
+      "bounds": {
+        "xMin": 476,
+        "yMin": 72,
+        "xMax": 858,
+        "yMax": 672,
+        "width": 382,
+        "height": 600,
+        "centerX": 667.0,
+        "groundY": 672
+      },
+      "detailScore": 8.613
+    },
+    "front-three-quarter-right": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-three-quarter-right-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-three-quarter-right.png",
+      "bounds": {
+        "xMin": 398,
+        "yMin": 72,
+        "xMax": 937,
+        "yMax": 672,
+        "width": 539,
+        "height": 600,
+        "centerX": 667.5,
+        "groundY": 672
+      },
+      "detailScore": 7.98
+    },
+    "front-near-profile-right": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/front-near-profile-right-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/front-near-profile-right.png",
+      "bounds": {
+        "xMin": 341,
+        "yMin": 72,
+        "xMax": 993,
+        "yMax": 672,
+        "width": 652,
+        "height": 600,
+        "centerX": 667.0,
+        "groundY": 672
+      },
+      "detailScore": 7.223
+    },
+    "right-profile": {
+      "source": "Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/right-profile-neutral-imagegen.png",
+      "output": "Assets/Pets/Nina/Generated/ImageTurn/normalized/right-profile.png",
+      "bounds": {
+        "xMin": 268,
+        "yMin": 72,
+        "xMax": 1067,
+        "yMax": 672,
+        "width": 799,
+        "height": 600,
+        "centerX": 667.5,
+        "groundY": 672
+      },
+      "detailScore": 8.468
+    }
+  }
+}

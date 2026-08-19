@@ -19,6 +19,7 @@ private final class PetVideoChannel: @unchecked Sendable {
     private var invalidated = false
     private var holdsFirstFrame = false
     private var firstFrameIsReady = false
+    private var playbackRate: Float = 1
 
     init(clip: PetClip, prepareOnly: Bool = false) throws {
         self.clip = clip
@@ -78,12 +79,19 @@ private final class PetVideoChannel: @unchecked Sendable {
            let output = videoOutputs[ObjectIdentifier(item)] {
             output.requestNotificationOfMediaDataChange(withAdvanceInterval: 0.03)
         }
-        player.playImmediately(atRate: 1)
+        player.playImmediately(atRate: playbackRate)
     }
 
     func activatePreparedPlayback() {
         holdsFirstFrame = false
-        player.playImmediately(atRate: 1)
+        player.playImmediately(atRate: playbackRate)
+    }
+
+    func setPlaybackRate(_ rate: Double) {
+        playbackRate = Float(min(1.5, max(0.5, rate)))
+        if player.rate != 0, !holdsFirstFrame {
+            player.playImmediately(atRate: playbackRate)
+        }
     }
 
     func pause() {
@@ -171,7 +179,7 @@ private final class PetVideoChannel: @unchecked Sendable {
                 return
             }
         }
-        if player.rate == 0 { player.playImmediately(atRate: 1) }
+        if player.rate == 0 { player.playImmediately(atRate: playbackRate) }
     }
 }
 
@@ -266,6 +274,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     private var diagnosticGapTotal: TimeInterval = 0
     private var diagnosticMaximumGap: TimeInterval = 0
     private var diagnosticLastDrawTime: CFTimeInterval?
+    private(set) var animationSpeed: Double = 1
 
     private static let shaderSource = """
     #include <metal_stdlib>
@@ -415,6 +424,16 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    func setAnimationSpeed(_ speed: Double) {
+        let clamped = min(1.5, max(0.5, speed))
+        animationSpeed = clamped
+        imageAnimator.setPlaybackRate(clamped)
+        channelLock.lock()
+        let channels = [primaryChannel, secondaryChannel, preparedChannel].compactMap { $0 }
+        channelLock.unlock()
+        channels.forEach { $0.setPlaybackRate(clamped) }
+    }
+
     /// Decode and hold the first frame of an upcoming video clip. Locomotion
     /// uses this while the start clip is still playing so the start→loop handoff
     /// never waits on a cold HEVC-with-alpha decoder.
@@ -431,6 +450,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         discarded?.invalidate()
 
         let channel = try PetVideoChannel(clip: clip, prepareOnly: true)
+        channel.setPlaybackRate(animationSpeed)
         channel.start()
         channelLock.lock()
         preparedChannel = channel
@@ -516,6 +536,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         } else {
             prepared?.invalidate()
             channel = try PetVideoChannel(clip: clip)
+            channel.setPlaybackRate(animationSpeed)
             channel.start()
         }
         channel.onClipFinished = {

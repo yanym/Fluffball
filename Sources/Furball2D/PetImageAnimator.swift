@@ -109,6 +109,11 @@ final class PetImageAnimator {
     private var sourceImageCache: [URL: CGImage] = [:]
     private var playback: Playback?
     private var completionTimer: Timer?
+    private var completionHandler: (() -> Void)?
+    private var playbackGeneration = 0
+    private var playbackRate = 1.0
+    private var timelineAnchorHostTime = CACurrentMediaTime()
+    private var timelineAnchorElapsed: TimeInterval = 0
     private(set) var isMirrored = false
 
     init(device: MTLDevice) {
@@ -131,6 +136,7 @@ final class PetImageAnimator {
         let rightFrames = try animation.rightFrames.map { try $0.map(loadFrame) }
 
         completionTimer?.invalidate()
+        playbackGeneration += 1
         playback = Playback(
             animation: animation,
             leftFrames: leftFrames,
@@ -140,20 +146,28 @@ final class PetImageAnimator {
             startTime: now,
             fadeDuration: max(0, fadeDuration)
         )
-
-        if !animation.loops, let completion {
-            let timer = Timer(timeInterval: animation.duration, repeats: false) { _ in
-                MainActor.assumeIsolated { completion() }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            completionTimer = timer
-        }
+        timelineAnchorHostTime = now
+        timelineAnchorElapsed = 0
+        completionHandler = completion
+        scheduleCompletionTimer()
     }
 
     func stop() {
+        playbackGeneration += 1
         completionTimer?.invalidate()
         completionTimer = nil
+        completionHandler = nil
         playback = nil
+    }
+
+    func setPlaybackRate(_ rate: Double) {
+        let clamped = min(1.5, max(0.5, rate))
+        guard abs(clamped - playbackRate) > 0.000_1 else { return }
+        let now = CACurrentMediaTime()
+        timelineAnchorElapsed = animationElapsed(at: now)
+        timelineAnchorHostTime = now
+        playbackRate = clamped
+        scheduleCompletionTimer()
     }
 
     func setMirrored(_ mirrored: Bool) {
@@ -164,7 +178,7 @@ final class PetImageAnimator {
         guard let playback else { return nil }
         let frames = selectedFrames(for: playback)
         guard !frames.isEmpty else { return nil }
-        let elapsed = max(0, now - playback.startTime)
+        let elapsed = animationElapsed(at: now)
         let current = sequenceSample(frames: frames, playback: playback, elapsed: elapsed)
         let transform = motionTransform(for: playback.animation, elapsed: elapsed)
 
@@ -245,8 +259,31 @@ final class PetImageAnimator {
         guard let playback else { return nil }
         let frames = selectedFrames(for: playback)
         guard !frames.isEmpty else { return nil }
-        let elapsed = max(0, now - playback.startTime)
+        let elapsed = animationElapsed(at: now)
         return sequenceSample(frames: frames, playback: playback, elapsed: elapsed).a
+    }
+
+    private func animationElapsed(at hostTime: CFTimeInterval) -> TimeInterval {
+        max(0, timelineAnchorElapsed + (hostTime - timelineAnchorHostTime) * playbackRate)
+    }
+
+    private func scheduleCompletionTimer() {
+        completionTimer?.invalidate()
+        completionTimer = nil
+        guard let playback, !playback.animation.loops, completionHandler != nil else { return }
+        let remainingTimeline = max(0, playback.animation.duration - animationElapsed(at: CACurrentMediaTime()))
+        let generation = playbackGeneration
+        let timer = Timer(timeInterval: remainingTimeline / playbackRate, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.playbackGeneration == generation else { return }
+                let completion = self.completionHandler
+                self.completionHandler = nil
+                self.completionTimer = nil
+                completion?()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        completionTimer = timer
     }
 
     private func sequenceSample(

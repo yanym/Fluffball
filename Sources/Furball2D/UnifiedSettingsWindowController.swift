@@ -19,11 +19,17 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onCrossfadeChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onCrossfadeChanged = onCrossfadeChanged }
     }
+    var onAnimationSpeedChanged: ((Double) -> Void)? {
+        didSet { appearanceController.onAnimationSpeedChanged = onAnimationSpeedChanged }
+    }
     var onFollowCursorChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onFollowCursorChanged = onFollowCursorChanged }
     }
     var onFreeRoamChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onFreeRoamChanged = onFreeRoamChanged }
+    }
+    var onFreeRoamRestIntervalChanged: ((Double) -> Void)? {
+        didSet { appearanceController.onFreeRoamRestIntervalChanged = onFreeRoamRestIntervalChanged }
     }
     var onDirectionalLookChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onDirectionalLookChanged = onDirectionalLookChanged }

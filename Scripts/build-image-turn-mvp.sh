@@ -79,8 +79,9 @@ done
 
 mkdir -p "$OUTPUT_DIR" "$FACING_OUTPUT_DIR"
 
-# Export each angle as a seamless one-second still loop for cursor-driven runtime switching.
-# HEVC with Alpha reuses the existing AVFoundation and Metal dual-channel renderer.
+# Export each final-resolution angle as a seamless one-second still loop for cursor-driven
+# runtime switching. Do not feed this script the retired 960x540 derivatives: scaling them here
+# softens fur and eyes. HEVC with Alpha reuses the AVFoundation and Metal dual-channel renderer.
 for keyframe_name in "${required_keyframes[@]}"; do
   color_grade="$(image_color_filter "$keyframe_name")"
   ffmpeg -y -v warning \

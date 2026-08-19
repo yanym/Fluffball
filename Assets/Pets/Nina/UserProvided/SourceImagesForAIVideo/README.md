@@ -20,7 +20,7 @@ Assets/
 
 Images under `Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/` are standardized to 1440×1080 on a green background and provide a more complete posture and left/right view set. Prefer that collection for new generations. Use `originals/` to verify the dog's real identity details and trace provenance; do not overwrite or delete it.
 
-Files matching `Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/*-imagegen.png` are green-screen still keyframes generated on 2026-08-14 for the image-only turn prototype. The suffix distinguishes them from the user's earlier references. Their aligned derivatives under `Assets/Pets/Nina/Generated/ImageTurn/normalized/` are 960×540 with a 450 px subject height, center x≈500, and ground y=504.
+Files matching `Assets/Pets/Nina/Generated/AIReferenceImages/generation-ready/stand/*-imagegen.png` are green-screen still keyframes generated on 2026-08-14 for the image-only turn prototype. The suffix distinguishes them from the user's earlier references. `Scripts/rebuild-nina-standing-keyframes.py` keys the original 1440×1080 references directly onto final-resolution 1280×720 transparent canvases with a 600 px subject height, center x≈667, and ground y=672. Never restore the old 960×540 intermediate or enlarge an earlier derivative; it visibly softens Nina's fur, face, and eyes.
 
 Some PNG files contain C2PA Content Credentials that record generation and processing provenance. The repository preserves this authenticity metadata. Inspection found no GPS, camera-device, or personal-author fields.
 

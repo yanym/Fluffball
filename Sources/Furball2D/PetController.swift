@@ -10,10 +10,12 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private enum PreferenceKey {
         static let petScale = "petScale"
+        static let animationSpeed = "animationSpeed"
         static let fullPassThrough = "fullPassThrough"
         static let autoBehavior = "autoBehavior"
         static let followCursor = "followCursor"
         static let freeRoam = "freeRoam"
+        static let freeRoamRestInterval = "freeRoamRestInterval"
         static let imageFacing = "imageFacing"
         static let videoAnimations = "videoAnimationsEnabled"
         static let desktopInteractions = "desktopInteractions"
@@ -192,6 +194,14 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(petScale, forKey: PreferenceKey.petScale) }
     }
 
+    private var animationSpeed: Double {
+        didSet { UserDefaults.standard.set(animationSpeed, forKey: PreferenceKey.animationSpeed) }
+    }
+
+    private var freeRoamRestInterval: Double {
+        didSet { UserDefaults.standard.set(freeRoamRestInterval, forKey: PreferenceKey.freeRoamRestInterval) }
+    }
+
     /// Settings controls display magnification; each Pet Pack owns its
     /// relative physical size through pet.bodySize. Nina's 60 is the baseline
     /// that preserves the historical on-screen dimensions.
@@ -269,6 +279,14 @@ final class PetController: NSObject, NSMenuDelegate {
         let savedScale = CGFloat(defaults.double(forKey: PreferenceKey.petScale))
         let initialScale = min(Self.maximumScale, max(Self.minimumScale, savedScale == 0 ? 1 : savedScale))
         petScale = initialScale
+        let savedAnimationSpeed = defaults.object(forKey: PreferenceKey.animationSpeed) == nil
+            ? 0.82
+            : defaults.double(forKey: PreferenceKey.animationSpeed)
+        animationSpeed = min(1.5, max(0.5, savedAnimationSpeed))
+        let savedRoamRest = defaults.object(forKey: PreferenceKey.freeRoamRestInterval) == nil
+            ? 12.0
+            : defaults.double(forKey: PreferenceKey.freeRoamRestInterval)
+        freeRoamRestInterval = min(30, max(4, savedRoamRest))
         fullPassThrough = defaults.bool(forKey: PreferenceKey.fullPassThrough)
         autoBehavior = defaults.object(forKey: PreferenceKey.autoBehavior) == nil
             ? true
@@ -315,6 +333,7 @@ final class PetController: NSObject, NSMenuDelegate {
             frame: NSRect(origin: .zero, size: size),
             visualMode: videoAnimationsEnabled ? .video : .images
         )
+        renderer.setAnimationSpeed(animationSpeed)
         panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
         let alwaysOnTop = defaults.object(forKey: PreferenceKey.alwaysOnTop) == nil
             ? true
@@ -2381,7 +2400,7 @@ final class PetController: NSObject, NSMenuDelegate {
             freeRoamTarget = nil
             let interaction = pendingDesktopInteraction
             pendingDesktopInteraction = nil
-            freeRoamPauseUntil = now + (interaction == nil ? Double.random(in: 3.8...6.4) : 5.6)
+            freeRoamPauseUntil = now + nextFreeRoamPause(afterInteraction: interaction != nil)
             updateMovement(toward: center, demand: 0, deadZone: 8, now: now, deltaTime: deltaTime)
             if let interaction { performDesktopInteraction(interaction) }
             return
@@ -2455,6 +2474,27 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingDesktopInteraction = nil
         freeRoamPauseUntil = 0
         freeRoamTarget = target
+    }
+
+    /// The setting owns the overall cadence. Personality adds only restrained
+    /// variation: composed or tired pets linger, while lively pets depart a
+    /// little sooner. The previous fixed 3.8–6.4 second pause made Free Roam
+    /// feel like an endless stream of abrupt actions.
+    private func nextFreeRoamPause(afterInteraction: Bool) -> TimeInterval {
+        let traits = petMind.traits
+        let state = petMind.state
+        let personalityFactor = 0.94
+            + traits.composure * 0.16
+            - traits.vitality * 0.08
+            + (1 - state.energy) * 0.06
+        let interactionFactor = afterInteraction ? 1.15 : 1.0
+        return max(
+            4,
+            freeRoamRestInterval
+                * personalityFactor
+                * interactionFactor
+                * Double.random(in: 0.93...1.07)
+        )
     }
 
     private func performDesktopInteraction(_ destination: DesktopInteractionService.Destination) {
@@ -3003,8 +3043,8 @@ final class PetController: NSObject, NSMenuDelegate {
             actionFacing = locomotionDirection > 0 ? .right : .left
         }
 
-        let minimumModeInterval = renderer.visualMode == .video ? 0.84 : 0.32
-        let requiredDwell = renderer.visualMode == .video ? 0.30 : 0.12
+        let minimumModeInterval = (renderer.visualMode == .video ? 0.84 : 0.32) / animationSpeed
+        let requiredDwell = (renderer.visualMode == .video ? 0.30 : 0.12) / animationSpeed
         let canChangeMode = now - lastLocomotionChangeTime >= minimumModeInterval
             && now >= locomotionModeLockUntil
             && !renderer.isVideoTransitionActive
@@ -3036,15 +3076,16 @@ final class PetController: NSObject, NSMenuDelegate {
             let rampDuration = max(
                 0.01,
                 renderer.visualMode == .video
-                    ? locomotionMode.startTranslationRampDuration
-                    : 0.07
+                    ? locomotionMode.startTranslationRampDuration / animationSpeed
+                    : 0.07 / animationSpeed
             )
             let linearProgress = min(1, max(0, (now - locomotionTranslationStartTime) / rampDuration))
             translationProgress = CGFloat(linearProgress * linearProgress * (3 - 2 * linearProgress))
         }
 
         let scaleSpeed = min(1.16, max(0.82, sqrt(petScale)))
-        let targetSpeed = locomotionMode.pointsPerSecond * scaleSpeed * translationProgress
+        let targetSpeed = locomotionMode.pointsPerSecond * scaleSpeed
+            * CGFloat(animationSpeed) * translationProgress
         let targetVelocity: NSPoint
         if locomotionMode == .none || distance < 1 {
             targetVelocity = .zero
@@ -3129,12 +3170,12 @@ final class PetController: NSObject, NSMenuDelegate {
         lastLocomotionChangeTime = now
         locomotionModeLockUntil = newMode == .none
             ? 0
-            : now + (renderer.visualMode == .video ? 0.78 : 0.24)
+            : now + (renderer.visualMode == .video ? 0.78 : 0.24) / animationSpeed
         if previousMode == .none, newMode != .none {
             locomotionVelocity = .zero
             preciseLocomotionOrigin = panel.frame.origin
             let translationDelay = renderer.visualMode == .video ? newMode.startTranslationDelay : 0
-            locomotionTranslationStartTime = now + translationDelay
+            locomotionTranslationStartTime = now + translationDelay / animationSpeed
         } else if newMode == .none {
             locomotionTranslationStartTime = 0
             locomotionVelocity = .zero
@@ -3357,7 +3398,12 @@ final class PetController: NSObject, NSMenuDelegate {
         let newOrigin = NSPoint(x: oldFrame.midX - newSize.width / 2, y: oldFrame.minY)
         panel.setFrame(NSRect(origin: clampedOrigin(newOrigin, panelSize: newSize), size: newSize), display: true)
         if groupPlayEnabled {
-            try? groupPlayController.start(petIDs: groupPetIDs, scale: petScale, level: panel.level)
+            try? groupPlayController.start(
+                petIDs: groupPetIDs,
+                scale: petScale,
+                animationSpeed: animationSpeed,
+                level: panel.level
+            )
             panel.orderOut(nil)
         }
         repositionSpeechBubble(resetSilhouette: true)
@@ -3540,6 +3586,13 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.renderer.crossfadeEnabled = enabled
                 self.rebuildMenu()
             }
+            controller.onAnimationSpeedChanged = { [weak self] value in
+                guard let self else { return }
+                self.animationSpeed = min(1.5, max(0.5, value))
+                self.renderer.setAnimationSpeed(self.animationSpeed)
+                self.groupPlayController.setAnimationSpeed(self.animationSpeed)
+                self.refreshAppearanceSettings()
+            }
             controller.onFollowCursorChanged = { [weak self] enabled in
                 guard let self, self.followCursor != enabled else { return }
                 self.toggleCursorFollowing()
@@ -3548,6 +3601,11 @@ final class PetController: NSObject, NSMenuDelegate {
             controller.onFreeRoamChanged = { [weak self] enabled in
                 guard let self, self.freeRoamEnabled != enabled else { return }
                 self.toggleFreeRoaming()
+                self.refreshAppearanceSettings()
+            }
+            controller.onFreeRoamRestIntervalChanged = { [weak self] value in
+                guard let self else { return }
+                self.freeRoamRestInterval = min(30, max(4, value))
                 self.refreshAppearanceSettings()
             }
             controller.onDirectionalLookChanged = { [weak self] enabled in
@@ -3671,8 +3729,10 @@ final class PetController: NSObject, NSMenuDelegate {
             selectedAppearanceID: PetAssetCatalog.activeAppearance.id,
             language: appLanguage,
             crossfadeEnabled: renderer.crossfadeEnabled,
+            animationSpeed: animationSpeed,
             followCursor: followCursor,
             freeRoam: freeRoamEnabled,
+            freeRoamRestInterval: freeRoamRestInterval,
             directionalLook: imageFacingEnabled,
             desktopInteractions: desktopInteractionsEnabled,
             alwaysOnTop: panel.level == .floating,
@@ -3711,7 +3771,12 @@ final class PetController: NSObject, NSMenuDelegate {
         _ = interruptCurrentActivityForProfileSwitch()
         panel.orderOut(nil)
         do {
-            try groupPlayController.start(petIDs: validIDs, scale: petScale, level: panel.level)
+            try groupPlayController.start(
+                petIDs: validIDs,
+                scale: petScale,
+                animationSpeed: animationSpeed,
+                level: panel.level
+            )
             rebuildMenu()
         } catch {
             groupPlayEnabled = false
@@ -3765,6 +3830,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 try groupPlayController.start(
                     petIDs: groupPetIDs,
                     scale: petScale,
+                    animationSpeed: animationSpeed,
                     level: panel.level
                 )
                 panel.orderOut(nil)

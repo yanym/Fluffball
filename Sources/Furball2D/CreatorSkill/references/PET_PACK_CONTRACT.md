@@ -1,6 +1,6 @@
 # Furball Pet Pack v2 Contract
 
-`ACTION_REGISTRY_VERSION: 2026-08-18.2`
+`ACTION_REGISTRY_VERSION: 2026-08-19.1`
 
 `IMAGE_STATE_MODEL: furball-image-state-v1`
 
@@ -76,7 +76,7 @@ stand.facing.front-near-profile-right
 stand.facing.right-profile
 ```
 
-Published optional menu actions in registry version 2026-08-18.2:
+Published optional menu actions in registry version 2026-08-19.1:
 
 ```text
 gesture.wave
@@ -110,21 +110,21 @@ The accepted field range is 0–0.82. Duplicating an atlas cell is not an interm
 
 | Binding | Accepted duration |
 |---|---:|
-| wave | 1.4–2.2 s |
-| jump | 0.9–1.5 s |
-| failed | 1.4–2.4 s |
-| waiting / working / review | 1.4–2.5 s |
-| play bow | 1.4–2.4 s |
-| head tilt | 1.2–2.1 s |
-| sniff | 1.5–2.8 s |
-| high five | 1.4–2.4 s |
-| stretch | 1.8–3.2 s |
-| sneeze | 0.55–1.1 s |
-| paw tap | 0.9–1.6 s |
-| happy dance | 1.5–2.8 s |
-| yawn | 2.5–4.5 s |
-| drowsy | 2.0–4.0 s |
-| tail chase | 1.1–2.2 s |
+| wave | 2.2–3.0 s |
+| jump | 1.2–1.8 s |
+| failed | 1.8–2.7 s |
+| waiting / working / review | 2.4–3.6 s |
+| play bow | 2.0–3.0 s |
+| head tilt | 1.8–2.8 s |
+| sniff | 2.4–3.6 s |
+| high five | 1.8–2.8 s |
+| stretch | 2.3–3.5 s |
+| sneeze | 0.55–1.2 s |
+| paw tap | 1.2–2.0 s |
+| happy dance | 2.1–3.2 s |
+| yawn | 3.0–4.8 s |
+| drowsy | 2.8–4.2 s |
+| tail chase | 2.0–3.2 s |
 
 Adjacent cells are registered by visible alpha height, horizontal center, and ground contact.
 The renderer may ease out a correction no larger than 12%; a larger mismatch is a source-row
@@ -186,5 +186,5 @@ The app importer and release validator reject a sprite atlas whose state-model i
 6. Sleep never oscillates between open and closed eyes.
 7. Pack passes the included validator without warnings.
 8. Contact sheets are reviewed at simulated 60%, 100%, and 140% app size.
-9. `QA/clarity.json` certifies native 384×416 generation, lossless output, no registration enlargement above 1.25×, native-scale eye/fur/paw inspection, and no accepted blur, halo, ringing, stair-step, color-fringe, or compression defects.
+9. `QA/clarity.json` certifies native 384×416 generation, direct highest-resolution-source to final-cell processing with no downsample/upscale intermediate, lossless output, no registration enlargement above 1.25×, native-scale eye/fur/paw inspection, and no accepted blur, halo, ringing, stair-step, color-fringe, or compression defects.
 10. Every gesture passes its semantic duration range and an animated preview/contact-sheet review; static atlas inspection alone is insufficient.

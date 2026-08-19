@@ -76,12 +76,17 @@ hallucinate a close-enough identity.
 - Prefer source photos at least 1600 px on the long edge and one full-body anchor at least 2000 px.
 - Generate complete rows natively so every extracted cell contains 384×416 useful source pixels.
   Never enlarge a 192×208 cell to fabricate a production atlas.
+- Key, grade, register, and export from the highest-resolution approved source directly into the
+  final runtime canvas or cell. Do not insert a smaller intermediate and enlarge it later; a
+  960×540 cutout expanded to 1280×720 is a clarity failure even when the original was sharp.
 - Fill at least 70% of cell height or 55% of cell width while preserving an 8 px transparent
   safety margin at 2×.
 - Inspect eyes, nose, paws, markings, whiskers, and long fur at native scale. Reject halos,
   stair-stepping, waxy denoise, ringing, smearing, color fringe, and compression blocks.
 - Allow one deterministic registration resample. Regenerate any row requiring more than 1.25×
   enlargement.
+- Sharpen only once, gently, at final resolution. Sharpening cannot rescue missing eye or fur
+  detail and must not create ringing, crunchy whiskers, or bright alpha outlines.
 - Require QA/clarity.json to declare native 384×416 cells, native row generation, lossless
   atlas output, native-scale review, maximumRegistrationUpscale no greater than 1.25, and no
   accepted rejected artifacts.
@@ -103,6 +108,10 @@ hallucinate a close-enough identity.
   needs more. Gestures based on the jumping row must enter and exit through stable stand frame 4.
 - Use the semantic duration ranges in `references/PET_PACK_CONTRACT.md`; a readable wave or bow
   must not be compressed into a sub-second slideshow merely because the atlas has few key poses.
+- Prefer a complete anticipation → action → readable hold → recovery arc. When the source row
+  is sparse, revisit compatible authored key poses in the binding instead of ending the action
+  immediately after one pass. The app's overall animation-speed control is a user preference,
+  not a substitute for meaningful source choreography or contract-compliant base timing.
 - Run `Scripts/render-sprite-motion-qa.py` (or an equivalent renderer implementing the same
   smootherstep, premultiplied-alpha, and port-alignment rules), then inspect complete animated
   previews and 12-sample contact sheets. Never approve only the static atlas.

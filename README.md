@@ -20,11 +20,11 @@ Furball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14
 - Smoother action changes using a fifth-order fade curve, subject-height/center/ground port alignment, and seamless idle loops.
 - Offline black/tan/white fur anchor matching keeps separate generation batches from becoming abruptly warmer or brighter during locomotion and view changes.
 - Real walk, jog, and run footage moves the pet in any desktop direction. Cursor-follow mode selects a gait from two-dimensional distance and cursor speed.
-- Free Roam chooses safe two-dimensional destinations across the current desktop, pauses briefly after each arrival, and then continues exploring.
+- Free Roam chooses safe two-dimensional destinations across the current desktop, then rests for a user-controlled 4–30 seconds after each arrival. The default is 12 seconds; personality adds only restrained variation.
 - With Desktop Item Interaction enabled, an image pet can discover a Desktop item and perform a head tilt, sniff, paw tap, play bow, inspection, guard, or happy dance. Carrying uses an app-owned visual copy of the icon; the real item and Finder layout never move.
 - Desktop interaction is strictly read-only and contains no Finder AppleScript. The only file-writing flows are explicit Pet Pack import/creation/export actions; installation is path-guarded to Furball's managed Application Support library. `Scripts/audit-runtime-safety.sh` is a mandatory packaging gate.
 - Cursor gaze uses 16 evenly spaced directions at 22.5° intervals. Eyes lead, then the head, neck, ears, and ruff follow; the idle pet walks the shortest adjacent-direction path instead of snapping across the circle.
-- A manifest-driven “Cute Actions” submenu exposes 16 actions, including Wave, Happy Jump, Head Tilt, Sniff, High Five, Stretch, Sneeze, Paw Tap, Happy Dance, Yawn, and Chase Tail. A custom pack can add or rename actions without changing Swift.
+- A manifest-driven “Cute Actions” submenu exposes 16 actions, including Wave, Happy Jump, Head Tilt, Sniff, High Five, Stretch, Sneeze, Paw Tap, Happy Dance, Yawn, and Chase Tail. Actions preserve a readable anticipation, hold, and recovery arc instead of ending after one fast key-pose pass. A custom pack can add or rename actions without changing Swift.
 - Image pets respond to the pointer: a short hover produces a curious head tilt, a double-click gives a high five, and Toss a Treat makes the pet walk/run in two dimensions to the cursor and sniff the treat.
 - Every Realistic 2D appearance uses the same `furball-image-state-v1` posture stages. Different pet profiles cannot remap sleep to a standing head dip; imported packs are rejected unless lie and sleep use horizontal silhouettes and the shared bindings. MP4 animation ports remain independent.
 - The sleep flow explicitly separates awake horizontal lying, eye-close, one canonical closed-eye sleep cell, and full wake-up. Runtime adds only a continuous eight-second, sub-pixel breathing transform, so sleep never pulses through several atlas poses.
@@ -85,6 +85,7 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - Right-click the dog or click the menu-bar paw: open settings.
 - “Display Scale”: continuously magnify the profile-defined body size from 60% to 140%.
 - “Appearance”: choose the active pet directly on this page, then switch among the representations it supplies: Live Motion and Realistic 2D. Selecting a row in My Pets also activates that pet immediately; there is no second confirmation step.
+- “Overall Animation Speed”: scales image animation, Live Motion playback, and synchronized desktop translation from 50% to 150%. The initial default is 82% so it can be tuned without rebuilding pet assets.
 - “Settings”: the sidebar directly manages General, Appearance, Behavior, Desktop Interaction, Group Play, Dialogue, Pet Library, and Create Pet. Display scale and window level live here instead of in the menu-bar item; video blending appears only for Live Motion.
 - “Pet Library”: import a validated `.furballpet` package, select a pet, and inspect its profile.
 - “Create Pet”: choose 6–12 photos and create one maintainable Realistic 2D pack through local Codex, or export the standardized request and bundled Creator Skill.
@@ -95,7 +96,7 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - “Look at Me”: stand up, turn through the front and right-side image keyframes, then return to a profile idle.
 - “Look Toward Cursor (16 Directions)”: use both cursor axes while standing idle and advance one neighboring direction at a time; before locomotion, take the shortest path to the matching left or right profile port.
 - “Follow Cursor (Move in Any Direction)”: follow the cursor in two dimensions, walking nearby, jogging at medium demand, and running when far away or when the cursor moves quickly.
-- “Free Roam (Across Desktop)”: continuously visit random destinations on the current desktop. It is mutually exclusive with cursor following; disabling it restores the previous daily routine.
+- “Free Roam (Across Desktop)”: continuously visit random destinations on the current desktop. “Rest Between Roam Trips” controls the main 4–30 second pause (12 seconds by default); personality contributes only a small natural offset. It is mutually exclusive with cursor following.
 - “Inspect desktop items while roaming”: lets image pets visit Trash and Desktop items using read-only names and icon previews. Every interaction is visual; Furball never changes Finder or the item.
 - “Daily Routine (Sleep / Patrol)”: sleep, wake, and take a short outing while idle. This routine is suspended during Free Roam.
 - “Smooth Action Transitions”: enable or disable the short crossfade to compare action boundaries.
@@ -200,6 +201,7 @@ Sources/Furball2D/Assets/
 - 右键狗狗或点击菜单栏爪印：打开设置。
 - “显示缩放”：在宠物 profile 定义的相对体型之上连续缩放 60%–140%。
 - “外观”：可先在本页直接选择当前宠物，再切换素材包实际提供的真实连续动画与写实 2D；在“宠物素材库”点选一只宠物也会立即激活，不再需要第二次确认。
+- “整体动画速度”：以 50%–150% 同步调节图片动画、真实连续动画和桌面位移；初始默认值为 82%，无需重新制作素材即可继续微调。
 - “设置”：左侧栏直接管理通用、外观、行为、桌面互动、Group Play、对话、宠物素材库和创建宠物；显示缩放与始终置顶也只在这里设置，仅真实连续动画显示视频混合设置。
 - “宠物素材库”：导入经过验证的 `.furballpet` 素材包、切换宠物并查看档案。
 - “创建宠物”：选择 6–12 张照片，通过本机 Codex 创建一套便于长期维护的写实 2D 外观，也可导出标准请求和 Creator Skill。
@@ -210,7 +212,7 @@ Sources/Furball2D/Assets/
 - “转过来看看我”：先站起，再用静态图片关键帧转向正面和右侧，最后回到侧面待机。
 - “跟随鼠标看向 16 个方向”：站立待机时同时使用鼠标的横向和纵向位置，每次只走一个相邻方向；进入走跑动作前再沿最短路径抵达对应左右侧面端口。
 - “追随鼠标（全方向走 / 跑）”：让狗狗沿二维方向追随鼠标，近距离走路、中距离慢跑、远距离或快速移动时快跑。
-- “自由漫游（全桌面）”：持续在当前桌面内随机走动；与“追随鼠标”互斥，关闭后恢复原先的自动作息。
+- “自由漫游（全桌面）”：持续在当前桌面内随机走动；“每段漫游后的休息”可设为 4–30 秒，默认 12 秒，性格仅增加少量自然波动；与“追随鼠标”互斥。
 - “桌面物品互动”：允许图片宠物读取项目名称与系统图标并表演多种动作；叼起的只是 App 内视觉副本，真实文件及其位置不会发生任何变化。
 - “自动作息（睡觉 / 巡游）”：无人互动时自行睡觉、醒来和进行一次短巡游；自由漫游期间会暂时挂起。
 - “柔和动作过渡”：启用或关闭短 Crossfade，方便比较动作边界。
