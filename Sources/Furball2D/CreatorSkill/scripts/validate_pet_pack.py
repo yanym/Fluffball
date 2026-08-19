@@ -46,6 +46,21 @@ POSTURE_BINDINGS = {
     "sleep.idle": ("failed", [5], True, "sleep"),
     "sleep.to.stand": ("failed", [5, 4, 3, 2, 1, 0], False, None),
 }
+SUPPORTED_MOTIONS = {
+    "none", "idle", "sleep", "transition", "look", "gesture",
+    "walk", "slow-run", "fast-run", "settle",
+}
+GESTURE_DURATION_RANGES = {
+    "gesture.wave": (1.4, 2.2), "gesture.jump": (0.9, 1.5),
+    "gesture.failed": (1.4, 2.4), "gesture.waiting": (1.4, 2.5),
+    "gesture.working": (1.4, 2.5), "gesture.review": (1.4, 2.5),
+    "gesture.play-bow": (1.4, 2.4), "gesture.head-tilt": (1.2, 2.1),
+    "gesture.sniff": (1.5, 2.8), "gesture.high-five": (1.4, 2.4),
+    "gesture.stretch": (1.8, 3.2), "gesture.sneeze": (0.55, 1.1),
+    "gesture.paw-tap": (0.9, 1.6), "gesture.happy-dance": (1.5, 2.8),
+    "gesture.yawn": (2.5, 4.5), "gesture.drowsy": (2.0, 4.0),
+    "gesture.tail-chase": (1.1, 2.2),
+}
 
 
 def fail(message: str) -> None:
@@ -105,11 +120,24 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
         animation = animations.get(animation_id, {})
         if animation.get("rowIndex") != row or animation.get("frameCount") != frames:
             fail(f"{animation_id} does not match the shared 2D state row contract")
+        durations = animation.get("frameDurations", [])
+        if len(durations) != frames or not all(isinstance(v, (int, float)) and v > 0 for v in durations):
+            fail(f"{animation_id} must declare one positive duration per frame")
+        if animation.get("motion", "none") not in SUPPORTED_MOTIONS:
+            fail(f"{animation_id} declares an unsupported motion")
+        blend = animation.get("frameBlendFraction", 0)
+        if not isinstance(blend, (int, float)) or not 0 <= blend <= 0.82:
+            fail(f"{animation_id} frameBlendFraction must be in 0...0.82")
     binding_list = atlas.get("bindings", [])
     binding_map = {binding.get("id"): binding for binding in binding_list}
     for binding in binding_list:
         if binding.get("animation") not in animations:
             fail(f"binding {binding.get('id')} references a missing animation")
+        if binding.get("motion", animations[binding["animation"]].get("motion", "none")) not in SUPPORTED_MOTIONS:
+            fail(f"binding {binding.get('id')} declares an unsupported motion")
+        blend = binding.get("frameBlendFraction", animations[binding["animation"]].get("frameBlendFraction", 0))
+        if not isinstance(blend, (int, float)) or not 0 <= blend <= 0.82:
+            fail(f"binding {binding.get('id')} frameBlendFraction must be in 0...0.82")
         semantic.add(binding.get("id", ""))
     for binding_id, (animation, frames, loops, motion) in POSTURE_BINDINGS.items():
         binding = binding_map.get(binding_id, {})
@@ -126,6 +154,22 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
         fail("every published action must have a binding")
     if not PUBLISHED_ACTIONS.issubset(actions):
         fail("missing action registry IDs: " + ", ".join(sorted(PUBLISHED_ACTIONS - actions)))
+    for binding_id, (minimum, maximum) in GESTURE_DURATION_RANGES.items():
+        binding = binding_map.get(binding_id, {})
+        animation = animations.get(binding.get("animation"), {})
+        indices = binding.get("frameIndices", list(range(animation.get("frameCount", 0))))
+        durations = animation.get("frameDurations", [])
+        try:
+            duration = sum(durations[index] for index in indices) * float(binding.get("frameDurationScale", 1))
+        except (IndexError, TypeError, ValueError):
+            fail(f"{binding_id} has invalid frame timing")
+        if not minimum <= duration <= maximum:
+            fail(f"{binding_id} duration {duration:.3f}s must be in {minimum}...{maximum}s")
+    for binding_id in ("gesture.jump", "gesture.play-bow", "gesture.stretch", "gesture.happy-dance"):
+        binding = binding_map.get(binding_id, {})
+        indices = binding.get("frameIndices", [])
+        if binding.get("animation") != "jumping" or not indices or indices[0] != 4 or indices[-1] != 4:
+            fail(f"{binding_id} must enter and exit through jumping row stand frame 4")
 
 
 def main() -> None:

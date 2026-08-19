@@ -94,7 +94,18 @@ hallucinate a close-enough identity.
 - Use the exact shared bindings from `references/PET_PACK_CONTRACT.md`. Autonomous `sleep.idle` binds only canonical closed-eye frame `[5]`; the runtime supplies one continuous eight-second micro-breath. Never animate sleeping by cycling atlas poses—multiple image transitions read as repeated body pulses even when the nominal loop duration is long. Validate the actual bound cell, not only the row label.
 - Keep start/loop/stop subject-height drift below 2%, center drift below 5 px, and ground drift
   below 2 px in cell coordinates.
-- Use short image blending. Never hide mismatched cells with long dissolves.
+- Author sparse poses as keyframes, then let Furball sample continuous temporal in-betweens at
+  display refresh rate. For calm gestures use a 0.55–0.72 frame blend fraction; for jumping,
+  locomotion, sneezing, and tail chasing use 0.08–0.32 so distinct silhouettes do not become
+  double heads or paws. Never duplicate source cells to claim a higher frame rate.
+- Match every adjacent pose by visible alpha height, horizontal center, and ground contact.
+  Runtime registration may correct at most 12% while a blend resolves; regenerate any row that
+  needs more. Gestures based on the jumping row must enter and exit through stable stand frame 4.
+- Use the semantic duration ranges in `references/PET_PACK_CONTRACT.md`; a readable wave or bow
+  must not be compressed into a sub-second slideshow merely because the atlas has few key poses.
+- Run `Scripts/render-sprite-motion-qa.py` (or an equivalent renderer implementing the same
+  smootherstep, premultiplied-alpha, and port-alignment rules), then inspect complete animated
+  previews and 12-sample contact sheets. Never approve only the static atlas.
 - Publish all registry menu actions with English titles, resulting posture, and autonomous flags.
 
 ## Output contract

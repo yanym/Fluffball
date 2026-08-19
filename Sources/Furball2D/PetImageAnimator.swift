@@ -20,12 +20,33 @@ struct PetImageRenderSample {
     let textureA: MTLTexture
     let textureB: MTLTexture
     let blendWeight: Float
+    let textureBScale: Float
+    let textureBSourceCenterX: Float
+    let textureBSourceGroundY: Float
+    let textureBTargetCenterX: Float
+    let textureBTargetGroundY: Float
     let transform: PetImageTransform
     let isMirrored: Bool
 }
 
 @MainActor
 final class PetImageAnimator {
+    private struct FrameAlignment {
+        static let identity = FrameAlignment(
+            scale: 1,
+            sourceCenterX: 0.5,
+            sourceGroundY: 1,
+            targetCenterX: 0.5,
+            targetGroundY: 1
+        )
+
+        let scale: Float
+        let sourceCenterX: Float
+        let sourceGroundY: Float
+        let targetCenterX: Float
+        let targetGroundY: Float
+    }
+
     private final class Frame {
         let texture: MTLTexture
         let width: Int
@@ -151,19 +172,42 @@ final class PetImageAnimator {
            playback.fadeDuration > 0,
            elapsed < playback.fadeDuration {
             let progress = Float(elapsed / playback.fadeDuration)
+            let weight = smootherstep(progress)
+            let alignment = frameAlignment(
+                from: previous,
+                to: current.a,
+                progress: weight,
+                mirrored: effectiveMirroring(for: playback)
+            )
             return PetImageRenderSample(
                 textureA: previous.texture,
                 textureB: current.a.texture,
-                blendWeight: smootherstep(progress),
+                blendWeight: weight,
+                textureBScale: alignment.scale,
+                textureBSourceCenterX: alignment.sourceCenterX,
+                textureBSourceGroundY: alignment.sourceGroundY,
+                textureBTargetCenterX: alignment.targetCenterX,
+                textureBTargetGroundY: alignment.targetGroundY,
                 transform: transform,
                 isMirrored: effectiveMirroring(for: playback)
             )
         }
 
+        let alignment = frameAlignment(
+            from: current.a,
+            to: current.b,
+            progress: current.weight,
+            mirrored: effectiveMirroring(for: playback)
+        )
         return PetImageRenderSample(
             textureA: current.a.texture,
             textureB: current.b.texture,
             blendWeight: current.weight,
+            textureBScale: alignment.scale,
+            textureBSourceCenterX: alignment.sourceCenterX,
+            textureBSourceGroundY: alignment.sourceGroundY,
+            textureBTargetCenterX: alignment.targetCenterX,
+            textureBTargetGroundY: alignment.targetGroundY,
             transform: transform,
             isMirrored: effectiveMirroring(for: playback)
         )
@@ -246,6 +290,50 @@ final class PetImageAnimator {
         return (frames[index], frames[nextIndex], smootherstep(shortFade))
     }
 
+    /// During a temporal in-between, register the incoming sprite against the
+    /// outgoing sprite's body height, horizontal center, and ground contact.
+    /// The correction decays continuously to identity as the incoming frame
+    /// takes over, so there is no alignment snap at the keyframe boundary.
+    private func frameAlignment(
+        from outgoing: Frame,
+        to incoming: Frame,
+        progress: Float,
+        mirrored: Bool
+    ) -> FrameAlignment {
+        guard progress < 0.999,
+              let outgoingRect = outgoing.visiblePixelRect,
+              let incomingRect = incoming.visiblePixelRect,
+              outgoing.width > 0,
+              outgoing.height > 0,
+              incoming.width == outgoing.width,
+              incoming.height == outgoing.height,
+              incomingRect.height > 1 else { return .identity }
+
+        func centerX(_ rect: NSRect) -> Float {
+            let raw = Float(rect.midX) / Float(incoming.width)
+            return mirrored ? 1 - raw : raw
+        }
+
+        let outgoingCenterX = centerX(outgoingRect)
+        let incomingCenterX = centerX(incomingRect)
+        let outgoingGroundY = Float(outgoingRect.maxY) / Float(incoming.height)
+        let incomingGroundY = Float(incomingRect.maxY) / Float(incoming.height)
+        let initialScale = max(
+            0.88,
+            min(1.12, Float(outgoingRect.height / incomingRect.height))
+        )
+        let scale = initialScale + (1 - initialScale) * progress
+        let targetCenterX = outgoingCenterX + (incomingCenterX - outgoingCenterX) * progress
+        let targetGroundY = outgoingGroundY + (incomingGroundY - outgoingGroundY) * progress
+        return FrameAlignment(
+            scale: scale,
+            sourceCenterX: incomingCenterX,
+            sourceGroundY: incomingGroundY,
+            targetCenterX: targetCenterX,
+            targetGroundY: targetGroundY
+        )
+    }
+
     private func motionTransform(for animation: PetImageAnimation, elapsed: TimeInterval) -> PetImageTransform {
         let twoPi = Double.pi * 2
         let progress = Float(min(1, elapsed / max(animation.duration, 0.001)))
@@ -280,6 +368,13 @@ final class PetImageAnimator {
                 scaleX: 1 - curiosity * 0.002,
                 scaleY: 1 + curiosity * 0.004,
                 translationY: abs(curiosity) * 0.003
+            )
+        case .gesture:
+            let breath = Float(sin(elapsed * twoPi / 2.8))
+            return PetImageTransform(
+                scaleX: 1 - breath * 0.0012,
+                scaleY: 1 + breath * 0.0025,
+                translationY: abs(breath) * 0.0015
             )
         case .walk:
             return locomotionTransform(elapsed: elapsed, frequency: 2.15, lift: 0.014, squash: 0.010, tilt: 0.006)

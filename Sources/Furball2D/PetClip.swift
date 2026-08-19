@@ -148,6 +148,7 @@ enum PetImageMotion: String, Decodable {
     case sleep
     case transition
     case look
+    case gesture
     case walk
     case slowRun = "slow-run"
     case fastRun = "fast-run"
@@ -642,7 +643,7 @@ enum PetAssetCatalog {
             duration: max(1.0 / 60.0, durations.reduce(0, +)),
             frameBlendFraction: max(
                 0,
-                min(0.48, binding.frameBlendFraction ?? animation.frameBlendFraction ?? 0)
+                min(0.82, binding.frameBlendFraction ?? animation.frameBlendFraction ?? 0)
             )
         )
     }

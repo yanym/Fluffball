@@ -1872,7 +1872,8 @@ final class PetController: NSObject, NSMenuDelegate {
         renderer.setMirrored(actionFacing.isMirrored)
         speechBubble.updateAppearance(mood: speechMood)
         do {
-            try renderer.play(clip) { [weak self] in
+            let transitionFade: TimeInterval = renderer.visualMode == .images ? 0.22 : 0.14
+            try renderer.play(clip, fadeDuration: transitionFade) { [weak self] in
                 guard let self, self.profileSwitchGeneration == profileGeneration else { return }
                 self.isTransitioning = false
                 self.playIdle(clip.resultingPosture)
@@ -3428,7 +3429,7 @@ final class PetController: NSObject, NSMenuDelegate {
         speechBubble.updateAppearance(mood: speechMood)
         let clip = PetClips.imageAction(action)
         do {
-            try renderer.play(clip, fadeDuration: 0.10) { [weak self] in
+            try renderer.play(clip, fadeDuration: 0.16) { [weak self] in
                 guard let self, self.profileSwitchGeneration == profileGeneration else { return }
                 self.posture = clip.resultingPosture
                 self.isTransitioning = false

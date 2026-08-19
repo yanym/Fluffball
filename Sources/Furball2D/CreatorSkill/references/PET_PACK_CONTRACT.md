@@ -100,6 +100,37 @@ gesture.tail-chase
 
 Every published action has a binding, an English `en` title, a resulting posture, and an autonomous Boolean.
 
+## Gesture cadence and temporal in-betweens
+
+The atlas contains authored key poses; Furball produces the visible intermediate samples at the
+display refresh rate with premultiplied-alpha smootherstep blending. Calm gestures use a
+`frameBlendFraction` of roughly 0.55–0.72. Jumping, locomotion, sneezing, and tail chasing use
+roughly 0.08–0.32 because long overlaps between dissimilar silhouettes create ghost limbs.
+The accepted field range is 0–0.82. Duplicating an atlas cell is not an intermediate frame.
+
+| Binding | Accepted duration |
+|---|---:|
+| wave | 1.4–2.2 s |
+| jump | 0.9–1.5 s |
+| failed | 1.4–2.4 s |
+| waiting / working / review | 1.4–2.5 s |
+| play bow | 1.4–2.4 s |
+| head tilt | 1.2–2.1 s |
+| sniff | 1.5–2.8 s |
+| high five | 1.4–2.4 s |
+| stretch | 1.8–3.2 s |
+| sneeze | 0.55–1.1 s |
+| paw tap | 0.9–1.6 s |
+| happy dance | 1.5–2.8 s |
+| yawn | 2.5–4.5 s |
+| drowsy | 2.0–4.0 s |
+| tail chase | 1.1–2.2 s |
+
+Adjacent cells are registered by visible alpha height, horizontal center, and ground contact.
+The renderer may ease out a correction no larger than 12%; a larger mismatch is a source-row
+failure. `gesture.jump`, `gesture.play-bow`, `gesture.stretch`, and `gesture.happy-dance` must
+enter and exit through jumping-row stable stand frame 4.
+
 ## Direction semantics
 
 - 0°: away/up
@@ -156,3 +187,4 @@ The app importer and release validator reject a sprite atlas whose state-model i
 7. Pack passes the included validator without warnings.
 8. Contact sheets are reviewed at simulated 60%, 100%, and 140% app size.
 9. `QA/clarity.json` certifies native 384×416 generation, lossless output, no registration enlargement above 1.25×, native-scale eye/fur/paw inspection, and no accepted blur, halo, ringing, stair-step, color-fringe, or compression defects.
+10. Every gesture passes its semantic duration range and an animated preview/contact-sheet review; static atlas inspection alone is insufficient.

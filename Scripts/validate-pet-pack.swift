@@ -450,7 +450,8 @@ private func validateSpriteAtlas(
     try validateStableCellBaselines(atlasURL, atlas: atlas)
 
     let supportedMotions: Set<String> = [
-        "none", "idle", "sleep", "transition", "look", "walk", "slow-run", "fast-run", "settle"
+        "none", "idle", "sleep", "transition", "look", "gesture",
+        "walk", "slow-run", "fast-run", "settle"
     ]
     var animationsByID: [String: Manifest.SpriteAtlas.Animation] = [:]
     for animation in atlas.animations {
@@ -465,8 +466,8 @@ private func validateSpriteAtlas(
               supportedMotions.contains(animation.motion) else {
             try fail("\(animation.id): invalid sprite row, frame count, duration, or motion")
         }
-        if let fraction = animation.frameBlendFraction, !(0...0.48).contains(fraction) {
-            try fail("\(animation.id): frameBlendFraction must be in 0...0.48")
+        if let fraction = animation.frameBlendFraction, !(0...0.82).contains(fraction) {
+            try fail("\(animation.id): frameBlendFraction must be in 0...0.82")
         }
         animationsByID[animation.id] = animation
     }
@@ -531,11 +532,51 @@ private func validateSpriteAtlas(
         if let motion = binding.motion, !supportedMotions.contains(motion) {
             try fail("\(binding.id): invalid motion")
         }
-        if let fraction = binding.frameBlendFraction, !(0...0.48).contains(fraction) {
-            try fail("\(binding.id): frameBlendFraction must be in 0...0.48")
+        if let fraction = binding.frameBlendFraction, !(0...0.82).contains(fraction) {
+            try fail("\(binding.id): frameBlendFraction must be in 0...0.82")
         }
         loopsByID[binding.id] = binding.loop ?? animation.loop
         bindingsByID[binding.id] = binding
+    }
+
+    // Realistic 2D actions are sparse authored key poses sampled continuously
+    // by the renderer. Reject the old sub-second slideshow cadence while
+    // preserving legitimately quick jump and sneeze beats.
+    let gestureDurationRanges: [String: ClosedRange<Double>] = [
+        "gesture.wave": 1.4...2.2,
+        "gesture.jump": 0.9...1.5,
+        "gesture.failed": 1.4...2.4,
+        "gesture.waiting": 1.4...2.5,
+        "gesture.working": 1.4...2.5,
+        "gesture.review": 1.4...2.5,
+        "gesture.play-bow": 1.4...2.4,
+        "gesture.head-tilt": 1.2...2.1,
+        "gesture.sniff": 1.5...2.8,
+        "gesture.high-five": 1.4...2.4,
+        "gesture.stretch": 1.8...3.2,
+        "gesture.sneeze": 0.55...1.1,
+        "gesture.paw-tap": 0.9...1.6,
+        "gesture.happy-dance": 1.5...2.8,
+        "gesture.yawn": 2.5...4.5,
+        "gesture.drowsy": 2.0...4.0,
+        "gesture.tail-chase": 1.1...2.2,
+    ]
+    for (bindingID, range) in gestureDurationRanges {
+        guard let binding = bindingsByID[bindingID],
+              let animation = animationsByID[binding.animation] else { continue }
+        let indices = binding.frameIndices ?? Array(0..<animation.frameCount)
+        let scale = binding.frameDurationScale ?? 1
+        let duration = indices.reduce(0.0) { $0 + animation.frameDurations[$1] } * scale
+        guard range.contains(duration) else {
+            try fail("\(bindingID): duration \(String(format: "%.3f", duration))s must be in \(range.lowerBound)...\(range.upperBound)s")
+        }
+    }
+    for bindingID in ["gesture.jump", "gesture.play-bow", "gesture.stretch", "gesture.happy-dance"] {
+        guard let binding = bindingsByID[bindingID], binding.animation == "jumping",
+              let indices = binding.frameIndices,
+              indices.first == 4, indices.last == 4 else {
+            try fail("\(bindingID): jumping-row gestures must enter and exit through stable stand frame 4")
+        }
     }
     for (id, expected) in imagePostureBindings {
         guard let binding = bindingsByID[id],

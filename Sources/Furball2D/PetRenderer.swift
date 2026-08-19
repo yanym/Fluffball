@@ -231,6 +231,11 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         var hasTextureA: UInt32
         var hasTextureB: UInt32
         var texturesArePremultiplied: UInt32
+        var textureBScale: Float
+        var textureBSourceCenterX: Float
+        var textureBSourceGroundY: Float
+        var textureBTargetCenterX: Float
+        var textureBTargetGroundY: Float
     }
 
     private struct PlayRequest {
@@ -276,6 +281,11 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         uint hasTextureA;
         uint hasTextureB;
         uint texturesArePremultiplied;
+        float textureBScale;
+        float textureBSourceCenterX;
+        float textureBSourceGroundY;
+        float textureBTargetCenterX;
+        float textureBTargetGroundY;
     };
 
     vertex VertexOut petVertex(const device float4 *vertices [[buffer(0)]], uint id [[vertex_id]]) {
@@ -292,7 +302,15 @@ final class PetRenderer: NSObject, MTKViewDelegate {
                                 sampler videoSampler [[sampler(0)]],
                                 constant FragmentUniforms &uniforms [[buffer(0)]]) {
         float4 colorA = uniforms.hasTextureA != 0 ? textureA.sample(videoSampler, in.uv) : float4(0.0);
-        float4 colorB = uniforms.hasTextureB != 0 ? textureB.sample(videoSampler, in.uv) : float4(0.0);
+        float scaleB = max(0.001f, uniforms.textureBScale);
+        float2 sourceUVB = float2(
+            uniforms.textureBSourceCenterX + (in.uv.x - uniforms.textureBTargetCenterX) / scaleB,
+            uniforms.textureBSourceGroundY + (in.uv.y - uniforms.textureBTargetGroundY) / scaleB
+        );
+        bool sourceBIsValid = all(sourceUVB >= float2(0.0)) && all(sourceUVB <= float2(1.0));
+        float4 colorB = uniforms.hasTextureB != 0 && sourceBIsValid
+            ? textureB.sample(videoSampler, sourceUVB)
+            : float4(0.0);
 
         // HEVC Alpha is delivered as straight RGBA. Convert each lane to
         // premultiplied alpha before interpolation; mixing straight RGBA first
@@ -664,7 +682,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             blendWeight: bufferA == nil ? 1 : blendWeight,
             hasTextureA: bufferA == nil ? 0 : 1,
             hasTextureB: bufferB == nil ? 0 : 1,
-            texturesArePremultiplied: 0
+            texturesArePremultiplied: 0,
+            textureBScale: 1,
+            textureBSourceCenterX: 0.5,
+            textureBSourceGroundY: 1,
+            textureBTargetCenterX: 0.5,
+            textureBTargetGroundY: 1
         )
 
         encoder.setRenderPipelineState(pipelineState)
@@ -774,7 +797,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             blendWeight: sample.blendWeight,
             hasTextureA: 1,
             hasTextureB: 1,
-            texturesArePremultiplied: 1
+            texturesArePremultiplied: 1,
+            textureBScale: sample.textureBScale,
+            textureBSourceCenterX: sample.textureBSourceCenterX,
+            textureBSourceGroundY: sample.textureBSourceGroundY,
+            textureBTargetCenterX: sample.textureBTargetCenterX,
+            textureBTargetGroundY: sample.textureBTargetGroundY
         )
         encoder.setRenderPipelineState(pipelineState)
         encoder.setVertexBytes(&vertices, length: MemoryLayout<Float>.stride * vertices.count, index: 0)
