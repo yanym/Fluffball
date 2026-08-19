@@ -1,6 +1,6 @@
-# Fluffball Agent Guide: Processing Continuous Pet Action Video
+# Furball Agent Guide: Processing Continuous Pet Action Video
 
-This file is mandatory guidance for any Agent working on Fluffball/Furball2D. When a user provides one or more continuous pet-action videos, analyze, segment, normalize, and validate them with this workflow before replacing app assets. The goal is not merely successful playback. The desktop pet must remain natural, stable, and sharp across loops, action changes, and display sizes.
+This file is mandatory guidance for any Agent working on Furball. When a user provides one or more continuous pet-action videos, analyze, segment, normalize, and validate them with this workflow before replacing app assets. The goal is not merely successful playback. The desktop pet must remain natural, stable, and sharp across loops, action changes, and display sizes.
 
 ## 1. Core principles
 
@@ -28,12 +28,14 @@ When the user explicitly rejects AI-generated video, use a Codex-compatible Pet 
 4. Rows 9–10 contain all 16 directions: 0° up, 90° screen-right, 180° down, and 270° screen-left at 22.5° steps. Approve the four cardinals before synthesizing both coherent direction rows.
 5. Keep paws, lower torso, and baseline stable during look motion. Eyes lead, muzzle/head/neck follow, and ears, cheek fur, and ruff lag subtly. Never rotate the whole sprite to fake a head turn.
 6. `spriteAtlas.animations` declares per-frame timing, loop, motion, and short blend fraction. `bindings` maps the 27 standard semantic IDs and may use `frameIndices`, `rightAnimation`, and `frameDurationScale`. Never hardcode a pet-specific path in Swift.
-7. `actions` may publish any number of localized cute actions. The current creator-Skill action registry is `2026-08-17.2`, covering wave, jump, failed, waiting, working, review, play-bow, head-tilt, sniff, and high-five. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them. Adding an action also requires updating the contract, Skill, and validator under `Sources/Furball2D/CreatorSkill/`.
+7. `actions` may publish any number of localized cute actions. The current creator-Skill action registry is `2026-08-18.2`, including `gesture.drowsy` for the standing/sitting low-head pose. Titles, autonomous eligibility, and resulting posture belong to the pack; the image-mode menu reads them automatically and video mode disables them. Adding an action also requires updating the contract, Skill, and validator under `Sources/Furball2D/CreatorSkill/`.
 8. Cursor gaze advances one adjacent direction at a time, using roughly 0.15 seconds of initial stability and a 0.085–0.12-second adjacent cooldown. Before locomotion, take the shortest route to the matching 90° or 270° profile. Do not change look cells during movement.
 9. Direction cells take over only after recent pointer movement. After roughly 2.4 seconds of pointer stillness, return to the full idle row so one static gaze cannot permanently hide breathing and blinking. Briefly return through the idle port before a front-facing posture action such as sitting.
 10. Cursor following and free roam retain one two-dimensional target, gait hysteresis, and horizontal/vertical bounds. A sprite gait with real start frames does not need a video first-paw delay, but retains the roughly 0.07-second image-mode acceleration ramp.
 11. Declare `capabilities.imageMode=true`. An image-only pack sets `videoMode=false` and omits `clips`, automatically forcing and disabling the top-level video toggle. The sprite-atlas bindings must cover all 27 standard semantic slots.
-12. Before delivery, pass `Scripts/validate-pet-pack.swift`, Codex v2 structure/alpha validation, per-row previews, 16-direction semantics and continuity review, 60%/100%/140% in-app checks, and `Scripts/package-app.sh`. Review metric warnings at normal display size; never silence them by relaxing a threshold.
+12. Declare `pet.bodySize` from 1 through 100. A medium dog uses 60; this relative physical size is applied before the independent 60%–140% display scale. A sleeping row must become genuinely horizontal before it closes the eyes. A standing low-head pose is `gesture.drowsy` or sniffing, never `sleep.idle`. Autonomous `sleep.idle` holds only canonical closed-eye frame `[5]`; one continuous eight-second sub-pixel procedural sine provides breathing. Never cycle atlas cells during sleep.
+13. Every sprite atlas declares `stateModel: furball-image-state-v1` and uses the shared row-5 stages and posture bindings from `Docs/PET_PACK_STANDARD.md`; no pet profile may redefine sleep. The creator produces Realistic 2D only. This contract is image-only. Do not apply its frame map to MP4 clips.
+14. Before delivery, pass `Scripts/validate-pet-pack.swift`, Codex v2 structure/alpha validation, per-row previews, 16-direction semantics and continuity review, 60%/100%/140% in-app checks, and `Scripts/package-app.sh`. Review metric warnings at normal display size; never silence them by relaxing a threshold.
 
 ## 2. First steps after receiving new footage
 
@@ -290,8 +292,8 @@ swift build
 `Scripts/package-app.sh` signs the app from a clean `/tmp` staging directory, then outputs:
 
 ```text
-dist/Furball2D.app
-dist/Furball2D.zip
+dist/Furball.app
+dist/Furball.zip
 ```
 
 Desktop File Provider may attach FinderInfo to a local app copy. Prefer the ZIP for transfer or strict signature validation, and run `codesign --verify --deep --strict` against the app extracted from that ZIP.

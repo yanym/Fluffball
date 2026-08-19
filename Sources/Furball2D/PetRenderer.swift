@@ -157,7 +157,7 @@ private final class PetVideoChannel: @unchecked Sendable {
             next.preferredForwardBufferDuration = 2.5
             player.insert(next, after: player.items().last)
         } catch {
-            NSLog("Furball2D loop prequeue failed: %@", error.localizedDescription)
+            NSLog("Furball loop prequeue failed: %@", error.localizedDescription)
         }
     }
 
@@ -167,7 +167,7 @@ private final class PetVideoChannel: @unchecked Sendable {
             do {
                 player.insert(try makeItem(), after: nil)
             } catch {
-                NSLog("Furball2D loop recovery failed: %@", error.localizedDescription)
+                NSLog("Furball loop recovery failed: %@", error.localizedDescription)
                 return
             }
         }
@@ -531,22 +531,6 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             clip.imageAnimation,
             fadeDuration: crossfadeEnabled ? fadeDuration : 0,
             completion: completion
-        )
-    }
-
-    func displayDirectionalBlend(
-        first: PetClip,
-        second: PetClip,
-        weight: Float,
-        entryFadeDuration: TimeInterval = 0.06
-    ) throws {
-        guard visualMode == .images else { return }
-        clearVideoChannels()
-        try imageAnimator.displayDirectionalBlend(
-            first.imageAnimation,
-            second.imageAnimation,
-            weight: weight,
-            entryFadeDuration: entryFadeDuration
         )
     }
 

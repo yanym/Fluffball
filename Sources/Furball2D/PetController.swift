@@ -20,6 +20,7 @@ final class PetController: NSObject, NSMenuDelegate {
         static let alwaysOnTop = "alwaysOnTop"
         static let speechBubbles = "speechBubblesEnabled"
         static let talkativeness = "petTalkativeness"
+        static let speechBubbleStyle = "speechBubbleStyle"
         static let groupPlay = "groupPlayEnabled"
         static let groupPetIDs = "groupPlayPetIDs"
     }
@@ -97,6 +98,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private let desktopCarriedItem = DesktopCarriedItem()
     private let groupPlayController = PetGroupPlayController()
     private let desktopInteractionService = DesktopInteractionService()
+    private let updateChecker = UpdateChecker.shared
     private var settingsWindowController: UnifiedSettingsWindowController?
 
     private var posture: PetPosture = .stand
@@ -152,8 +154,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var lookDirection: PetLookDirection = .left
     private var lastLookCursorLocation = NSPoint.zero
     private var lastLookCursorMotionTime: TimeInterval = 0
-    private var lastDirectionalLookSampleTime: TimeInterval = 0
-    private var smoothedDirectionalLookAngle: Double?
+    private var lastDirectionalLookStepTime: TimeInterval = 0
     private var directionalLookIsEngaged = false
     private var pendingFacingSince: TimeInterval = 0
     private var lastFacingChangeTime: TimeInterval = 0
@@ -191,6 +192,21 @@ final class PetController: NSObject, NSMenuDelegate {
         didSet { UserDefaults.standard.set(petScale, forKey: PreferenceKey.petScale) }
     }
 
+    /// Settings controls display magnification; each Pet Pack owns its
+    /// relative physical size through pet.bodySize. Nina's 60 is the baseline
+    /// that preserves the historical on-screen dimensions.
+    private var renderedPetScale: CGFloat {
+        petScale * PetAssetCatalog.intrinsicBodyScale
+    }
+
+    private func petWindowSize(displayScale: CGFloat? = nil) -> NSSize {
+        let scale = (displayScale ?? petScale) * PetAssetCatalog.intrinsicBodyScale
+        return NSSize(
+            width: Self.basePetSize.width * scale,
+            height: Self.basePetSize.height * scale
+        )
+    }
+
     private var fullPassThrough: Bool {
         didSet { UserDefaults.standard.set(fullPassThrough, forKey: PreferenceKey.fullPassThrough) }
     }
@@ -221,6 +237,10 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private var talkativeness: Double {
         didSet { UserDefaults.standard.set(talkativeness, forKey: PreferenceKey.talkativeness) }
+    }
+
+    private var speechBubbleStyle: PetSpeechBubbleStyle {
+        didSet { UserDefaults.standard.set(speechBubbleStyle.rawValue, forKey: PreferenceKey.speechBubbleStyle) }
     }
 
     private var groupPlayEnabled: Bool {
@@ -268,6 +288,8 @@ final class PetController: NSObject, NSMenuDelegate {
             ? 0.55
             : defaults.double(forKey: PreferenceKey.talkativeness)
         talkativeness = min(1, max(0, savedTalkativeness))
+        speechBubbleStyle = defaults.string(forKey: PreferenceKey.speechBubbleStyle)
+            .flatMap(PetSpeechBubbleStyle.init(rawValue:)) ?? .cloud
         groupPlayEnabled = defaults.bool(forKey: PreferenceKey.groupPlay)
         let imageCapableIDs = PetAssetCatalog.imageCapablePetIDs
         let savedGroupIDs = Set(defaults.stringArray(forKey: PreferenceKey.groupPetIDs) ?? [])
@@ -282,7 +304,11 @@ final class PetController: NSObject, NSMenuDelegate {
         videoAnimationsEnabled = PetAssetCatalog.activeAppearance.kind == .continuousVideo
         appLanguage = AppLanguage.stored
 
-        let size = NSSize(width: Self.basePetSize.width * initialScale, height: Self.basePetSize.height * initialScale)
+        let initialRenderedScale = initialScale * PetAssetCatalog.intrinsicBodyScale
+        let size = NSSize(
+            width: Self.basePetSize.width * initialRenderedScale,
+            height: Self.basePetSize.height * initialRenderedScale
+        )
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(x: screen.maxX - size.width - 24, y: screen.minY + 18)
         renderer = try PetRenderer(
@@ -305,7 +331,14 @@ final class PetController: NSObject, NSMenuDelegate {
             name: .petMindDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateStateDidChange(_:)),
+            name: .furballUpdateStateDidChange,
+            object: updateChecker
+        )
         panel.contentView = renderer.view
+        speechBubble.setStyle(speechBubbleStyle)
         configureInput()
         configureMenu()
     }
@@ -331,6 +364,9 @@ final class PetController: NSObject, NSMenuDelegate {
             }
         }
         startStatusItemHealthCheck()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.updateChecker.checkAutomatically()
+        }
         startMindTracking()
         startFacingTracking()
         if freeRoamEnabled {
@@ -425,7 +461,7 @@ final class PetController: NSObject, NSMenuDelegate {
         results: [[String: Any]]
     ) {
         guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
-        let appearanceIDs = ["continuous-video", "cute-2d", "realistic-2d"]
+        let appearanceIDs = ["continuous-video", "realistic-2d"]
         if step == 0,
            !Set(appearanceIDs).isSubset(of: Set(PetAssetCatalog.availableAppearances.map(\.id))),
            let referencePet = PetAssetCatalog.availablePets.first(where: {
@@ -473,7 +509,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func writeAppearanceSwitchQAReport(reportPath: String, results: [[String: Any]]) {
-        let pass = results.count == 3 && results.allSatisfy { ($0["pass"] as? Bool) == true }
+        let pass = results.count == 2 && results.allSatisfy { ($0["pass"] as? Bool) == true }
         let report: [String: Any] = [
             "pass": pass,
             "petID": PetAssetCatalog.petID,
@@ -483,7 +519,7 @@ final class PetController: NSObject, NSMenuDelegate {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
         } catch {
-            NSLog("Furball2D appearance switch QA failed: %@", error.localizedDescription)
+            NSLog("Furball appearance switch QA failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_APPEARANCE_SWITCH_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -571,7 +607,7 @@ final class PetController: NSObject, NSMenuDelegate {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
         } catch {
-            NSLog("Furball2D live motion QA report failed: %@", error.localizedDescription)
+            NSLog("Furball live motion QA report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_LIVE_MOTION_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -605,6 +641,9 @@ final class PetController: NSObject, NSMenuDelegate {
             "activePet": PetAssetCatalog.activePet?.id ?? NSNull(),
             "availablePets": PetAssetCatalog.availablePets.map(\.id),
             "appearance": PetAssetCatalog.activeAppearance.id,
+            "bodySize": PetAssetCatalog.bodySize,
+            "displayScale": petScale,
+            "panelFrame": NSStringFromRect(panel.frame),
             "mode": renderer.visualMode == .video ? "video" : "images",
             "panelVisible": panel.isVisible,
             "contentVisible": rect != nil,
@@ -616,9 +655,9 @@ final class PetController: NSObject, NSMenuDelegate {
         do {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-            NSLog("Furball2D smoke report: %@", path)
+            NSLog("Furball smoke report: %@", path)
         } catch {
-            NSLog("Furball2D smoke report failed: %@", error.localizedDescription)
+            NSLog("Furball smoke report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_SMOKE_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -647,7 +686,7 @@ final class PetController: NSObject, NSMenuDelegate {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
         } catch {
-            NSLog("Furball2D group QA report failed: %@", error.localizedDescription)
+            NSLog("Furball group QA report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_GROUP_PLAY_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -702,7 +741,7 @@ final class PetController: NSObject, NSMenuDelegate {
             let data = try JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
         } catch {
-            NSLog("Furball2D boundary QA report failed: %@", error.localizedDescription)
+            NSLog("Furball boundary QA report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_BOUNDARY_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -759,9 +798,9 @@ final class PetController: NSObject, NSMenuDelegate {
         do {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-            NSLog("Furball2D behavior QA report: %@", path)
+            NSLog("Furball behavior QA report: %@", path)
         } catch {
-            NSLog("Furball2D behavior QA report failed: %@", error.localizedDescription)
+            NSLog("Furball behavior QA report failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_BEHAVIOR_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -816,7 +855,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 try renderer.play(PetClips.idle(for: posture), fadeDuration: 0)
             }
         } catch {
-            NSLog("Furball2D startup visibility recovery failed: %@", error.localizedDescription)
+            NSLog("Furball startup visibility recovery failed: %@", error.localizedDescription)
         }
     }
 
@@ -885,7 +924,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         let image = NSImage(
             systemSymbolName: "pawprint.fill",
-            accessibilityDescription: "Furball2D"
+            accessibilityDescription: "Furball"
         )?.withSymbolConfiguration(symbolConfiguration)
         image?.isTemplate = true
 
@@ -902,46 +941,140 @@ final class PetController: NSObject, NSMenuDelegate {
         rebuildMenu()
     }
 
+    @objc private func updateStateDidChange(_ notification: Notification) {
+        rebuildMenu()
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        updateChecker.checkManually(presenting: settingsWindowController?.window)
+    }
+
     private func rebuildMenu() {
         menu.removeAllItems()
+        menu.minimumWidth = 286
+        menu.addItem(makeMenuHeaderItem())
+        menu.addItem(.separator())
         if groupPlayEnabled {
-            menu.addItem(
-                withTitle: appLanguage.visibilityMenu(isVisible: groupPlayController.hasVisibleCompanions),
-                action: #selector(toggleVisibility),
-                keyEquivalent: ""
-            )
+            menu.addItem(makeMenuItem(
+                title: appLanguage.visibilityMenu(isVisible: groupPlayController.hasVisibleCompanions),
+                symbol: groupPlayController.hasVisibleCompanions ? "eye.slash.fill" : "eye.fill",
+                action: #selector(toggleVisibility)
+            ))
             menu.addItem(.separator())
-            menu.addItem(withTitle: appLanguage.settingsMenu, action: #selector(showVisualSettings), keyEquivalent: ",")
+            menu.addItem(makeMenuItem(title: appLanguage.settingsMenu, symbol: "slider.horizontal.3", action: #selector(showVisualSettings), keyEquivalent: ","))
+            menu.addItem(makeUpdateMenuItem())
             menu.addItem(.separator())
-            menu.addItem(withTitle: appLanguage.quitMenu, action: #selector(quit), keyEquivalent: "q")
+            menu.addItem(makeMenuItem(title: appLanguage.quitMenu, symbol: "moon.zzz.fill", action: #selector(quit), keyEquivalent: "q"))
             for item in menu.items where item.action != nil { item.target = self }
             return
         }
-        menu.addItem(withTitle: appLanguage.interactMenu, action: #selector(interactFromMenu), keyEquivalent: "")
-        menu.addItem(withTitle: appLanguage.speakMenu, action: #selector(speakFromMenu), keyEquivalent: "")
+        menu.addItem(makeMenuItem(title: appLanguage.interactMenu, symbol: "hand.point.up.left.fill", action: #selector(interactFromMenu)))
+        menu.addItem(makeMenuItem(title: appLanguage.speakMenu, symbol: "bubble.left.fill", action: #selector(speakFromMenu)))
         if renderer.visualMode == .images {
-            menu.addItem(withTitle: appLanguage.throwTreatMenu, action: #selector(throwTreatFromMenu), keyEquivalent: "")
+            menu.addItem(makeMenuItem(title: appLanguage.throwTreatMenu, symbol: "circle.hexagongrid.fill", action: #selector(throwTreatFromMenu)))
         }
         if !PetAssetCatalog.imageActions.isEmpty {
             menu.addItem(makeCuteActionsMenuItem())
         }
-        menu.addItem(withTitle: appLanguage.imageTurnMenu, action: #selector(imageTurnFromMenu), keyEquivalent: "")
-        menu.addItem(withTitle: appLanguage.sleepMenu, action: #selector(sleepFromMenu), keyEquivalent: "")
-        menu.addItem(withTitle: appLanguage.visibilityMenu(isVisible: panel.isVisible), action: #selector(toggleVisibility), keyEquivalent: "")
+        menu.addItem(makeMenuItem(title: appLanguage.imageTurnMenu, symbol: "eye.fill", action: #selector(imageTurnFromMenu)))
+        menu.addItem(makeMenuItem(title: appLanguage.sleepMenu, symbol: "bed.double.fill", action: #selector(sleepFromMenu)))
+        menu.addItem(makeMenuItem(
+            title: appLanguage.visibilityMenu(isVisible: panel.isVisible),
+            symbol: panel.isVisible ? "eye.slash.fill" : "eye.fill",
+            action: #selector(toggleVisibility)
+        ))
         menu.addItem(.separator())
-
-        menu.addItem(
-            withTitle: appLanguage.settingsMenu,
-            action: #selector(showVisualSettings),
-            keyEquivalent: ","
-        )
+        menu.addItem(makeMenuItem(title: appLanguage.settingsMenu, symbol: "slider.horizontal.3", action: #selector(showVisualSettings), keyEquivalent: ","))
+        menu.addItem(makeUpdateMenuItem())
         menu.addItem(.separator())
-        menu.addItem(withTitle: appLanguage.quitMenu, action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(makeMenuItem(title: appLanguage.quitMenu, symbol: "moon.zzz.fill", action: #selector(quit), keyEquivalent: "q"))
         for item in menu.items where item.action != nil { item.target = self }
+    }
+
+    private func makeMenuHeaderItem() -> NSMenuItem {
+        let item = NSMenuItem()
+        let card = NSView(frame: NSRect(x: 0, y: 0, width: 286, height: 62))
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 13
+        card.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.11).cgColor
+
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "pawprint.circle.fill", accessibilityDescription: nil)
+        icon.contentTintColor = .controlAccentColor
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
+        let title = NSTextField(labelWithString: "Furball · \(PetAssetCatalog.activePet?.name ?? "Pet")")
+        title.font = .systemFont(ofSize: 14, weight: .bold)
+        let subtitleText = groupPlayEnabled
+            ? "Group Play · \(groupPetIDs.count) companions"
+            : "\(PetAssetCatalog.activeAppearance.title(for: appLanguage)) · \(menuPostureTitle)"
+        let subtitle = NSTextField(labelWithString: subtitleText)
+        subtitle.font = .systemFont(ofSize: 10.5, weight: .medium)
+        subtitle.textColor = .secondaryLabelColor
+        let labels = NSStackView(views: [title, subtitle])
+        labels.orientation = .vertical
+        labels.alignment = .leading
+        labels.spacing = 2
+        let row = NSStackView(views: [icon, labels])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -12),
+            row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 34),
+            icon.heightAnchor.constraint(equalToConstant: 34)
+        ])
+        item.view = card
+        return item
+    }
+
+    private var menuPostureTitle: String {
+        switch posture {
+        case .stand: "Ready to play"
+        case .sit: "Sitting nicely"
+        case .lie: "Resting"
+        case .sleep: "Dreaming softly"
+        }
+    }
+
+    private func makeMenuItem(
+        title: String,
+        symbol: String,
+        action: Selector,
+        keyEquivalent: String = ""
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        item.image?.isTemplate = true
+        item.target = self
+        return item
+    }
+
+    private func makeUpdateMenuItem() -> NSMenuItem {
+        let title: String
+        let symbol: String
+        switch updateChecker.state {
+        case .available(let release):
+            title = appLanguage.updateAvailableMenu(release.version)
+            symbol = "arrow.down.circle.fill"
+        case .checking:
+            title = "Checking for Updates…"
+            symbol = "arrow.triangle.2.circlepath"
+        default:
+            title = appLanguage.checkForUpdatesMenu
+            symbol = "arrow.triangle.2.circlepath.circle.fill"
+        }
+        let item = makeMenuItem(title: title, symbol: symbol, action: #selector(checkForUpdatesFromMenu))
+        item.isEnabled = updateChecker.state != .checking
+        return item
     }
 
     private func makeCuteActionsMenuItem() -> NSMenuItem {
         let root = NSMenuItem(title: appLanguage.cuteActionsMenu, action: nil, keyEquivalent: "")
+        root.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         let actionMenu = NSMenu(title: appLanguage.cuteActionsMenu)
         let actionsAreAvailable = renderer.visualMode == .images
             && posture == .stand
@@ -956,6 +1089,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 keyEquivalent: ""
             )
             item.target = self
+            item.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)
             item.representedObject = action.id
             item.isEnabled = actionsAreAvailable
             actionMenu.addItem(item)
@@ -1220,7 +1354,7 @@ final class PetController: NSObject, NSMenuDelegate {
             avoiding: stabilizedVisiblePetFrame(refresh: true, reset: true),
             in: visibleFrame,
             level: panel.level,
-            petScale: petScale,
+            petScale: renderedPetScale,
             mood: speechMood
         )
         startSpeechFollowing()
@@ -1239,7 +1373,7 @@ final class PetController: NSObject, NSMenuDelegate {
         speechBubble.reposition(
             avoiding: stabilizedVisiblePetFrame(refresh: refreshSilhouette, reset: resetSilhouette),
             in: visibleFrame,
-            petScale: petScale
+            petScale: renderedPetScale
         )
     }
 
@@ -1362,8 +1496,7 @@ final class PetController: NSObject, NSMenuDelegate {
         facingTimer?.invalidate()
         lastLookCursorLocation = NSEvent.mouseLocation
         lastLookCursorMotionTime = ProcessInfo.processInfo.systemUptime
-        lastDirectionalLookSampleTime = lastLookCursorMotionTime
-        smoothedDirectionalLookAngle = nil
+        lastDirectionalLookStepTime = lastLookCursorMotionTime
         directionalLookIsEngaged = false
         // Track at display cadence. The former 10 Hz sampler plus an extra
         // 150 ms dwell made the eyes feel as if they noticed the pointer late.
@@ -1436,6 +1569,36 @@ final class PetController: NSObject, NSMenuDelegate {
             return
         }
 
+        let cursor = NSEvent.mouseLocation
+        let now = ProcessInfo.processInfo.systemUptime
+        let travel = hypot(
+            cursor.x - lastLookCursorLocation.x,
+            cursor.y - lastLookCursorLocation.y
+        )
+        if travel >= 2 {
+            lastLookCursorLocation = cursor
+            lastLookCursorMotionTime = now
+            directionalLookIsEngaged = true
+            pendingFacingView = nil
+            return
+        }
+
+        // Gaze is intentional only after the pointer settles. This prevents a
+        // 60 Hz cursor stream from turning the 16 direction cells into a
+        // translucent flipbook while still reacting quickly to a clear stop.
+        guard directionalLookIsEngaged else { return }
+        let stillDuration = now - lastLookCursorMotionTime
+        if stillDuration >= 2.4 {
+            directionalLookIsEngaged = false
+            pendingFacingView = nil
+            if isUsingImageFacing {
+                if usesDirectionalLook { playDirectionalStandIdle(fadeDuration: 0.06) }
+                else { switchToStandIdle() }
+            }
+            return
+        }
+        guard stillDuration >= 0.32 else { return }
+
         if renderer.visualMode == .images, PetAssetCatalog.supportsDirectionalLook {
             updateDirectionalLookTowardCursor()
         } else {
@@ -1478,89 +1641,26 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingFacingView = nil
         let cursor = NSEvent.mouseLocation
         let now = ProcessInfo.processInfo.systemUptime
-        let cursorTravel = hypot(
-            cursor.x - lastLookCursorLocation.x,
-            cursor.y - lastLookCursorLocation.y
-        )
-        if cursorTravel >= 1 {
-            lastLookCursorLocation = cursor
-            lastLookCursorMotionTime = now
-            directionalLookIsEngaged = true
-        }
-
-        // The sprite should notice a moving pointer, then resume its richer
-        // breathing/blinking idle after the pointer has been still for a moment.
-        // Without this timeout a single directional cell can permanently mask
-        // the animated idle row.
-        if !directionalLookIsEngaged || now - lastLookCursorMotionTime >= 2.4 {
-            directionalLookIsEngaged = false
-            smoothedDirectionalLookAngle = nil
-            if isUsingImageFacing {
-                playDirectionalStandIdle(fadeDuration: 0.09)
-            }
-            return
-        }
 
         let deltaX = cursor.x - panel.frame.midX
         let deltaY = cursor.y - panel.frame.midY
         guard hypot(deltaX, deltaY) >= 32 * petScale else {
             directionalLookIsEngaged = false
-            smoothedDirectionalLookAngle = nil
             if isUsingImageFacing {
                 playDirectionalStandIdle(fadeDuration: 0.09)
             }
             return
         }
-        let targetAngle = atan2(Double(deltaX), Double(deltaY))
-        let deltaTime = min(1.0 / 20.0, max(1.0 / 120.0, now - lastDirectionalLookSampleTime))
-        lastDirectionalLookSampleTime = now
+        let target = PetLookDirection(vectorX: deltaX, vectorY: deltaY)
+        guard target != lookDirection || !isUsingImageFacing else { return }
+        guard now - lastDirectionalLookStepTime >= 0.145 else { return }
 
-        let currentAngle = smoothedDirectionalLookAngle ?? targetAngle
-        var shortestDelta = targetAngle - currentAngle
-        while shortestDelta > .pi { shortestDelta -= .pi * 2 }
-        while shortestDelta < -.pi { shortestDelta += .pi * 2 }
-        // A critically damped angular low-pass removes cursor jitter without
-        // making the gaze trail behind deliberate movement.
-        let response = 1 - exp(-deltaTime * 24)
-        let smoothedAngle = currentAngle + shortestDelta * response
-        smoothedDirectionalLookAngle = smoothedAngle
-        displayDirectionalLook(angle: smoothedAngle, entryFadeDuration: isUsingImageFacing ? 0 : 0.055)
-    }
-
-    private func displayDirectionalLook(angle: Double, entryFadeDuration: TimeInterval) {
-        let twoPi = Double.pi * 2
-        var normalized = angle.truncatingRemainder(dividingBy: twoPi)
-        if normalized < 0 { normalized += twoPi }
-        let fractionalIndex = normalized / twoPi * Double(PetLookDirection.count)
-        let lowerIndex = Int(floor(fractionalIndex)) % PetLookDirection.count
-        let upperIndex = (lowerIndex + 1) % PetLookDirection.count
-        let weight = Float(fractionalIndex - floor(fractionalIndex))
-        let nearest = PetLookDirection(index: Int(fractionalIndex.rounded()))
-
-        renderer.setMirrored(false)
-        do {
-            try renderer.displayDirectionalBlend(
-                first: PetClips.lookDirection(PetLookDirection(index: lowerIndex)),
-                second: PetClips.lookDirection(PetLookDirection(index: upperIndex)),
-                weight: weight,
-                entryFadeDuration: entryFadeDuration
-            )
-            let directionChanged = nearest != lookDirection
-            lookDirection = nearest
-            if (1...7).contains(nearest.index) {
-                actionFacing = .right
-            } else if (9...15).contains(nearest.index) {
-                actionFacing = .left
-            }
-            isUsingImageFacing = true
-            if directionChanged {
-                lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
-                repositionSpeechBubble(resetSilhouette: true)
-            }
-        } catch {
-            isUsingImageFacing = false
-            present(error)
-        }
+        let next = lookDirection.stepped(toward: target)
+        // Adjacent generated cells are complete opaque poses. Alpha-blending
+        // them creates two eyes and two muzzles, so use a clean discrete step
+        // at a deliberately readable cadence after pointer settlement.
+        playLookDirection(next, fadeDuration: 0)
+        lastDirectionalLookStepTime = now
     }
 
     private func playFacingView(_ view: PetFacingView, fadeDuration: TimeInterval) {
@@ -1605,7 +1705,7 @@ final class PetController: NSObject, NSMenuDelegate {
         renderer.setMirrored(false)
         do {
             try renderer.play(PetClips.standIdle, fadeDuration: fadeDuration)
-            smoothedDirectionalLookAngle = nil
+            lookDirection = actionProfileLookDirection
             isUsingImageFacing = false
             lastFacingChangeTime = ProcessInfo.processInfo.systemUptime
             repositionSpeechBubble(resetSilhouette: true)
@@ -1702,45 +1802,33 @@ final class PetController: NSObject, NSMenuDelegate {
         isReturningToActionProfile = true
         isTransitioning = true
         speechBubble.updateAppearance(mood: speechMood)
-        let twoPi = Double.pi * 2
-        let targetAngle = Double(targetDirection.index) / Double(PetLookDirection.count) * twoPi
-        let startAngle = smoothedDirectionalLookAngle
-            ?? Double(lookDirection.index) / Double(PetLookDirection.count) * twoPi
-        var angleDelta = targetAngle - startAngle
-        while angleDelta > .pi { angleDelta -= twoPi }
-        while angleDelta < -Double.pi { angleDelta += twoPi }
-        guard abs(angleDelta) >= 0.01 else {
-            lookDirection = targetDirection
-            smoothedDirectionalLookAngle = targetAngle
+        guard lookDirection != targetDirection else {
             isReturningToActionProfile = false
             isTransitioning = false
             speechBubble.updateAppearance(mood: speechMood)
             completion()
             return
         }
-        let startTime = ProcessInfo.processInfo.systemUptime
-        let duration = 0.16
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self, generation == self.facingTransitionGeneration else {
-                    timer.invalidate()
-                    return
-                }
-                let linear = min(1, max(0, (ProcessInfo.processInfo.systemUptime - startTime) / duration))
-                let eased = linear * linear * (3 - 2 * linear)
-                let angle = startAngle + angleDelta * eased
-                self.smoothedDirectionalLookAngle = angle
-                self.displayDirectionalLook(angle: angle, entryFadeDuration: 0)
-                guard linear >= 1 else { return }
-                timer.invalidate()
-                self.lookDirection = targetDirection
-                self.isReturningToActionProfile = false
-                self.isTransitioning = false
-                self.speechBubble.updateAppearance(mood: self.speechMood)
+
+        func advance() {
+            guard generation == facingTransitionGeneration else { return }
+            let next = lookDirection.stepped(toward: targetDirection)
+            playLookDirection(next, fadeDuration: 0)
+            guard lookDirection != targetDirection else {
+                isReturningToActionProfile = false
+                isTransitioning = false
+                speechBubble.updateAppearance(mood: speechMood)
                 completion()
+                return
+            }
+            Timer.scheduledTimer(withTimeInterval: 0.115, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.facingTransitionGeneration else { return }
+                    advance()
+                }
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        advance()
     }
 
     private func advanceBehavior() {
@@ -2684,7 +2772,7 @@ final class PetController: NSObject, NSMenuDelegate {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: path), options: .atomic)
         } catch {
-            NSLog("Furball2D immediate interaction QA failed: %@", error.localizedDescription)
+            NSLog("Furball immediate interaction QA failed: %@", error.localizedDescription)
         }
         if ProcessInfo.processInfo.environment["FURBALL_IMMEDIATE_INTERACTION_QA_EXIT"] == "1" {
             NSApp.terminate(nil)
@@ -3264,16 +3352,24 @@ final class PetController: NSObject, NSMenuDelegate {
         let clampedScale = min(Self.maximumScale, max(Self.minimumScale, scale))
         let oldFrame = panel.frame
         petScale = clampedScale
-        let newSize = NSSize(
-            width: Self.basePetSize.width * clampedScale,
-            height: Self.basePetSize.height * clampedScale
-        )
+        let newSize = petWindowSize(displayScale: clampedScale)
         let newOrigin = NSPoint(x: oldFrame.midX - newSize.width / 2, y: oldFrame.minY)
         panel.setFrame(NSRect(origin: clampedOrigin(newOrigin, panelSize: newSize), size: newSize), display: true)
         if groupPlayEnabled {
             try? groupPlayController.start(petIDs: groupPetIDs, scale: petScale, level: panel.level)
             panel.orderOut(nil)
         }
+        repositionSpeechBubble(resetSilhouette: true)
+    }
+
+    private func resizeForActivePet() {
+        let oldFrame = panel.frame
+        let newSize = petWindowSize()
+        let newOrigin = NSPoint(x: oldFrame.midX - newSize.width / 2, y: oldFrame.minY)
+        panel.setFrame(
+            NSRect(origin: clampedOrigin(newOrigin, panelSize: newSize), size: newSize),
+            display: true
+        )
         repositionSpeechBubble(resetSilhouette: true)
     }
 
@@ -3519,6 +3615,12 @@ final class PetController: NSObject, NSMenuDelegate {
                 self.talkativeness = min(1, max(0, value))
                 self.scheduleNextSpeech()
             }
+            controller.onSpeechBubbleStyleChanged = { [weak self] style in
+                guard let self else { return }
+                self.speechBubbleStyle = style
+                self.speechBubble.setStyle(style)
+                self.refreshAppearanceSettings()
+            }
             controller.onPreviewSpeech = { [weak self] in
                 guard let self else { return }
                 self.showSpeech("I’m right here. Shall we explore the desktop together?")
@@ -3578,6 +3680,7 @@ final class PetController: NSObject, NSMenuDelegate {
             autoBehavior: autoBehavior,
             speechBubbles: speechBubblesEnabled,
             talkativeness: talkativeness,
+            speechBubbleStyle: speechBubbleStyle,
             canChangeAppearance: true,
             groupPlayEnabled: groupPlayEnabled,
             groupPetIDs: groupPetIDs
@@ -3718,6 +3821,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 forceReload: true
             )
             renderer.setMirrored(actionFacing.isMirrored)
+            resizeForActivePet()
             mindPetID = nextPet.id
             petMind = PetMindStore.load(petID: mindPetID)
             rebuildMenu()
@@ -3736,6 +3840,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 replaying: PetClips.standIdle,
                 forceReload: true
             )
+            resizeForActivePet()
             rebuildMenu()
             refreshAppearanceSettings()
             resumeAfterProfileSwitch(resumeModes)

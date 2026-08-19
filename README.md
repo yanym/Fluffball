@@ -1,19 +1,19 @@
-# Fluffball
+# Furball
 
 [English](#english) · [中文](#中文) · [Asset catalog](Assets/README.md) · [AI video references](Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md) · [Agent guide](AGENTS.md) · [Commercial release](Docs/COMMERCIAL_RELEASE.md) · [Privacy](Docs/PRIVACY.md)
 
 ## English
 
-Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. The macOS product is named **Furball2D**. Nina ships with Live Motion, Cute 2D, and Realistic 2D; Fortune is the second bundled profile and ships with a photo-grounded Realistic 2D appearance. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so a new pet no longer needs an expensive generated-video set.
+Furball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. Nina ships with Live Motion and Realistic 2D; Fortune is the second bundled profile and ships with a photo-grounded Realistic 2D appearance. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so a new pet no longer needs an expensive generated-video set.
 
 ### Features
 
 - Natural sleep, wake, stand, sit, and lie-down behavior, including autonomous rest when the pet is idle.
 - Posture-aware cute dialogue; the speech bubble scales with the pet, follows its motion, and avoids the active image or video alpha silhouette.
 - The app and bundled creation workflow use English throughout; this README remains bilingual.
-- Continuous pet sizing from 60% to 140%.
-- Settings uses a sidebar with General, Appearance, Behavior, Desktop Interaction, Pet Group, Dialogue, Pet Library, and Create Pet. The menu-bar item keeps only immediate actions, and video blending is absent in image mode.
-- Pet Group can show any checked image-capable pets together. Each companion has an independent 60 Hz movement controller, slows to a real stop, reflects away from screen edges, and periodically approaches another pet for play bows, head tilts, waves, and happy dances.
+- Each profile declares a relative body size from 1–100; the independent Display Scale setting ranges continuously from 60% to 140%.
+- Settings uses a sidebar with General, Appearance, Behavior, Desktop Interaction, Group Play, Dialogue, Pet Library, and Create Pet. The menu-bar item keeps only immediate actions, and video blending is absent in image mode.
+- Group Play can show any checked image-capable pets together. Each companion has an independent 60 Hz movement controller, slows to a real stop, reflects away from screen edges, and periodically approaches another pet for play bows, head tilts, waves, and happy dances.
 - Pet Library selects bundled or imported profiles, validates `.furballpet` packages before installing them into Furball's managed Application Support library, and shows personality and memory state. Create Pet and the bundled English Creator Skill are available again.
 - Image mode requires an 8×11, 2× Codex v2 transparent WebP atlas with variable frame durations and real gait phases, blink, wave, jump, hopeful wait, search, review, and disappointed actions. Standalone PNG animation fallback has been removed.
 - Alpha-aware mouse click-through, with an optional full pass-through mode.
@@ -26,12 +26,14 @@ Fluffball is a multi-pet desktop companion for Apple Silicon Macs running macOS 
 - Cursor gaze uses 16 evenly spaced directions at 22.5° intervals. Eyes lead, then the head, neck, ears, and ruff follow; the idle pet walks the shortest adjacent-direction path instead of snapping across the circle.
 - A manifest-driven “Cute Actions” submenu exposes 16 actions, including Wave, Happy Jump, Head Tilt, Sniff, High Five, Stretch, Sneeze, Paw Tap, Happy Dance, Yawn, and Chase Tail. A custom pack can add or rename actions without changing Swift.
 - Image pets respond to the pointer: a short hover produces a curious head tilt, a double-click gives a high five, and Toss a Treat makes the pet walk/run in two dimensions to the cursor and sniff the treat.
-- The sleep flow explicitly separates awake lying, eye-close, closed-eye breathing, and full wake-up; sleep idle never flips between awake and asleep every second.
-- While the pointer moves, the image pet steps through adjacent cells across 16 gaze directions. After roughly 2.4 seconds of stillness it returns to a breathing/blinking idle. Gestures marked `autonomous` naturally appear in the rest routine before the pet sits, sleeps, or later patrols.
+- Every Realistic 2D appearance uses the same `furball-image-state-v1` posture stages. Different pet profiles cannot remap sleep to a standing head dip; imported packs are rejected unless lie and sleep use horizontal silhouettes and the shared bindings. MP4 animation ports remain independent.
+- The sleep flow explicitly separates awake horizontal lying, eye-close, one canonical closed-eye sleep cell, and full wake-up. Runtime adds only a continuous eight-second, sub-pixel breathing transform, so sleep never pulses through several atlas poses.
+- The image pet waits until the pointer has settled for roughly 0.32 seconds, then steps deliberately through adjacent cells toward one of 16 gaze directions without translucent pose blending. After roughly 2.4 seconds it returns to breathing/blinking idle. Gestures marked `autonomous` naturally appear in the rest routine before the pet sits, sleeps, or later patrols.
 - Runtime mirroring gives the left-profile footage a right-facing counterpart, so autonomous idles, tail wags, posture transitions, and sleep retain the selected side.
 - Pet and appearance cards remain available during every action. A user selection immediately interrupts locomotion, gaze, a one-shot gesture, or autonomous behavior and starts the selected profile from its stable standing port.
 - Live Motion head tracking uses five stable view anchors, a short intention dwell, and complete decoder fades instead of rapidly cycling through all nine generated views.
 - Runtime resolves assets by Pet Pack semantic action IDs, so paths and loop behavior are no longer hardcoded. Conforming dog and cat packs can reuse one behavior engine.
+- The menu-bar dropdown and Settings both include an update control. Furball checks the latest public GitHub Release, prompts only when its semantic version is newer, and opens the preferred DMG or ZIP download in the browser; it never installs an update silently.
 
 ### Build and run
 
@@ -40,19 +42,19 @@ Requirements: Apple Silicon, macOS 14 or later, Swift 6 Command Line Tools, and 
 ```bash
 ./Scripts/build-assets.sh
 ./Scripts/package-app.sh
-open dist/Furball2D.app
+open dist/Furball.app
 ```
 
 Packaged outputs are written to:
 
 ```text
-dist/Furball2D.app
-dist/Furball2D.zip
+dist/Furball.app
+dist/Furball.zip
 ```
 
 The app-icon source is stored at `Support/AppIcon.png`. To replace it, provide another square image and run `./Scripts/build-app-icon.sh`; the packaging script embeds the generated multi-resolution `AppIcon.icns` in the app bundle.
 
-The current package includes Nina's 1280×720/120 fps HEVC-with-alpha video, Nina's Cute and Realistic atlases, and Fortune's Realistic atlas. Every atlas is a 3072×4576 lossless transparent WebP built from native high-resolution action rows rather than enlarged runtime cells. Nina's phase-closed gait cycles are repeated inside roughly ten-second video items to avoid frequent AVQueuePlayer decoder handoffs during walking and running.
+The current package includes Nina's 1280×720/120 fps HEVC-with-alpha video plus Nina's and Fortune's Realistic atlases. Every atlas is a 3072×4576 lossless transparent WebP built from native high-resolution action rows rather than enlarged runtime cells. Nina's phase-closed gait cycles are repeated inside roughly ten-second video items to avoid frequent AVQueuePlayer decoder handoffs during walking and running.
 
 The distributable Pet Pack creation Skill ships inside the app and lives at [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill). Create Pet can use a signed-in local Codex to generate and validate a 2D Pet Pack, or export the same request and Skill for another image-capable model.
 
@@ -81,12 +83,12 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - Click the dog: say a line and advance to the next legal action.
 - Drag the dog: reposition the desktop pet.
 - Right-click the dog or click the menu-bar paw: open settings.
-- “Pet Size”: continuously adjust the pet from 60% to 140%.
-- “Appearance”: choose the active pet directly on this page, then switch among the representations it supplies: Live Motion, Cute 2D, and Realistic 2D. Selecting a row in My Pets also activates that pet immediately; there is no second confirmation step.
-- “Settings”: the sidebar directly manages General, Appearance, Behavior, Desktop Interaction, Pet Group, Dialogue, Pet Library, and Create Pet. Pet size and window level live here instead of in the menu-bar item; video blending appears only for Live Motion.
+- “Display Scale”: continuously magnify the profile-defined body size from 60% to 140%.
+- “Appearance”: choose the active pet directly on this page, then switch among the representations it supplies: Live Motion and Realistic 2D. Selecting a row in My Pets also activates that pet immediately; there is no second confirmation step.
+- “Settings”: the sidebar directly manages General, Appearance, Behavior, Desktop Interaction, Group Play, Dialogue, Pet Library, and Create Pet. Display scale and window level live here instead of in the menu-bar item; video blending appears only for Live Motion.
 - “Pet Library”: import a validated `.furballpet` package, select a pet, and inspect its profile.
-- “Create Pet”: choose 6–12 photos and create Cute 2D, Realistic 2D, or both through local Codex, or export the standardized request and bundled Creator Skill.
-- “Pet Group”: enable several checked pets at once. They roam independently, avoid overlap, stop when they arrive, turn away from walls, and meet for paired social actions.
+- “Create Pet”: choose 6–12 photos and create one maintainable Realistic 2D pack through local Codex, or export the standardized request and bundled Creator Skill.
+- “Group Play”: enable several checked pets at once. They roam independently, preserve each profile's body size, avoid overlap, stop when they arrive, turn away from walls, and meet for paired social actions.
 - “Pet Profile”: each pet keeps adjustable Vitality, Curiosity, Affection, and Composure traits plus dynamic Energy, Wonder, and Bond. The three newest short-term memories are visible and can be cleared at any time.
 - “Cute Actions”: shows pack-provided image actions in image mode and disables itself in video mode, while moving, or during a transition.
 - “Sleep Now”: traverse the legal posture chain and go to sleep.
@@ -104,7 +106,7 @@ After a personality-dependent idle period, the dog sits, lies down, and sleeps. 
 
 ### Image animation mode
 
-Image mode reads only Codex v2 WebP atlas cells. `manifest.json` declares rows, frame counts, per-frame durations, loops, short blend fractions, true left/right gait rows, all 27 semantic bindings, 16 look directions, and English custom actions. The runtime decodes each WebP once, places requested cells on a shared 16:9 render canvas, and caches Metal textures. Real gait rows do not receive procedural squash/stretch; desktop translation retains only an approximately 0.07-second image-mode acceleration ramp.
+Image mode reads only Codex v2 WebP atlas cells. `manifest.json` declares `stateModel: furball-image-state-v1`, standard rows, frame counts, per-frame durations, loops, short blend fractions, true left/right gait rows, all 27 semantic bindings, 16 look directions, and English custom actions. The state model fixes stand/sit/lie/sleep ports across every profile and appearance; MP4 clips remain separately declared. The runtime decodes each WebP once, places requested cells on a shared 16:9 render canvas, and caches Metal textures. Real gait rows do not receive procedural squash/stretch; desktop translation retains only an approximately 0.07-second image-mode acceleration ramp.
 
 Both built-in image atlases use the v2 8×11 semantic layout at `assetScale: 2`: 3072×4576 with 384×416 cells. The final two rows contain all 16 gaze directions. Imports must use this current 2× format.
 
@@ -117,14 +119,14 @@ The walk, jog, and run sources are stored as `stand-to-walk-to-stand.mp4`, `stan
 
 ## 中文
 
-Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣，当前 macOS 应用产品名为 **Furball2D**。Nina 内置真实连续动画、可爱 2D 和写实 2D；Fortune 是第二个内置宠物 profile，带有基于真实照片制作的写实 2D 外观。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行。
+Furball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣。Nina 内置真实连续动画和写实 2D；Fortune 是第二个内置宠物 profile，带有基于真实照片制作的写实 2D 外观。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行。
 
 ### 功能
 
 - 狗狗会睡觉、醒来、站立、坐下和趴下，并在无人互动时自行休息。
 - 根据姿态随机显示可爱对话；气泡会按宠物大小缩放、跟随动作，并依据当前图片或视频的 Alpha 轮廓自动避开身体。
 - App、素材合同和内置创建流程统一使用英语；本 README 继续保留中英文说明。
-- 宠物大小支持 60%–140% 无级调节。
+- 每个宠物 profile 定义 1–100 的相对体型；独立的界面显示缩放支持 60%–140% 无级调节。
 - “设置”窗口使用左侧栏直接提供通用、外观、行为、桌面互动、宠物群、对话、宠物素材库和创建宠物；顶栏菜单只保留即时动作入口，视频专用的柔和过渡不会出现在图片模式中。
 - “宠物群”可让用户勾选任意支持图片模式的宠物一起出现。每只宠物独立进行 60 Hz 平滑移动，会在抵达目标后及时停下、在屏幕边缘反向，并定期会合做出邀请玩耍、歪头、挥爪和开心舞等互动。
 - “宠物素材库”可导入通过验证的 `.furballpet` 素材包、切换宠物并展示性格和记忆；创建宠物和英文 Creator Skill 已恢复。
@@ -139,12 +141,14 @@ Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠�
 - 不依赖 AI 视频的视线跟随使用 16 个等距方向（每 22.5° 一格）；眼睛先动，头颈、耳朵和胸毛随后跟进，站立待机时会沿最短相邻路径看向鼠标，不跨方向瞬移。
 - 图片模式的“可爱动作”子菜单由素材包声明；当前提供 16 种动作，包括挥爪、跳跳、歪头、闻闻、击掌、伸懒腰、喷嚏、爪爪敲敲、开心舞、哈欠和追尾巴等，后续宠物可以只改 `manifest.json` 添加或改名，无需修改 Swift。
 - 图片宠物支持更多鼠标互动：悬停一会会好奇歪头，双击会击掌，菜单可在鼠标旁丢下一块零食，让宠物全方向走跑过去寻找。
-- 睡眠 flow 将“醒着趴卧 → 闭眼 → 闭眼呼吸循环 → 完整醒来”拆成明确端口；睡眠待机不再每秒在睁眼和闭眼之间跳变。
-- 鼠标移动时，图片宠物按相邻格逐步看向 16 个方向；鼠标静止约 2.4 秒后自动回到会呼吸、眨眼的动态待机。标记为 `autonomous` 的可爱动作会自然穿插在休息流程中，然后宠物继续坐下、睡觉或出门巡逻。
+- 所有写实 2D 外观统一使用 `furball-image-state-v1` 姿态模型。不同宠物不能再把睡眠映射成站立低头；不满足共享绑定及水平趴卧轮廓的导入包会被拒绝。MP4 动画端口继续独立管理。
+- 睡眠 flow 将“醒着水平趴卧 → 闭眼 → 单张闭眼睡姿 → 完整醒来”拆成明确端口；运行时仅叠加八秒一周期、亚像素幅度的连续呼吸，不再轮播多张睡眠图片。
+- 鼠标停止移动约 0.32 秒后，图片宠物才按相邻格逐步看向 16 个方向，并且不再混合两个姿势产生重影；静止约 2.4 秒后自动回到会呼吸、眨眼的动态待机。标记为 `autonomous` 的可爱动作会自然穿插在休息流程中，然后宠物继续坐下、睡觉或出门巡逻。
 - 左侧面的动作视频可在运行时镜像为右侧动作，因此自主待机、摇尾巴、姿态过渡和睡眠都能保持选定的左右朝向。
 - 任何动作中都可直接选择宠物或外观；用户选择会立即中断移动、转头、一次性动作或自动行为，并从新 profile 的稳定站立动作开始。
 - Live Motion 的鼠标转头改为五个稳定视角锚点、短暂意图停留和完整解码淡化，不再高速轮换九个视角造成双脸闪烁。
 - 运行时通过 Pet Pack 标准动作 ID 读取素材，文件路径和循环属性不再硬编码；同规格的狗狗或猫猫素材包可复用同一行为引擎。
+- 顶栏下拉菜单和设置页都提供更新按钮；应用只在检测到更高版本的公开 GitHub Release 时提示，并由浏览器打开 DMG 或 ZIP，不会静默安装。
 
 ### 运行与构建
 
@@ -153,19 +157,19 @@ Fluffball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠�
 ```bash
 ./Scripts/build-assets.sh
 ./Scripts/package-app.sh
-open dist/Furball2D.app
+open dist/Furball.app
 ```
 
 打包结果位于：
 
 ```text
-dist/Furball2D.app
-dist/Furball2D.zip
+dist/Furball.app
+dist/Furball.zip
 ```
 
 应用图标源文件保存在 `Support/AppIcon.png`。需要替换图标时，放入新的正方形图片并运行 `./Scripts/build-app-icon.sh`；打包脚本会将生成的多尺寸 `AppIcon.icns` 写入应用包。
 
-当前安装包包含 1280×720、120 fps 的 HEVC with Alpha 视频，以及可爱与写实两张 3072×4576 无损透明 WebP 高清图集。原始 24 fps 动作在抠像前使用双向运动补偿插帧；图集从完整高清动作行重新切格，不放大旧的 192×208 运行时格子。
+当前安装包包含 Nina 的 1280×720、120 fps HEVC with Alpha 视频，以及 Nina 与 Fortune 的两张 3072×4576 写实 2D 无损透明 WebP 高清图集。原始 24 fps 动作在抠像前使用双向运动补偿插帧；图集从完整高清动作行重新切格，不放大旧的 192×208 运行时格子。
 
 Pet Pack 创建 Skill 随 App 发布，也保存在 [`Sources/Furball2D/CreatorSkill`](Sources/Furball2D/CreatorSkill)。创建宠物可以调用本机已登录的 Codex 生成并验证 2D 素材包，也可以导出相同请求和 Skill 给其他图片模型。
 
@@ -194,11 +198,11 @@ Sources/Furball2D/Assets/
 - 单击狗狗：说一句话并进入下一合法动作。
 - 拖拽狗狗：移动桌宠。
 - 右键狗狗或点击菜单栏爪印：打开设置。
-- “宠物大小”：连续调节 60%–140%。
-- “外观”：可先在本页直接选择当前宠物，再切换素材包实际提供的真实连续动画、可爱 2D 与写实 2D；在“宠物素材库”点选一只宠物也会立即激活，不再需要第二次确认。
-- “设置”：左侧栏直接管理通用、外观、行为、桌面互动、宠物群、对话、宠物素材库和创建宠物；宠物大小与始终置顶也只在这里设置，仅真实连续动画显示视频混合设置。
+- “显示缩放”：在宠物 profile 定义的相对体型之上连续缩放 60%–140%。
+- “外观”：可先在本页直接选择当前宠物，再切换素材包实际提供的真实连续动画与写实 2D；在“宠物素材库”点选一只宠物也会立即激活，不再需要第二次确认。
+- “设置”：左侧栏直接管理通用、外观、行为、桌面互动、Group Play、对话、宠物素材库和创建宠物；显示缩放与始终置顶也只在这里设置，仅真实连续动画显示视频混合设置。
 - “宠物素材库”：导入经过验证的 `.furballpet` 素材包、切换宠物并查看档案。
-- “创建宠物”：选择 6–12 张照片，通过本机 Codex 创建可爱 2D、写实 2D 或两种外观，也可导出标准请求和 Creator Skill。
+- “创建宠物”：选择 6–12 张照片，通过本机 Codex 创建一套便于长期维护的写实 2D 外观，也可导出标准请求和 Creator Skill。
 - “宠物群”：勾选需要同时出现的宠物；它们会分别漫游、避让、停步、撞墙反向，并进行成对互动。
 - “宠物档案”：每只宠物保存可调的活力、好奇心、亲人和沉稳性格，以及会随休息、移动和互动变化的精力、探索欲与亲密度。最近三条短期记忆可见并可随时清除。
 - “可爱动作”：图片模式下显示素材包自带动作；视频模式、移动中或过渡中自动置灰。
@@ -217,7 +221,7 @@ Sources/Furball2D/Assets/
 
 ### 图片动画模式
 
-图片模式只读取 Codex v2 WebP 图集单元格。图集由 `manifest.json` 声明行、帧数、每帧时长、循环、短溶解比例、左右真实步态、27 个语义绑定、16 个方向以及英文自定义动作。运行时一次解码 WebP，将使用到的格子铺到统一 16:9 小画布并缓存 Metal 纹理；真实走跑行不再叠加程序化 squash/stretch，桌面位移只保留约 0.07 秒速度渐入。
+图片模式只读取 Codex v2 WebP 图集单元格。图集由 `manifest.json` 声明 `stateModel: furball-image-state-v1`、标准行、帧数、每帧时长、循环、短溶解比例、左右真实步态、27 个语义绑定、16 个方向以及英文自定义动作。该状态模型统一所有 profile 和外观的站立、坐下、趴卧与睡眠端口；MP4 clips 继续单独声明。运行时一次解码 WebP，将使用到的格子铺到统一 16:9 小画布并缓存 Metal 纹理；真实走跑行不再叠加程序化 squash/stretch，桌面位移只保留约 0.07 秒速度渐入。
 
 可爱与写实图集使用 `spriteVersionNumber: 2`、`assetScale: 2` 的 8×11 语义布局：3072×4576、384×416 单元格；最后两行是完整 16 方向。导入包也必须使用这一最新版 2× 格式。
 

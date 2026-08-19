@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-APP_DIR="$PROJECT_DIR/dist/Furball2D.app"
-ARCHIVE_PATH="$PROJECT_DIR/dist/Furball2D.zip"
+APP_DIR="$PROJECT_DIR/dist/Furball.app"
+ARCHIVE_PATH="$PROJECT_DIR/dist/Furball.zip"
 BUILD_DIR=""
 STAGE_DIR=""
 STAGE_APP=""
@@ -90,14 +90,14 @@ fi
 swift build -c release
 BUILD_DIR="$(swift build -c release --show-bin-path)"
 STAGE_DIR="$(mktemp -d /tmp/furball-package.XXXXXX)"
-STAGE_APP="$STAGE_DIR/Furball2D.app"
+STAGE_APP="$STAGE_DIR/Furball.app"
 
 mkdir -p "$STAGE_APP/Contents/MacOS" "$STAGE_APP/Contents/Resources"
-cp "$BUILD_DIR/Furball2D" "$STAGE_APP/Contents/MacOS/Furball2D"
+cp "$BUILD_DIR/Furball" "$STAGE_APP/Contents/MacOS/Furball"
 cp "$PROJECT_DIR/Support/Info.plist" "$STAGE_APP/Contents/Info.plist"
 cp "$PROJECT_DIR/Support/AppIcon.icns" "$STAGE_APP/Contents/Resources/AppIcon.icns"
-cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/Assets" "$STAGE_APP/Contents/Resources/Assets"
-cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/CreatorSkill" "$STAGE_APP/Contents/Resources/CreatorSkill"
+cp -R "$BUILD_DIR/Furball_Furball.bundle/Assets" "$STAGE_APP/Contents/Resources/Assets"
+cp -R "$BUILD_DIR/Furball_Furball.bundle/CreatorSkill" "$STAGE_APP/Contents/Resources/CreatorSkill"
 find "$STAGE_APP" -type f -name '.DS_Store' -delete
 find "$STAGE_APP/Contents/Resources/CreatorSkill" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$STAGE_APP/Contents/Resources/CreatorSkill" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete

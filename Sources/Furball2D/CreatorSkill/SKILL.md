@@ -1,6 +1,6 @@
 ---
 name: furball-pet-creator
-description: Create import-ready Furball2D Pet Pack v2 image pets from 6–12 real pet photos or a Furball creation REQUEST.json. Generate cute 2D and/or photorealistic 2D sprite atlases, all required actions and 16 directions, validate identity, alpha, layout, clarity, and semantics, and return one .furballpet folder. Never generate video or standalone PNG animation fallbacks.
+description: Create import-ready Furball Pet Pack v2 Realistic 2D image pets from 6–12 real pet photos or a Furball creation REQUEST.json. Generate one photorealistic sprite atlas with all required actions and 16 directions, validate identity, alpha, layout, clarity, and semantics, and return one .furballpet folder. Never generate illustrated styles, video, or standalone PNG animation fallbacks.
 ---
 
 # Furball Pet Creator
@@ -11,16 +11,18 @@ pet-id.furballpet. Produce image animation only. Never call a video model.
 ## Non-negotiable scope
 
 - Set capabilities.imageMode to true and capabilities.videoMode to false.
-- Generate cute-2d, realistic-2d, or both, as requested.
-- Give every style its own lossless transparent WebP v2 atlas.
+- Generate exactly one `realistic-2d` appearance. If an older request lists another style, migrate it to `realistic-2d` rather than producing a second atlas.
+- Produce one lossless transparent WebP v2 atlas.
+- Declare `spriteAtlas.stateModel: furball-image-state-v1`. Every 2D style and every pet uses the same posture-stage row and semantic frame bindings; profile-specific remapping of sleep is forbidden.
 - Do not generate or declare imageAnimations, standalone PNG runtime frames, empty videos, or compatibility atlases.
 - Preserve one animal identity across every cell: face, ears, eyes, markings, coat, proportions, tail, and accessories.
+- Declare pet.bodySize as an integer from 1 through 100. Use 60 for a medium reference dog, smaller values for compact breeds and cats, and larger values only when the real animal should appear proportionally larger. This is independent of the user's 60%–140% display-scale setting.
 - Finish only after the included validator and visual QA pass.
 
 ## Read first
 
 Read all of references/PET_PACK_CONTRACT.md. If REQUEST.json is present, treat its name,
-species, requested styles, and expected output as authoritative. Never edit or overwrite the
+species and expected output as authoritative. The current contract always produces Realistic 2D even if a legacy request contains an older style field. Never edit or overwrite the
 user's reference photos.
 
 ## Required inputs
@@ -28,7 +30,7 @@ user's reference photos.
 Accept either:
 
 1. A Furball creation-request folder containing REQUEST.json and ReferencePhotos/; or
-2. A pet name, species (dog, cat, or other), desired style, and 6–12 clear photos covering
+2. A pet name, species (dog, cat, or other), and 6–12 clear photos covering
    front, both profiles, both three-quarter views, and a full body with tail.
 
 Stop and request better photos when fewer than four useful viewpoints are present, multiple
@@ -39,7 +41,7 @@ hallucinate a close-enough identity.
 
 1. Inventory every reference. Reject blur, occlusion, heavy filters, thumbnails, aggressive
    denoise, and already-upscaled images as sole identity sources.
-2. Create a front/profile/full-body identity board for each requested style. Ask for approval
+2. Create one photorealistic front/profile/full-body identity board. Ask for approval
    before generating action rows when interaction is possible. For unattended approved
    requests, record anchors in QA/identity.json.
 3. Generate the nine standard rows in this exact order: idle, running-right, running-left,
@@ -63,17 +65,7 @@ hallucinate a close-enough identity.
 11. Deliver only the validated .furballpet folder plus QA/summary.md. Keep intermediate
     prompts and identity boards in QA/, never in runtime sprite directories.
 
-## Style requirements
-
-### Cute 2D
-
-- Use friendly modern editorial illustration, rounded shapes, a readable silhouette,
-  restrained detail, and a deliberate soft palette.
-- Preserve asymmetric markings. Generate true left and right gaits unless the animal is
-  visually symmetric and the user explicitly accepts mirroring.
-- Avoid generic emoji, identity-erasing chibi distortion, heavy outlines, and inconsistent eyes.
-
-### Realistic 2D
+## Realistic 2D requirements
 
 - Produce a high-fidelity studio cutout with natural fur edges and anatomically plausible poses.
 - Fix lens, camera height, exposure, white balance, scale, shadow policy, and ground baseline.
@@ -97,8 +89,9 @@ hallucinate a close-enough identity.
 ## Animation requirements
 
 - Close locomotion loops on the same contact phase. Never reverse walking or running.
-- Keep sleep.idle closed-eyed with subtle procedural breathing. Put eye closure in
-  lie.to.sleep and the complete wake-up chain in sleep.to.stand.
+- Row 5 must visibly progress from standing through lowering into a genuinely horizontal lie, head-on-paws rest, half-closed eyes, and closed-eye sleep. A standing or sitting pet that merely lowers its head is a `gesture.drowsy`/sniff pose, never `sleep.idle`.
+- Row 5 uses the fixed `furball-image-state-v1` stages: frame 0 standing, frame 1 lowering, frames 2–3 horizontal awake lie, frame 4 head-lowering/eye-close, and frames 5–7 horizontal closed-eye sleep ports. Do not put a wake/rise pose in frames 5–7.
+- Use the exact shared bindings from `references/PET_PACK_CONTRACT.md`. Autonomous `sleep.idle` binds only canonical closed-eye frame `[5]`; the runtime supplies one continuous eight-second micro-breath. Never animate sleeping by cycling atlas poses—multiple image transitions read as repeated body pulses even when the nominal loop duration is long. Validate the actual bound cell, not only the row label.
 - Keep start/loop/stop subject-height drift below 2%, center drift below 5 px, and ground drift
   below 2 px in cell coordinates.
 - Use short image blending. Never hide mismatched cells with long dissolves.
@@ -108,8 +101,7 @@ hallucinate a close-enough identity.
 
     pet-id.furballpet/
     ├── manifest.json
-    ├── Sprites/pet-id/cute/spritesheet.webp        # when requested
-    ├── Sprites/pet-id/realistic/spritesheet.webp   # when requested
+    ├── Sprites/pet-id/realistic/spritesheet.webp
     └── QA/
         ├── identity.json
         ├── clarity.json

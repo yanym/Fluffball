@@ -61,6 +61,9 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onTalkativenessChanged: ((Double) -> Void)? {
         didSet { appearanceController.onTalkativenessChanged = onTalkativenessChanged }
     }
+    var onSpeechBubbleStyleChanged: ((PetSpeechBubbleStyle) -> Void)? {
+        didSet { appearanceController.onSpeechBubbleStyleChanged = onSpeechBubbleStyleChanged }
+    }
     var onPreviewSpeech: (() -> Void)? {
         didSet { appearanceController.onPreviewSpeech = onPreviewSpeech }
     }
@@ -264,7 +267,7 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         appearanceButton.title = "Appearance & Animation"
         behaviorButton.title = "Behavior"
         interactionButton.title = "Desktop Interaction"
-        groupButton.title = "Pet Group"
+        groupButton.title = "Group Play"
         speechButton.title = "Speech"
         libraryButton.title = language.libraryTab
         creatorButton.title = language.creatorTab

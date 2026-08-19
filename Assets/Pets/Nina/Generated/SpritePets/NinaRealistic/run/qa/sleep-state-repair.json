@@ -1,0 +1,23 @@
+{
+  "stateModel": "furball-image-state-v1",
+  "appearance": "realistic-2d",
+  "replacedRow": "failed",
+  "sourceGrid": "generated-hd/failed-grid-4x2.png",
+  "preservedOriginal": "generated-hd/drowsy-original-grid-1x8.png",
+  "stages": [
+    "stand",
+    "lowering",
+    "horizontal-lie-awake",
+    "horizontal-lie-settled",
+    "head-and-eyes-lowering",
+    "sleep-closed-eyes",
+    "sleep-inhale",
+    "sleep-exhale"
+  ],
+  "visualReview": "pass",
+  "identityReferences": [
+    "references/canonical-base.png",
+    "../../../../../UserProvided/SourceImagesForAIVideo/originals/lie/front.png",
+    "../../../../../UserProvided/SourceImagesForAIVideo/originals/sleep/left-profile.png"
+  ]
+}

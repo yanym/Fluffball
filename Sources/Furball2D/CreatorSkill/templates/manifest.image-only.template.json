@@ -4,7 +4,8 @@
     "id": "REPLACE-PET-ID",
     "name": "REPLACE PET NAME",
     "species": "dog",
-    "assetVersion": 1
+    "assetVersion": 1,
+    "bodySize": 60
   },
   "capabilities": {
     "imageMode": true,
@@ -17,8 +18,9 @@
     "fps": 24
   },
   "spriteAtlas": {
-    "file": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp",
+    "file": "Sprites/REPLACE-PET-ID/realistic/spritesheet.webp",
     "spriteVersionNumber": 2,
+    "stateModel": "furball-image-state-v1",
     "assetScale": 2,
     "layout": {"columns": 8, "rows": 11, "cellWidth": 384, "cellHeight": 416},
     "rendering": {"canvasWidth": 768, "canvasHeight": 432, "bottomPadding": 8},
@@ -29,13 +31,13 @@
   },
   "appearances": [
     {
-      "id": "cute-2d",
+      "id": "realistic-2d",
       "kind": "sprite-atlas",
-      "title": {"en": "Cute 2D"},
-      "subtitle": {"en": "Warm and playful image animation"},
-      "systemImage": "sparkles",
+      "title": {"en": "Realistic 2D"},
+      "subtitle": {"en": "Natural poses with photorealistic fur"},
+      "systemImage": "camera.macro",
       "isDefault": true,
-      "atlasFile": "Sprites/REPLACE-PET-ID/cute/spritesheet.webp"
+      "atlasFile": "Sprites/REPLACE-PET-ID/realistic/spritesheet.webp"
     }
   ]
 }

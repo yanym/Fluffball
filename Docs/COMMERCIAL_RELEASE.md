@@ -1,15 +1,15 @@
-# Furball2D Commercial Release
+# Furball Commercial Release
 
-The project has a release-ready product structure: stable bundle ID `com.fluffball.Furball2D`, three appearances, multi-pet library, `.furballpet` document type, in-app import/export/creation requests, English UI, offline asset validation, no network dependency, and a locally verifiable package.
+The project has a release-ready product structure: stable bundle ID `com.fluffball.Furball2D`, Live Motion and Realistic 2D representations, a multi-pet library, `.furballpet` document type, in-app import/export/creation requests, English UI, offline asset validation, an optional GitHub Release update check, and a locally verifiable package.
 
 ### Local preview
 
 ```bash
 ./Scripts/package-app.sh
-open dist/Furball2D.app
+open dist/Furball.app
 ```
 
-Local packages are ad-hoc signed. `dist/Furball2D.zip` is authoritative for transfer and strict signature verification.
+Local packages are ad-hoc signed. `dist/Furball.zip` is authoritative for transfer and strict signature verification.
 
 ### Developer ID and notarization
 
@@ -24,9 +24,9 @@ FURBALL_NOTARY_PROFILE="fluffball-notary" \
 The script enables Hardened Runtime and timestamp signing, submits notarization, staples the result, and rebuilds the ZIP. Before release, run:
 
 ```bash
-codesign --verify --deep --strict dist/Furball2D.app
-spctl --assess --type execute --verbose=4 dist/Furball2D.app
-xcrun stapler validate dist/Furball2D.app
+codesign --verify --deep --strict dist/Furball.app
+spctl --assess --type execute --verbose=4 dist/Furball.app
+xcrun stapler validate dist/Furball.app
 ```
 
 ### Publisher-owned confirmations

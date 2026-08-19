@@ -8,10 +8,11 @@ Identity: same pet in every frame: Preserve Fortune's exact corgi identity: comp
 Style: Pet-safe sprite: compact full-body mascot, readable in a 192x208 cell, clear silhouette, simple face, stable palette/materials, and crisp edges for chroma-key extraction. Style `auto`: Infer the most appropriate pet-safe style from the user request and reference images, then keep that exact style consistent across every row. User style notes: High-fidelity photorealistic 2D studio cutout, native Retina detail, clean fur contours, consistent neutral lighting, no props or clothing, no stylization that changes identity..
 Animation continuity: keep apparent pet scale and baseline stable within the row unless the state itself intentionally changes vertical position, such as `jumping`. Move the pose within the slot instead of redrawing the pet larger or smaller frame to frame.
 
-State action: Blocked/failed loop: slumped or deflated reaction with sad or closed eyes.
+State action: One coherent posture chain: awake stand → lower body → genuinely horizontal lie → chin on front paws → half-closed eyes → closed-eye sleep.
 
 State requirements:
-- Show failure through slumped pose, drooping ears/limbs, closed or sad eyes, and lower body position.
+- Frames 1–2 lower the body, frames 3–4 are fully lying and awake, frame 5 closes the eyes, and frames 6–8 remain fully lying and asleep with only tiny breathing changes.
+- A standing or sitting corgi merely lowering its head is a generation failure for this row.
 - Tears, small smoke puffs, or tiny stars are allowed only if attached to or overlapping the pet silhouette and kept inside the same frame slot.
 - Do not draw red X marks, floating symbols, detached stars, separated smoke clouds, falling tear drops, dust, or other loose effects.
 

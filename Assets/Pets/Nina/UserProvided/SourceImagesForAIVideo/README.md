@@ -1,6 +1,6 @@
 # AI Video Generation Reference Images
 
-This directory preserves the Furball dog's user-provided identity, body proportions, coat colors, postures, and view references. These files are not runtime assets and are not bundled into `Furball2D.app`. Generated and standardized derivatives live separately under `Assets/Pets/Nina/Generated/`.
+This directory preserves Nina's user-provided identity, body proportions, coat colors, postures, and view references. These files are not runtime assets and are not bundled into `Furball.app`. Generated and standardized derivatives live separately under `Assets/Pets/Nina/Generated/`.
 
 ## Directory layout
 

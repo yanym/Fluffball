@@ -7,7 +7,7 @@ enum AppLanguage: String, Sendable {
     static let preferenceKey = "appLanguage"
     static var stored: AppLanguage { .english }
 
-    var statusTooltip: String { "Furball2D Desktop Pet" }
+    var statusTooltip: String { "Furball Desktop Pet" }
     var interactMenu: String { "Pet / Next Action" }
     var speakMenu: String { "Say Something" }
     var throwTreatMenu: String { "Toss a Treat by Cursor" }
@@ -35,6 +35,8 @@ enum AppLanguage: String, Sendable {
     var appearanceMenu: String { "Appearance" }
     var visualSettingsMenu: String { "Visual & Animation Settings…" }
     var settingsMenu: String { "Settings…" }
+    var checkForUpdatesMenu: String { "Check for Updates…" }
+    func updateAvailableMenu(_ version: String) -> String { "Download Furball \(version) ✨" }
     var petLibraryMenu: String { "Pet Library…" }
     var petLibraryTitle: String { "Pet Library" }
     var libraryTab: String { "My Pets" }
@@ -65,7 +67,7 @@ enum AppLanguage: String, Sendable {
     var clearMemoriesButton: String { "Clear Memories" }
     var noMemoriesLabel: String { "No special memories yet. Spend a little time together." }
     var creatorIntro: String {
-        "Choose 6–12 real photos. A signed-in local Codex can generate, validate, and import in one flow, or you can export a standard request with the Skill and QA contract. Image generation only—no expensive video."
+        "Choose 6–12 real photos. A signed-in local Codex can generate one maintainable Realistic 2D pet, validate it, and import it in one flow. Image generation only—no expensive video."
     }
     var oneClickCodexButton: String { "Build & Import with Codex" }
     var cancelCodexCreationButton: String { "Cancel Generation" }
@@ -85,8 +87,7 @@ enum AppLanguage: String, Sendable {
     }
     var petNameField: String { "Pet Name" }
     var speciesField: String { "Species" }
-    var stylesField: String { "Styles" }
-    var cuteStyleLabel: String { "Cute 2D" }
+    var styleField: String { "Style" }
     var realisticStyleLabel: String { "Realistic 2D" }
     var choosePhotosButton: String { "Choose Photos…" }
     func selectedPhotosLabel(_ count: Int) -> String {
@@ -99,14 +100,14 @@ enum AppLanguage: String, Sendable {
         "\(name) passed validation and was added to your library."
     }
     var invalidCreationInput: String {
-        "Enter a name, choose at least one style, and provide 6–12 clear photos."
+        "Enter a name and provide 6–12 clear photos."
     }
     var visualSettingsTitle: String { "Visual & Animation" }
     var visualSettingsSubtitle: String {
-        "Choose Nina’s appearance and see only the controls relevant to that mode."
+        "Choose between Live Motion and the maintained Realistic 2D appearance."
     }
     var currentPetLabel: String { "CURRENT PET" }
-    var includedPetLabel: String { "Built-in pet · 3 appearances" }
+    var includedPetLabel: String { "Built-in pet · Live Motion + Realistic 2D" }
     var appearanceSectionTitle: String { "Choose an Appearance" }
     var displaySectionTitle: String { "Display" }
     var behaviorSectionTitle: String { "Desktop Interaction" }
@@ -130,10 +131,10 @@ enum AppLanguage: String, Sendable {
     var alwaysOnTopMenu: String { "Always on Top" }
     var sizeMenu: String { "Pet Size" }
     var sizeTooltip: String { "Continuously adjust the pet size" }
-    var quitMenu: String { "Quit Furball2D" }
+    var quitMenu: String { "Quit Furball" }
     var sleepConfirmation: String { "Okay, nap time! 💤" }
-    var problemTitle: String { "Furball2D Ran Into a Problem" }
-    var launchFailureTitle: String { "Furball2D Could Not Start" }
+    var problemTitle: String { "Furball Ran Into a Problem" }
+    var launchFailureTitle: String { "Furball Could Not Start" }
     var commandQueueFailure: String { "Could not create the Metal command queue" }
     var shaderFunctionsMissing: String { "Could not find the Metal shader functions" }
     var samplerFailure: String { "Could not create the Metal sampler" }

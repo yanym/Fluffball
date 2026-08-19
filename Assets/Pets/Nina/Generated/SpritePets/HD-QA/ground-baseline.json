@@ -9,11 +9,6 @@
     "jumping"
   ],
   "appearances": {
-    "cute-2d": {
-      "stableCellBaselineSpreadPixels": 0,
-      "runningRowBaselineSpreadPixels": 0,
-      "lookDirectionBaselineSpreadPixels": 0
-    },
     "realistic-2d": {
       "stableCellBaselineSpreadPixels": 1,
       "runningRowBaselineSpreadPixels": 0,

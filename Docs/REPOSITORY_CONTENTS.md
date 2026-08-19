@@ -7,9 +7,9 @@ Repository name: `Furball`. Keep the repository private by default because it co
 - Swift sources and `Package.swift`
 - Identity references and usage guidance under `Assets/Pets/Nina/UserProvided/SourceImagesForAIVideo/`
 - Multi-view sources, normalized stills, and QA material under `Assets/Pets/Nina/Generated/ImageTurn/`
-- `Assets/Pets/Nina/Generated/SpritePets/Furball/` and `Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/`, containing Cute/Realistic Codex v2 generation records, direction sheets, and continuity QA
+- `Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/`, containing the retained Realistic 2D Codex v2 generation record, direction sheets, and continuity QA
 - Archived source footage under `Assets/Pets/Nina/UserProvided/SourceVideos/`
-- The two transparent 3072×4576, 8×11 2× runtime atlases under `Sources/Furball2D/Assets/Pets/Nina/Sprites/Nina/{cute,realistic}/`
+- Nina's transparent 3072×4576, 8×11 2× Realistic 2D runtime atlas under `Sources/Furball2D/Assets/Pets/Nina/Sprites/Nina/realistic/`
 - Twenty-seven transparent runtime video clips under `Sources/Furball2D/Assets/Pets/Nina/Clips/`
 - Fortune's six immutable identity photos, grounded generation run, and native-HD QA under `Assets/Pets/Fortune/`
 - Fortune's image-only 3072×4576 Realistic 2D runtime atlas under `Sources/Furball2D/Assets/Pets/Fortune/`

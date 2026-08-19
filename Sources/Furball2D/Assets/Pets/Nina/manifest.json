@@ -4,7 +4,8 @@
     "id": "furball-demo-dog",
     "name": "Nina",
     "species": "dog",
-    "assetVersion": 5
+    "assetVersion": 8,
+    "bodySize": 60
   },
   "capabilities": {
     "imageMode": true,
@@ -13,8 +14,9 @@
   "formatVersion": 11,
   "canvas": { "width": 1280, "height": 720, "fps": 120 },
   "spriteAtlas": {
-    "file": "Sprites/Nina/cute/spritesheet.webp",
+    "file": "Sprites/Nina/realistic/spritesheet.webp",
     "spriteVersionNumber": 2,
+    "stateModel": "furball-image-state-v1",
     "assetScale": 2,
     "layout": {
       "columns": 8,
@@ -43,20 +45,20 @@
       { "id": "stand.look.images", "animation": "review", "loop": false },
       { "id": "stand.to.sit", "animation": "waiting", "frameIndices": [0], "loop": false, "frameDurationScale": 2.50 },
       { "id": "sit.idle", "animation": "waiting", "loop": true, "frameDurationScale": 1.40 },
-      { "id": "sit.to.lie", "animation": "failed", "frameIndices": [0, 1, 2, 3, 4], "loop": false },
-      { "id": "lie.idle", "animation": "failed", "frameIndices": [4], "loop": true, "frameDurationScale": 3.60 },
-      { "id": "lie.to.sleep", "animation": "failed", "frameIndices": [4, 5], "loop": false, "frameDurationScale": 0.80 },
-      { "id": "sleep.idle", "animation": "failed", "frameIndices": [5], "loop": true, "motion": "sleep", "frameDurationScale": 6.00, "frameBlendFraction": 0.00 },
-      { "id": "sleep.to.stand", "animation": "failed", "frameIndices": [5, 4, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.78 },
+      { "id": "sit.to.lie", "animation": "failed", "frameIndices": [1, 2, 3], "loop": false, "frameDurationScale": 0.92 },
+      { "id": "lie.idle", "animation": "failed", "frameIndices": [2, 3, 2], "loop": true, "frameDurationScale": 2.40, "frameBlendFraction": 0.10 },
+      { "id": "lie.to.sleep", "animation": "failed", "frameIndices": [2, 3, 4, 5], "loop": false, "frameDurationScale": 0.92 },
+      { "id": "sleep.idle", "animation": "failed", "frameIndices": [5], "loop": true, "motion": "sleep", "frameDurationScale": 1.00, "frameBlendFraction": 0.00 },
+      { "id": "sleep.to.stand", "animation": "failed", "frameIndices": [5, 4, 3, 2, 1, 0], "loop": false, "frameDurationScale": 0.86 },
       { "id": "walk.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 1.18 },
       { "id": "walk.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 1.18 },
       { "id": "walk.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 1.18 },
-      { "id": "slow-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.86 },
-      { "id": "slow-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.86 },
-      { "id": "slow-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.86 },
-      { "id": "fast-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.62 },
-      { "id": "fast-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.62 },
-      { "id": "fast-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.62 },
+      { "id": "slow-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.94 },
+      { "id": "slow-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.94 },
+      { "id": "slow-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.94 },
+      { "id": "fast-run.start", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1], "loop": false, "frameDurationScale": 0.68 },
+      { "id": "fast-run.loop", "animation": "running-left", "rightAnimation": "running-right", "loop": true, "frameDurationScale": 0.68 },
+      { "id": "fast-run.stop", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [6, 7], "loop": false, "frameDurationScale": 0.68 },
       { "id": "gesture.wave", "animation": "waving", "loop": false },
       { "id": "gesture.jump", "animation": "jumping", "loop": false },
       { "id": "gesture.failed", "animation": "failed", "loop": false },
@@ -72,6 +74,7 @@
       { "id": "gesture.paw-tap", "animation": "waving", "frameIndices": [0, 1, 0, 1, 0], "loop": false, "frameDurationScale": 0.72 },
       { "id": "gesture.happy-dance", "animation": "jumping", "frameIndices": [0, 1, 2, 3, 2, 1, 3, 4], "loop": false, "frameDurationScale": 0.76 },
       { "id": "gesture.yawn", "animation": "waiting", "frameIndices": [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0], "loop": false, "frameDurationScale": 1.32 },
+      { "id": "gesture.drowsy", "animation": "working", "frameIndices": [0, 1, 2, 3, 4, 3, 2, 1, 0], "loop": false, "motion": "look", "frameDurationScale": 1.35 },
       { "id": "gesture.tail-chase", "animation": "running-left", "rightAnimation": "running-right", "frameIndices": [0, 1, 2, 3, 4, 5, 6, 7], "loop": false, "frameDurationScale": 0.78 }
     ],
     "lookDirections": [
@@ -108,6 +111,7 @@
       { "id": "gesture.paw-tap", "title": { "en": "Paw Tap" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.happy-dance", "title": { "en": "Happy Dance" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.yawn", "title": { "en": "Sleepy Yawn" }, "resultingPosture": "stand", "autonomous": true },
+      { "id": "gesture.drowsy", "title": { "en": "Drowsy Sniff" }, "resultingPosture": "stand", "autonomous": true },
       { "id": "gesture.tail-chase", "title": { "en": "Chase Tail" }, "resultingPosture": "stand", "autonomous": true }
     ]
   },
@@ -119,14 +123,6 @@
       "subtitle": { "en": "The most detailed, lifelike video motion" },
       "systemImage": "film.stack.fill",
       "isDefault": true
-    },
-    {
-      "id": "cute-2d",
-      "kind": "sprite-atlas",
-      "title": { "en": "Cute 2D" },
-      "subtitle": { "en": "Warm, playful lightweight animation" },
-      "systemImage": "sparkles",
-      "atlasFile": "Sprites/Nina/cute/spritesheet.webp"
     },
     {
       "id": "realistic-2d",

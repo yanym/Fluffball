@@ -4,10 +4,11 @@ Use the attached canonical base for identity and the layout guide only for spaci
 
 Keep apparent pet scale and baseline stable within the row unless the state itself intentionally changes vertical position, such as `jumping`.
 
-Action: Blocked/failed loop: slumped or deflated reaction with sad or closed eyes.
+Action: Awake stand → lower body → genuinely horizontal lie → chin on paws → half-closed eyes → closed-eye sleep, with stable scale and a reversible wake port.
 
 State requirements:
-- Show failure through slumped pose, drooping ears/limbs, closed or sad eyes, and lower body position.
+- Frames 1–2 lower the body, frames 3–4 are fully lying and awake, frame 5 closes the eyes, and frames 6–8 remain fully lying and asleep with only tiny breathing changes.
+- Reject a standing or sitting dog that only lowers its head.
 - Tears, small smoke puffs, or tiny stars are allowed only if attached to or overlapping the pet silhouette and kept inside the same frame slot.
 - Do not draw red X marks, floating symbols, detached stars, separated smoke clouds, falling tear drops, dust, or other loose effects.
 

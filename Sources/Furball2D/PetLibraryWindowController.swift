@@ -43,8 +43,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let creatorIntro = NSTextField(wrappingLabelWithString: "")
     private let nameField = NSTextField()
     private let speciesPopup = NSPopUpButton()
-    private let cuteCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let realisticCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let bodySizeSlider = NSSlider(value: 60, minValue: 1, maxValue: 100, target: nil, action: nil)
+    private let bodySizeValue = NSTextField(labelWithString: "60 / 100")
     private let photosLabel = NSTextField(labelWithString: "")
     private let choosePhotosButton = NSButton()
     private let oneClickCodexButton = NSButton()
@@ -395,8 +395,12 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         nameField.placeholderString = "Nina"
         nameField.controlSize = .large
         speciesPopup.addItems(withTitles: ["Dog", "Cat", "Other"])
-        cuteCheckbox.state = .on
-        realisticCheckbox.state = .on
+        bodySizeSlider.isContinuous = true
+        bodySizeSlider.target = self
+        bodySizeSlider.action = #selector(creationBodySizeChanged(_:))
+        bodySizeSlider.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        bodySizeValue.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        bodySizeValue.textColor = .secondaryLabelColor
 
         choosePhotosButton.bezelStyle = .rounded
         choosePhotosButton.target = self
@@ -422,7 +426,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         let form = NSGridView(views: [
             [formLabel("pet-name"), nameField],
             [formLabel("species"), speciesPopup],
-            [formLabel("styles"), NSStackView(views: [cuteCheckbox, realisticCheckbox])],
+            [formLabel("body-size"), NSStackView(views: [bodySizeSlider, bodySizeValue])],
+            [formLabel("style"), NSTextField(labelWithString: language.realisticStyleLabel)],
             [formLabel("photos"), NSStackView(views: [choosePhotosButton, photosLabel])]
         ])
         form.rowSpacing = 13
@@ -482,8 +487,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         builtInBadge.stringValue = language.builtInBadge
         creatorTitle.stringValue = language.creatorTab
         creatorIntro.stringValue = language.creatorIntro
-        cuteCheckbox.title = language.cuteStyleLabel
-        realisticCheckbox.title = language.realisticStyleLabel
         choosePhotosButton.title = language.choosePhotosButton
         photosLabel.stringValue = language.selectedPhotosLabel(selectedPhotos.count)
         oneClickCodexButton.title = codexCreationJob == nil
@@ -499,7 +502,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         }
         (creatorPage.viewWithIdentifier("pet-name") as? NSTextField)?.stringValue = language.petNameField
         (creatorPage.viewWithIdentifier("species") as? NSTextField)?.stringValue = language.speciesField
-        (creatorPage.viewWithIdentifier("styles") as? NSTextField)?.stringValue = language.stylesField
+        (creatorPage.viewWithIdentifier("body-size") as? NSTextField)?.stringValue = "Body Size"
+        (creatorPage.viewWithIdentifier("style") as? NSTextField)?.stringValue = language.styleField
         (creatorPage.viewWithIdentifier("photos") as? NSTextField)?.stringValue = language.choosePhotosButton
     }
 
@@ -516,7 +520,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
         let name = NSTextField(labelWithString: pet.name)
         name.font = .systemFont(ofSize: 13.5, weight: .semibold)
-        let meta = NSTextField(labelWithString: "\(pet.appearances.count) · \(pet.species.capitalized)")
+        let meta = NSTextField(labelWithString: "\(pet.appearances.count) · \(pet.species.capitalized) · Size \(pet.bodySize)")
         meta.font = .systemFont(ofSize: 10.5)
         meta.textColor = .secondaryLabelColor
         for view in [icon, name, meta] {
@@ -561,7 +565,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         }
         petName.stringValue = pet.name
         let species = pet.species.capitalized
-        petMeta.stringValue = "\(species) · v\(pet.assetVersion)"
+        petMeta.stringValue = "\(species) · Body size \(pet.bodySize)/100 · v\(pet.assetVersion)"
         builtInBadge.isHidden = !pet.isBundled
         appearanceStack.arrangedSubviews.forEach {
             appearanceStack.removeArrangedSubview($0)
@@ -757,6 +761,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             let output = try PetPackLibraryManager.makeCreationRequest(
                 name: input.name,
                 species: input.species,
+                bodySize: input.bodySize,
                 styles: input.styles,
                 photos: selectedPhotos,
                 in: directory
@@ -765,18 +770,19 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         } catch { show(error) }
     }
 
-    private func validatedCreationInput() -> (name: String, species: String, styles: [String])? {
+    private func validatedCreationInput() -> (name: String, species: String, bodySize: Int, styles: [String])? {
         let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let styles = [
-            cuteCheckbox.state == .on ? "cute-2d" : nil,
-            realisticCheckbox.state == .on ? "realistic-2d" : nil
-        ].compactMap { $0 }
-        guard !name.isEmpty, !styles.isEmpty, (6...12).contains(selectedPhotos.count) else {
+        let styles = ["realistic-2d"]
+        guard !name.isEmpty, (6...12).contains(selectedPhotos.count) else {
             showMessage(language.invalidCreationInput)
             return nil
         }
         let species = ["dog", "cat", "other"][max(0, speciesPopup.indexOfSelectedItem)]
-        return (name, species, styles)
+        return (name, species, Int(bodySizeSlider.doubleValue.rounded()), styles)
+    }
+
+    @objc private func creationBodySizeChanged(_ sender: NSSlider) {
+        bodySizeValue.stringValue = "\(Int(sender.doubleValue.rounded())) / 100"
     }
 
     @objc private func buildWithCodex() {
@@ -799,6 +805,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             let job = try PetPackLibraryManager.startCodexCreation(
                 name: input.name,
                 species: input.species,
+                bodySize: input.bodySize,
                 styles: input.styles,
                 photos: selectedPhotos
             )

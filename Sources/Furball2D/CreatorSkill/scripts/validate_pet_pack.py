@@ -22,6 +22,30 @@ FACING = {
     "stand.facing.front-three-quarter-right", "stand.facing.front-near-profile-right",
     "stand.facing.right-profile",
 }
+PUBLISHED_ACTIONS = {
+    "gesture.wave", "gesture.jump", "gesture.failed", "gesture.waiting",
+    "gesture.working", "gesture.review", "gesture.play-bow",
+    "gesture.head-tilt", "gesture.sniff", "gesture.high-five",
+    "gesture.stretch", "gesture.sneeze", "gesture.paw-tap",
+    "gesture.happy-dance", "gesture.yawn", "gesture.drowsy",
+    "gesture.tail-chase",
+}
+IMAGE_STATE_MODEL = "furball-image-state-v1"
+STANDARD_ROWS = {
+    "idle": (0, 6), "running-right": (1, 8), "running-left": (2, 8),
+    "waving": (3, 4), "jumping": (4, 5), "failed": (5, 8),
+    "waiting": (6, 6), "working": (7, 6), "review": (8, 6),
+}
+POSTURE_BINDINGS = {
+    "stand.idle": ("idle", None, True, None),
+    "stand.to.sit": ("waiting", [0], False, None),
+    "sit.idle": ("waiting", None, True, None),
+    "sit.to.lie": ("failed", [1, 2, 3], False, None),
+    "lie.idle": ("failed", [2, 3, 2], True, None),
+    "lie.to.sleep": ("failed", [2, 3, 4, 5], False, None),
+    "sleep.idle": ("failed", [5], True, "sleep"),
+    "sleep.to.stand": ("failed", [5, 4, 3, 2, 1, 0], False, None),
+}
 
 
 def fail(message: str) -> None:
@@ -63,6 +87,8 @@ def webp_dimensions(path: Path) -> tuple[int, int, bool]:
 def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str]) -> None:
     if atlas.get("spriteVersionNumber") != 2:
         fail("spriteVersionNumber must be 2")
+    if atlas.get("stateModel") != IMAGE_STATE_MODEL:
+        fail(f"spriteAtlas.stateModel must be {IMAGE_STATE_MODEL}")
     layout = atlas.get("layout", {})
     scale = atlas.get("assetScale", 2)
     expected = {"columns": 8, "rows": 11, "cellWidth": 192 * scale, "cellHeight": 208 * scale}
@@ -75,10 +101,20 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
     animations = {a.get("id"): a for a in atlas.get("animations", [])}
     if len(animations) < 9:
         fail("all nine standard animation rows are required")
-    for binding in atlas.get("bindings", []):
+    for animation_id, (row, frames) in STANDARD_ROWS.items():
+        animation = animations.get(animation_id, {})
+        if animation.get("rowIndex") != row or animation.get("frameCount") != frames:
+            fail(f"{animation_id} does not match the shared 2D state row contract")
+    binding_list = atlas.get("bindings", [])
+    binding_map = {binding.get("id"): binding for binding in binding_list}
+    for binding in binding_list:
         if binding.get("animation") not in animations:
             fail(f"binding {binding.get('id')} references a missing animation")
         semantic.add(binding.get("id", ""))
+    for binding_id, (animation, frames, loops, motion) in POSTURE_BINDINGS.items():
+        binding = binding_map.get(binding_id, {})
+        if (binding.get("animation"), binding.get("frameIndices"), binding.get("loop"), binding.get("motion")) != (animation, frames, loops, motion):
+            fail(f"{binding_id} does not match {IMAGE_STATE_MODEL}")
     directions = atlas.get("lookDirections", [])
     degrees = {float(d.get("degrees")) for d in directions if "degrees" in d}
     if degrees != {i * 22.5 for i in range(16)}:
@@ -88,6 +124,8 @@ def atlas_contract(root: Path, atlas: dict, semantic: set[str], files: set[str])
     bindings = {b.get("id") for b in atlas.get("bindings", [])}
     if not actions.issubset(bindings):
         fail("every published action must have a binding")
+    if not PUBLISHED_ACTIONS.issubset(actions):
+        fail("missing action registry IDs: " + ", ".join(sorted(PUBLISHED_ACTIONS - actions)))
 
 
 def main() -> None:
@@ -105,6 +143,9 @@ def main() -> None:
         fail("pet.id must be lowercase kebab-case")
     if pet.get("species") not in {"dog", "cat", "other"}:
         fail("pet.species must be dog, cat, or other")
+    body_size = pet.get("bodySize", 60)
+    if not isinstance(body_size, int) or not 1 <= body_size <= 100:
+        fail("pet.bodySize must be an integer from 1 through 100")
     capabilities = manifest.get("capabilities", {})
     if capabilities.get("imageMode") is not True or capabilities.get("videoMode") is not False:
         fail("creator output must be imageMode=true and videoMode=false")
@@ -145,8 +186,9 @@ def main() -> None:
             fail(f"appearance {appearance.get('id')} has no atlas")
     if not REQUIRED.issubset(semantic):
         fail("missing semantic IDs: " + ", ".join(sorted(REQUIRED - semantic)))
-    if len(manifest.get("appearances", [])) not in {1, 2}:
-        fail("output must contain one or two requested image appearances")
+    appearances = manifest.get("appearances", [])
+    if len(appearances) != 1 or appearances[0].get("id") != "realistic-2d":
+        fail("creator output must contain exactly one realistic-2d appearance")
     if sum(bool(a.get("isDefault")) for a in manifest["appearances"]) != 1:
         fail("exactly one appearance must be default")
     for relative in atlas_files:

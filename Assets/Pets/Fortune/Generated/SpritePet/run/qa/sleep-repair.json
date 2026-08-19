@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-18",
+  "row": 5,
+  "semantic": "stand-to-lie-to-closed-eye-sleep",
+  "generator": "built-in imagegen",
+  "prompt": "prompts/rows/failed-sleep-repair.md",
+  "productionSource": "generated-hd/failed-grid-4x2.png",
+  "preservedPreviousSource": "generated-hd/drowsy-original-grid-4x2.png",
+  "identityReferences": [
+    "references/canonical-base.png",
+    "Assets/Pets/Fortune/UserProvided/ReferencePhotos/right-profile-sleeping.jpg",
+    "Assets/Pets/Fortune/UserProvided/ReferencePhotos/belly-up-sleeping.jpg",
+    "Assets/Pets/Fortune/UserProvided/ReferencePhotos/front-resting.jpg"
+  ],
+  "nativeAtlas": {
+    "width": 3072,
+    "height": 4576,
+    "cellWidth": 384,
+    "cellHeight": 416,
+    "maximumRegistrationUpscale": 1.034
+  },
+  "visualReview": {
+    "genuinelyHorizontalFromFrame": 2,
+    "closedEyeFrames": [5, 6, 7],
+    "stableGroundBaseline": true,
+    "standingSleepRemoved": true,
+    "result": "pass"
+  }
+}

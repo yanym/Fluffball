@@ -17,10 +17,10 @@ trap cleanup EXIT
 
 cd "$PROJECT_DIR"
 swift build >/dev/null
-BIN_PATH="$(swift build --show-bin-path)/Furball2D"
+BIN_PATH="$(swift build --show-bin-path)/Furball"
 
 env \
-  FURBALL_APPEARANCE=cute-2d \
+  FURBALL_APPEARANCE=realistic-2d \
   FURBALL_BEHAVIOR_QA_REPORT="$REPORT_PATH" \
   FURBALL_BEHAVIOR_QA_EXIT=1 \
   FURBALL_DESKTOP_INTERACTION_DRY_RUN=1 \

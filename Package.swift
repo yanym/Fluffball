@@ -3,14 +3,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "Furball2D",
+    name: "Furball",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Furball2D", targets: ["Furball2D"])
+        .executable(name: "Furball", targets: ["Furball"])
     ],
     targets: [
         .executableTarget(
-            name: "Furball2D",
+            name: "Furball",
+            path: "Sources/Furball2D",
             resources: [
                 .copy("Assets"),
                 .copy("CreatorSkill")

@@ -26,6 +26,7 @@ struct ValidatedPetPack {
     let name: String
     let species: String
     let assetVersion: Int
+    let bodySize: Int
     let appearanceCount: Int
     let supportsVideo: Bool
 }
@@ -105,6 +106,10 @@ enum PetPackLibraryManager {
             throw PetPackLibraryError.invalidPack("pet.species must be dog, cat, or other")
         }
         let assetVersion = max(1, (pet["assetVersion"] as? Int) ?? 1)
+        let bodySize = (pet["bodySize"] as? Int) ?? 60
+        guard (1...100).contains(bodySize) else {
+            throw PetPackLibraryError.invalidPack("pet.bodySize must be an integer from 1 through 100")
+        }
         guard let capabilities = json["capabilities"] as? [String: Any] else {
             throw PetPackLibraryError.invalidPack("Missing capabilities")
         }
@@ -163,6 +168,7 @@ enum PetPackLibraryManager {
             name: name,
             species: species,
             assetVersion: assetVersion,
+            bodySize: bodySize,
             appearanceCount: appearanceCount,
             supportsVideo: videoMode
         )
@@ -228,6 +234,7 @@ enum PetPackLibraryManager {
     static func makeCreationRequest(
         name: String,
         species: String,
+        bodySize: Int,
         styles: [String],
         photos: [URL],
         in destinationDirectory: URL
@@ -254,14 +261,14 @@ enum PetPackLibraryManager {
         }
         let request: [String: Any] = [
             "requestVersion": 1,
-            "pet": ["id": id, "name": name, "species": species],
-            "styles": styles,
+            "pet": ["id": id, "name": name, "species": species, "bodySize": min(100, max(1, bodySize))],
+            "styles": ["realistic-2d"],
             "videoGeneration": false,
             "referencePhotoCount": photos.count,
             "expectedOutput": "\(id).furballpet",
             "instructions": [
                 "Use the bundled furball-pet-creator Skill.",
-                "Generate and validate every requested image style.",
+                "Generate and validate one Realistic 2D image appearance.",
                 "Return one import-ready .furballpet folder."
             ]
         ]
@@ -290,6 +297,7 @@ enum PetPackLibraryManager {
     static func startCodexCreation(
         name: String,
         species: String,
+        bodySize: Int,
         styles: [String],
         photos: [URL]
     ) throws -> CodexPetCreationJob {
@@ -310,6 +318,7 @@ enum PetPackLibraryManager {
         let requestRoot = try makeCreationRequest(
             name: name,
             species: species,
+            bodySize: bodySize,
             styles: styles,
             photos: photos,
             in: jobRoot
@@ -404,6 +413,11 @@ enum PetPackLibraryManager {
               let file = atlas["file"] as? String else {
             throw PetPackLibraryError.invalidPack("spriteAtlas must be v2 and declare file")
         }
+        guard atlas["stateModel"] as? String == PetImageStateModel.identifier else {
+            throw PetPackLibraryError.invalidPack(
+                "Every 2D appearance must use stateModel \(PetImageStateModel.identifier)"
+            )
+        }
         guard let layout = atlas["layout"] as? [String: Any],
               layout["columns"] as? Int == 8,
               layout["rows"] as? Int == 11,
@@ -430,6 +444,23 @@ enum PetPackLibraryManager {
         }
         guard let bindings = atlas["bindings"] as? [[String: Any]] else {
             throw PetPackLibraryError.invalidPack("spriteAtlas.bindings cannot be empty")
+        }
+        let stateBindings = bindings.compactMap { binding -> PetImageStateModel.Binding? in
+            guard let id = binding["id"] as? String,
+                  let animation = binding["animation"] as? String else { return nil }
+            return PetImageStateModel.Binding(
+                id: id,
+                animation: animation,
+                frameIndices: binding["frameIndices"] as? [Int],
+                loops: binding["loop"] as? Bool,
+                motion: binding["motion"] as? String
+            )
+        }
+        guard stateBindings.count == bindings.count,
+              PetImageStateModel.validates(stateBindings) else {
+            throw PetPackLibraryError.invalidPack(
+                "2D posture bindings do not match \(PetImageStateModel.identifier)"
+            )
         }
         for binding in bindings {
             guard let id = binding["id"] as? String,
@@ -467,6 +498,66 @@ enum PetPackLibraryManager {
         let alpha = image.alphaInfo
         guard alpha != .none && alpha != .noneSkipFirst && alpha != .noneSkipLast else {
             throw PetPackLibraryError.invalidPack("\(url.lastPathComponent) has no alpha channel")
+        }
+
+        let bytesPerRow = image.width * 4
+        var pixels = [UInt8](repeating: 0, count: image.height * bytesPerRow)
+        pixels.withUnsafeMutableBytes { bytes in
+            guard let context = CGContext(
+                data: bytes.baseAddress,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                    | CGBitmapInfo.byteOrder32Big.rawValue
+            ) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+
+        func silhouette(row: Int, column: Int) throws -> (width: Int, height: Int) {
+            let cellWidth = 384
+            let cellHeight = 416
+            let originX = column * cellWidth
+            let originY = row * cellHeight
+            var minX = cellWidth
+            var minY = cellHeight
+            var maxX = -1
+            var maxY = -1
+            for y in 0..<cellHeight {
+                let rowOffset = (originY + y) * bytesPerRow
+                for x in 0..<cellWidth where pixels[rowOffset + (originX + x) * 4 + 3] > 18 {
+                    minX = min(minX, x)
+                    minY = min(minY, y)
+                    maxX = max(maxX, x)
+                    maxY = max(maxY, y)
+                }
+            }
+            guard maxX >= minX, maxY >= minY else {
+                throw PetPackLibraryError.invalidPack("Empty shared-state cell [\(row),\(column)]")
+            }
+            return (maxX - minX + 1, maxY - minY + 1)
+        }
+
+        let standing = try silhouette(row: 0, column: 0)
+        for column in [2, 3] {
+            let lying = try silhouette(row: 5, column: column)
+            guard Double(lying.height) <= Double(standing.height) * 0.75,
+                  Double(lying.width) / Double(lying.height) >= 1.30 else {
+                throw PetPackLibraryError.invalidPack(
+                    "lie.idle must be a horizontal body pose (failed[\(column)])"
+                )
+            }
+        }
+        for column in [5, 6, 7] {
+            let sleeping = try silhouette(row: 5, column: column)
+            guard Double(sleeping.height) <= Double(standing.height) * 0.62,
+                  Double(sleeping.width) / Double(sleeping.height) >= 1.50 else {
+                throw PetPackLibraryError.invalidPack(
+                    "sleep.idle must be a horizontal body pose (failed[\(column)])"
+                )
+            }
         }
     }
 

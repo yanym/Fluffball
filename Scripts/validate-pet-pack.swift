@@ -11,6 +11,7 @@ private struct Manifest: Decodable {
         let name: String
         let species: String
         let assetVersion: Int
+        let bodySize: Int?
     }
 
     struct Canvas: Decodable {
@@ -85,6 +86,7 @@ private struct Manifest: Decodable {
 
         let file: String
         let spriteVersionNumber: Int
+        let stateModel: String?
         let assetScale: Int?
         let layout: Layout
         let rendering: Rendering
@@ -148,6 +150,24 @@ private let loopingClipIDs: Set<String> = [
 private struct ValidatedSpriteAtlas {
     let loopsByID: [String: Bool]
 }
+
+private let requiredImageStateModel = "furball-image-state-v1"
+private struct ImageBindingContract {
+    let animation: String
+    let frameIndices: [Int]?
+    let loop: Bool
+    let motion: String?
+}
+private let imagePostureBindings: [String: ImageBindingContract] = [
+    "stand.idle": .init(animation: "idle", frameIndices: nil, loop: true, motion: nil),
+    "stand.to.sit": .init(animation: "waiting", frameIndices: [0], loop: false, motion: nil),
+    "sit.idle": .init(animation: "waiting", frameIndices: nil, loop: true, motion: nil),
+    "sit.to.lie": .init(animation: "failed", frameIndices: [1, 2, 3], loop: false, motion: nil),
+    "lie.idle": .init(animation: "failed", frameIndices: [2, 3, 2], loop: true, motion: nil),
+    "lie.to.sleep": .init(animation: "failed", frameIndices: [2, 3, 4, 5], loop: false, motion: nil),
+    "sleep.idle": .init(animation: "failed", frameIndices: [5], loop: true, motion: "sleep"),
+    "sleep.to.stand": .init(animation: "failed", frameIndices: [5, 4, 3, 2, 1, 0], loop: false, motion: nil),
+]
 
 private func fail(_ message: String) throws -> Never {
     throw ValidationError.failed(message)
@@ -328,12 +348,85 @@ private func validateStableCellBaselines(
     print("✓ ground baseline  \(atlas.file)  [spread \(maximum - minimum) px]")
 }
 
+/// Structural posture QA for the shared 2D state model. It cannot judge eyes,
+/// but it does prevent the original failure mode where a tall standing or
+/// seated head dip was bound to lie/sleep semantics.
+private func validateImageStateSilhouettes(
+    _ url: URL,
+    atlas: Manifest.SpriteAtlas
+) throws {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        try fail("\(url.lastPathComponent): could not decode cells for image-state QA")
+    }
+    let bytesPerRow = image.width * 4
+    var pixels = [UInt8](repeating: 0, count: image.height * bytesPerRow)
+    pixels.withUnsafeMutableBytes { bytes in
+        guard let context = CGContext(
+            data: bytes.baseAddress,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+
+    func silhouette(row: Int, column: Int) throws -> (width: Int, height: Int) {
+        let layout = atlas.layout
+        let originX = column * layout.cellWidth
+        let originY = row * layout.cellHeight
+        var minX = layout.cellWidth
+        var minY = layout.cellHeight
+        var maxX = -1
+        var maxY = -1
+        for y in 0..<layout.cellHeight {
+            let rowOffset = (originY + y) * bytesPerRow
+            for x in 0..<layout.cellWidth {
+                if pixels[rowOffset + (originX + x) * 4 + 3] > 18 {
+                    minX = min(minX, x)
+                    minY = min(minY, y)
+                    maxX = max(maxX, x)
+                    maxY = max(maxY, y)
+                }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else {
+            try fail("\(url.lastPathComponent): state cell [\(row),\(column)] is empty")
+        }
+        return (maxX - minX + 1, maxY - minY + 1)
+    }
+
+    let standing = try silhouette(row: 0, column: 0)
+    for column in [2, 3] {
+        let lying = try silhouette(row: 5, column: column)
+        guard Double(lying.height) <= Double(standing.height) * 0.75,
+              Double(lying.width) / Double(lying.height) >= 1.30 else {
+            try fail("\(url.lastPathComponent): lie port failed horizontal-posture QA at failed[\(column)]")
+        }
+    }
+    for column in [5, 6, 7] {
+        let sleeping = try silhouette(row: 5, column: column)
+        guard Double(sleeping.height) <= Double(standing.height) * 0.62,
+              Double(sleeping.width) / Double(sleeping.height) >= 1.50 else {
+            try fail("\(url.lastPathComponent): sleep port failed horizontal-posture QA at failed[\(column)]")
+        }
+    }
+    print("✓ image state model  \(atlas.file)  [horizontal lie/sleep ports]")
+}
+
 private func validateSpriteAtlas(
     _ atlas: Manifest.SpriteAtlas,
     rootURL: URL
 ) throws -> ValidatedSpriteAtlas {
     guard atlas.spriteVersionNumber == 2 else {
         try fail("spriteAtlas.spriteVersionNumber must be 2")
+    }
+    guard atlas.stateModel == requiredImageStateModel else {
+        try fail("spriteAtlas.stateModel must be \(requiredImageStateModel)")
     }
     let layout = atlas.layout
     guard atlas.assetScale == 2,
@@ -378,6 +471,19 @@ private func validateSpriteAtlas(
         animationsByID[animation.id] = animation
     }
 
+    let standardRows: [String: (row: Int, frames: Int)] = [
+        "idle": (0, 6), "running-right": (1, 8), "running-left": (2, 8),
+        "waving": (3, 4), "jumping": (4, 5), "failed": (5, 8),
+        "waiting": (6, 6), "working": (7, 6), "review": (8, 6),
+    ]
+    for (id, expected) in standardRows {
+        guard let animation = animationsByID[id],
+              animation.rowIndex == expected.row,
+              animation.frameCount == expected.frames else {
+            try fail("\(id): does not match the shared 2D state row contract")
+        }
+    }
+
     func validateIndices(
         _ indices: [Int]?,
         animation: Manifest.SpriteAtlas.Animation,
@@ -391,6 +497,7 @@ private func validateSpriteAtlas(
     }
 
     var loopsByID: [String: Bool] = [:]
+    var bindingsByID: [String: Manifest.SpriteAtlas.Binding] = [:]
     for binding in atlas.bindings {
         guard loopsByID[binding.id] == nil else {
             try fail("Duplicate sprite semantic binding: \(binding.id)")
@@ -428,8 +535,17 @@ private func validateSpriteAtlas(
             try fail("\(binding.id): frameBlendFraction must be in 0...0.48")
         }
         loopsByID[binding.id] = binding.loop ?? animation.loop
+        bindingsByID[binding.id] = binding
     }
-
+    for (id, expected) in imagePostureBindings {
+        guard let binding = bindingsByID[id],
+              binding.animation == expected.animation,
+              binding.frameIndices == expected.frameIndices,
+              binding.loop == expected.loop,
+              binding.motion == expected.motion else {
+            try fail("\(id): does not match \(requiredImageStateModel)")
+        }
+    }
     if let directions = atlas.lookDirections {
         let expected = Set((0..<16).map { Double($0) * 22.5 })
         let actual = Set(directions.map(\.degrees))
@@ -468,6 +584,7 @@ private func validateSpriteAtlas(
         }
     }
 
+    try validateImageStateSilhouettes(atlasURL, atlas: atlas)
     print("✓ sprite atlas  \(atlas.file)  [\(layout.columns)×\(layout.rows), v\(atlas.spriteVersionNumber)]")
     return ValidatedSpriteAtlas(loopsByID: loopsByID)
 }
@@ -486,6 +603,7 @@ private func atlas(_ atlas: Manifest.SpriteAtlas, replacingFile file: String) ->
     Manifest.SpriteAtlas(
         file: file,
         spriteVersionNumber: atlas.spriteVersionNumber,
+        stateModel: atlas.stateModel,
         assetScale: atlas.assetScale,
         layout: atlas.layout,
         rendering: atlas.rendering,
@@ -512,6 +630,9 @@ private func validate(packURL: URL) async throws {
     }
     guard ["dog", "cat", "other"].contains(manifest.pet.species) else {
         try fail("pet.species must be dog, cat, or other")
+    }
+    guard (1...100).contains(manifest.pet.bodySize ?? 60) else {
+        try fail("pet.bodySize must be an integer from 1 through 100")
     }
     guard manifest.canvas.width >= 960, manifest.canvas.height >= 540,
           manifest.canvas.width * 9 == manifest.canvas.height * 16,

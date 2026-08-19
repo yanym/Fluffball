@@ -6,6 +6,7 @@ private struct PetAssetManifest: Decodable {
         let name: String?
         let species: String?
         let assetVersion: Int?
+        let bodySize: Int?
     }
 
     struct CapabilitiesDescriptor: Decodable {
@@ -74,6 +75,7 @@ private struct PetAssetManifest: Decodable {
 
         let file: String
         let spriteVersionNumber: Int
+        let stateModel: String?
         let layout: LayoutDescriptor
         let rendering: RenderingDescriptor
         let animations: [AnimationDescriptor]
@@ -134,6 +136,7 @@ struct PetLibraryPet: Equatable {
     let name: String
     let species: String
     let assetVersion: Int
+    let bodySize: Int
     let isBundled: Bool
     let rootURL: URL
     let appearances: [PetAppearanceOption]
@@ -250,6 +253,7 @@ enum PetAssetCatalog {
         let petName: String
         let species: String
         let assetVersion: Int
+        let bodySize: Int
         let isBundled: Bool
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
         let appearances: [(option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)]
@@ -270,6 +274,7 @@ enum PetAssetCatalog {
                 _ descriptor: PetAssetManifest.SpriteAtlasDescriptor
             ) -> ResolvedSpriteAtlas? {
                 guard let url = try? existingAssetURL(descriptor.file, in: rootURL) else { return nil }
+                guard descriptor.stateModel == PetImageStateModel.identifier else { return nil }
                 var animationsByID: [String: PetAssetManifest.SpriteAtlasDescriptor.AnimationDescriptor] = [:]
                 for animation in descriptor.animations where animationsByID[animation.id] == nil {
                     animationsByID[animation.id] = animation
@@ -278,6 +283,16 @@ enum PetAssetCatalog {
                 for binding in descriptor.bindings where bindingsByID[binding.id] == nil {
                     bindingsByID[binding.id] = binding
                 }
+                let stateBindings = descriptor.bindings.map {
+                    PetImageStateModel.Binding(
+                        id: $0.id,
+                        animation: $0.animation,
+                        frameIndices: $0.frameIndices,
+                        loops: $0.loop,
+                        motion: $0.motion?.rawValue
+                    )
+                }
+                guard PetImageStateModel.validates(stateBindings) else { return nil }
                 var lookDirectionsByKey: [String: PetAssetManifest.SpriteAtlasDescriptor.LookDirectionDescriptor] = [:]
                 for direction in descriptor.lookDirections ?? [] {
                     let key = PetLookDirection(
@@ -313,6 +328,7 @@ enum PetAssetCatalog {
                     appearanceAtlasDescriptor = PetAssetManifest.SpriteAtlasDescriptor(
                         file: atlasFile,
                         spriteVersionNumber: base.spriteVersionNumber,
+                        stateModel: base.stateModel,
                         layout: base.layout,
                         rendering: base.rendering,
                         animations: base.animations,
@@ -355,11 +371,11 @@ enum PetAssetCatalog {
                 if let legacyAtlas {
                     appearances.append((
                         PetAppearanceOption(
-                            id: "cute-2d",
+                            id: "realistic-2d",
                             kind: .spriteAtlas,
-                            title: "Cute 2D",
-                            subtitle: "Lightweight illustrated animation",
-                            systemImage: "sparkles",
+                            title: "Realistic 2D",
+                            subtitle: "Natural image animation",
+                            systemImage: "camera.macro",
                             isDefault: appearances.isEmpty
                         ),
                         legacyAtlas
@@ -373,6 +389,7 @@ enum PetAssetCatalog {
                 petName: manifest.pet?.name ?? manifest.pet?.id ?? "Pet",
                 species: manifest.pet?.species ?? "pet",
                 assetVersion: manifest.pet?.assetVersion ?? 1,
+                bodySize: min(100, max(1, manifest.pet?.bodySize ?? 60)),
                 isBundled: isBundledAssetRoot(rootURL),
                 clipsByID: clipsByID,
                 appearances: appearances
@@ -459,6 +476,7 @@ enum PetAssetCatalog {
                 name: $0.petName,
                 species: $0.species,
                 assetVersion: $0.assetVersion,
+                bodySize: $0.bodySize,
                 isBundled: $0.isBundled,
                 rootURL: $0.rootURL,
                 appearances: $0.appearances.map(\.option)
@@ -473,6 +491,7 @@ enum PetAssetCatalog {
             name: loaded.petName,
             species: loaded.species,
             assetVersion: loaded.assetVersion,
+            bodySize: loaded.bodySize,
             isBundled: loaded.isBundled,
             rootURL: loaded.rootURL,
             appearances: loaded.appearances.map(\.option)
@@ -507,6 +526,8 @@ enum PetAssetCatalog {
 
     static var petID: String { loaded?.petID ?? "legacy-pet" }
     static var petName: String { loaded?.petName ?? "Pet" }
+    static var bodySize: Int { loaded?.bodySize ?? 60 }
+    static var intrinsicBodyScale: CGFloat { CGFloat(bodySize) / 60.0 }
     static var imageActions: [PetImageAction] { selectedAppearance?.spriteAtlas?.actions ?? [] }
 
     static func loops(for id: String, fallback: Bool) -> Bool {
@@ -753,13 +774,13 @@ enum PetAssetCatalog {
         }
         bundledAssetContainers.append(
             Bundle.main.bundleURL
-                .appendingPathComponent("Furball2D_Furball2D.bundle", isDirectory: true)
+                .appendingPathComponent("Furball_Furball.bundle", isDirectory: true)
                 .appendingPathComponent("Assets", isDirectory: true)
         )
         if let executableURL = Bundle.main.executableURL {
             bundledAssetContainers.append(
                 executableURL.deletingLastPathComponent()
-                    .appendingPathComponent("Furball2D_Furball2D.bundle", isDirectory: true)
+                    .appendingPathComponent("Furball_Furball.bundle", isDirectory: true)
                     .appendingPathComponent("Assets", isDirectory: true)
             )
         }
@@ -788,10 +809,10 @@ enum PetAssetCatalog {
         [
             Bundle.main.resourceURL?.appendingPathComponent(relativePath),
             Bundle.main.bundleURL
-                .appendingPathComponent("Furball2D_Furball2D.bundle")
+                .appendingPathComponent("Furball_Furball.bundle")
                 .appendingPathComponent(relativePath),
             Bundle.main.executableURL?.deletingLastPathComponent()
-                .appendingPathComponent("Furball2D_Furball2D.bundle")
+                .appendingPathComponent("Furball_Furball.bundle")
                 .appendingPathComponent(relativePath)
         ].compactMap { $0 }
     }

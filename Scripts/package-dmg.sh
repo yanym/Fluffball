@@ -3,10 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-APP_PATH="$PROJECT_DIR/dist/Furball2D.app"
-ARCHIVE_PATH="$PROJECT_DIR/dist/Furball2D.zip"
+APP_PATH="$PROJECT_DIR/dist/Furball.app"
+ARCHIVE_PATH="$PROJECT_DIR/dist/Furball.zip"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_DIR/Support/Info.plist")"
-DMG_PATH="$PROJECT_DIR/dist/Fluffball-v${VERSION}-macOS-Apple-Silicon.dmg"
+DMG_PATH="$PROJECT_DIR/dist/Furball-v${VERSION}-macOS-Apple-Silicon.dmg"
 STAGE_DIR=""
 
 cleanup() {
@@ -22,11 +22,11 @@ fi
 
 STAGE_DIR="$(mktemp -d /tmp/fluffball-dmg.XXXXXX)"
 ditto -x -k --norsrc --noextattr "$ARCHIVE_PATH" "$STAGE_DIR"
-codesign --verify --deep --strict "$STAGE_DIR/Furball2D.app"
+codesign --verify --deep --strict "$STAGE_DIR/Furball.app"
 ln -s /Applications "$STAGE_DIR/Applications"
 
 hdiutil create \
-  -volname "Fluffball ${VERSION}" \
+  -volname "Furball ${VERSION}" \
   -srcfolder "$STAGE_DIR" \
   -format UDZO \
   -imagekey zlib-level=9 \

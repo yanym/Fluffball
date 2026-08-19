@@ -181,34 +181,21 @@ def source_rows(root: Path, pet: str, style: str) -> list[tuple[Path, int | None
             (base / "generated-hd/look-row-10-grid-4x2.png", 4, "magenta"),
         ]
 
-    if style == "realistic":
-        base = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run"
-        return [
-            (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
-            (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
-            (base / "generated-hd/running-left-grid-4x2.png", 4, "magenta"),
-            (base / "generated-hd/waving-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/jumping-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/failed-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/waiting-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/running-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/review-grid-4x2.png", None, "magenta"),
-            (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
-            (base / "generated-hd/look-row-10-grid-4x2.png", 4, "green"),
-        ]
-    base = root / "Assets/Pets/Nina/Generated/SpritePets/Furball/source"
+    if style != "realistic":
+        raise ValueError("Furball now maintains Realistic 2D sprite assets only")
+    base = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run"
     return [
-        (base / "generated-hd/idle-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/running-right-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/running-left-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/waving-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/jumping-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/failed-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/waiting-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/working-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/review-grid-4x2.png", 3, "blue"),
-        (base / "generated-hd/look-row-9-grid-4x2.png", 4, "blue"),
-        (base / "generated-hd/look-row-10-grid-4x2.png", 4, "blue"),
+        (base / "generated-hd/idle-grid-4x2.png", 4, "magenta"),
+        (base / "generated-hd/running-right-grid-4x2.png", 4, "magenta"),
+        (base / "generated-hd/running-left-grid-4x2.png", 4, "magenta"),
+        (base / "generated-hd/waving-grid-4x2.png", None, "magenta"),
+        (base / "generated-hd/jumping-grid-4x2.png", None, "magenta"),
+        (base / "generated-hd/failed-grid-4x2.png", 4, "magenta"),
+        (base / "generated-hd/waiting-grid-4x2.png", None, "magenta"),
+        (base / "generated-hd/running-grid-4x2.png", None, "magenta"),
+        (base / "generated-hd/review-grid-4x2.png", None, "magenta"),
+        (base / "generated-hd/look-row-9-grid-4x2.png", 4, "magenta"),
+        (base / "generated-hd/look-row-10-grid-4x2.png", 4, "green"),
     ]
 
 
@@ -253,10 +240,8 @@ def build(root: Path, pet: str, style: str) -> None:
 
     if pet == "fortune":
         clarity_dir = root / "Assets/Pets/Fortune/Generated/SpritePet/run/qa"
-    elif style == "realistic":
-        clarity_dir = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa"
     else:
-        clarity_dir = root / "Assets/Pets/Nina/Generated/SpritePets/Furball/qa"
+        clarity_dir = root / "Assets/Pets/Nina/Generated/SpritePets/NinaRealistic/run/qa"
     clarity_dir.mkdir(parents=True, exist_ok=True)
     clarity_report = {
         "nativeCellWidth": CELL_W,
@@ -279,14 +264,12 @@ def build(root: Path, pet: str, style: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pet", choices=("nina", "fortune", "all"), default="all")
-    parser.add_argument("--style", choices=("cute", "realistic", "all"), default="all")
+    parser.add_argument("--style", choices=("realistic", "all"), default="all")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     pets = ("nina", "fortune") if args.pet == "all" else (args.pet,)
     for pet in pets:
-        styles = ("cute", "realistic") if args.style == "all" and pet == "nina" else (
-            "realistic",
-        ) if args.style == "all" else (args.style,)
+        styles = ("realistic",) if args.style == "all" else (args.style,)
         for style in styles:
             build(root, pet, style)
 

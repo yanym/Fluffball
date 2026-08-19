@@ -17,6 +17,7 @@ struct AppearanceSettingsSnapshot {
     let autoBehavior: Bool
     let speechBubbles: Bool
     let talkativeness: Double
+    let speechBubbleStyle: PetSpeechBubbleStyle
     let canChangeAppearance: Bool
     let groupPlayEnabled: Bool
     let groupPetIDs: Set<String>
@@ -50,6 +51,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onAutoBehaviorChanged: ((Bool) -> Void)?
     var onSpeechBubblesChanged: ((Bool) -> Void)?
     var onTalkativenessChanged: ((Double) -> Void)?
+    var onSpeechBubbleStyleChanged: ((PetSpeechBubbleStyle) -> Void)?
     var onPreviewSpeech: (() -> Void)?
 
     private var snapshot: AppearanceSettingsSnapshot
@@ -79,6 +81,9 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let talkativenessSlider = NSSlider()
     private let talkativenessValue = NSTextField(labelWithString: "")
     private let previewSpeechButton = NSButton()
+    private let speechStylePopup = NSPopUpButton()
+    private let updateStatusLabel = NSTextField(wrappingLabelWithString: "")
+    private let updateButton = NSButton()
 
     init(snapshot: AppearanceSettingsSnapshot) {
         self.snapshot = snapshot
@@ -97,6 +102,12 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 
         super.init(window: window)
         window.delegate = self
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateStateDidChange(_:)),
+            name: .furballUpdateStateDidChange,
+            object: UpdateChecker.shared
+        )
         buildInterface()
         applySnapshot()
     }
@@ -249,15 +260,45 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         petSizeSlider.target = self
         petSizeSlider.action = #selector(petSizeChanged(_:))
         let rows = NSStackView(views: [
-            makeSliderRow(title: "Pet Size", slider: petSizeSlider, value: petSizeValue),
+            makeSliderRow(title: "Display Scale", slider: petSizeSlider, value: petSizeValue),
             separator(),
             makeToggleRow(title: "Always on Top", toggle: alwaysOnTopSwitch, action: #selector(alwaysOnTopChanged(_:))),
             separator(),
             makeToggleRow(title: "Click Through Completely", toggle: passThroughSwitch, action: #selector(passThroughChanged(_:))),
             separator(),
-            makeToggleRow(title: "Autonomous Routine", toggle: autoBehaviorSwitch, action: #selector(autoBehaviorChanged(_:)))
+            makeToggleRow(title: "Autonomous Routine", toggle: autoBehaviorSwitch, action: #selector(autoBehaviorChanged(_:))),
+            separator(),
+            makeUpdateRow()
         ])
         return boxed(rows)
+    }
+
+    private func makeUpdateRow() -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "arrow.down.heart.fill", accessibilityDescription: nil)
+        icon.contentTintColor = .systemPink
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
+        let title = NSTextField(labelWithString: "Furball Updates")
+        title.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        updateStatusLabel.font = .systemFont(ofSize: 11.5)
+        updateStatusLabel.textColor = .secondaryLabelColor
+        updateStatusLabel.maximumNumberOfLines = 2
+        let labels = NSStackView(views: [title, updateStatusLabel])
+        labels.orientation = .vertical
+        labels.alignment = .leading
+        labels.spacing = 2
+        updateButton.bezelStyle = .rounded
+        updateButton.controlSize = .large
+        updateButton.target = self
+        updateButton.action = #selector(checkForUpdates)
+        let row = NSStackView(views: [icon, labels, NSView(), updateButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        applyUpdateState()
+        return row
     }
 
     private func makeAppearanceContent(language: AppLanguage) -> NSView {
@@ -342,12 +383,21 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         previewSpeechButton.bezelStyle = .rounded
         previewSpeechButton.target = self
         previewSpeechButton.action = #selector(previewSpeech)
+        speechStylePopup.removeAllItems()
+        for style in PetSpeechBubbleStyle.allCases {
+            speechStylePopup.addItem(withTitle: style.title)
+            speechStylePopup.lastItem?.representedObject = style.rawValue
+        }
+        speechStylePopup.target = self
+        speechStylePopup.action = #selector(speechStyleChanged(_:))
         let rows = NSStackView(views: [
             makeToggleRow(title: "Show Pet Speech", toggle: speechBubblesSwitch, action: #selector(speechBubblesChanged(_:))),
             separator(),
             makeSliderRow(title: "Talkativeness", slider: talkativenessSlider, value: talkativenessValue),
             separator(),
-            makeValueRow(title: "Bubble Style & Motion", control: previewSpeechButton)
+            makeValueRow(title: "Bubble Appearance", control: speechStylePopup),
+            separator(),
+            makeValueRow(title: "Preview", control: previewSpeechButton)
         ])
         return boxed(rows)
     }
@@ -373,7 +423,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         let box = NSView()
         box.wantsLayer = true
         box.layer?.cornerRadius = 16
-        box.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82).cgColor
+        box.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.055).cgColor
         box.layer?.borderWidth = 1
         box.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.34).cgColor
         box.layer?.shadowColor = NSColor.black.withAlphaComponent(0.18).cgColor
@@ -451,7 +501,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         case .appearance: "Appearance & Animation"
         case .behavior: "Behavior"
         case .interaction: "Desktop Interaction"
-        case .group: "Pet Group"
+        case .group: "Group Play"
         case .speech: "Speech"
         }
     }
@@ -480,7 +530,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 
     private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
         switch page {
-        case .general: "Adjust pet size and window behavior."
+        case .general: "Adjust interface display scale and window behavior. Pet profiles define relative body size."
         case .appearance: "Choose an asset appearance and tune transitions for continuous video."
         case .behavior: "Choose how your pet watches, follows, and explores."
         case .interaction: "The pet may look at item names and icons, but the real files and Finder layout always remain untouched."
@@ -543,7 +593,14 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         talkativenessValue.stringValue = "\(Int((snapshot.talkativeness * 100).rounded()))%"
         talkativenessSlider.isEnabled = snapshot.speechBubbles
         previewSpeechButton.isEnabled = snapshot.speechBubbles
+        speechStylePopup.isEnabled = snapshot.speechBubbles
+        if let index = speechStylePopup.itemArray.firstIndex(where: {
+            ($0.representedObject as? String) == snapshot.speechBubbleStyle.rawValue
+        }) {
+            speechStylePopup.selectItem(at: index)
+        }
         rebuildGroupPetSelection()
+        applyUpdateState()
 
         crossfadeSwitch.target = self
         crossfadeSwitch.action = #selector(crossfadeChanged(_:))
@@ -561,6 +618,40 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         })?.kind == .continuousVideo
         crossfadeRow?.isHidden = !isVideo
         imageModeNote.isHidden = isVideo
+    }
+
+    @objc private func updateStateDidChange(_ notification: Notification) {
+        applyUpdateState()
+    }
+
+    private func applyUpdateState() {
+        let checker = UpdateChecker.shared
+        switch checker.state {
+        case .idle:
+            updateStatusLabel.stringValue = "Current version \(checker.currentVersion)"
+            updateButton.title = "Check Now"
+            updateButton.isEnabled = true
+        case .checking:
+            updateStatusLabel.stringValue = "Looking for a fresh release…"
+            updateButton.title = "Checking…"
+            updateButton.isEnabled = false
+        case .upToDate(let version):
+            updateStatusLabel.stringValue = "Version \(version) is the newest release."
+            updateButton.title = "Check Again"
+            updateButton.isEnabled = true
+        case .available(let release):
+            updateStatusLabel.stringValue = "Version \(release.version) is ready on GitHub ✨"
+            updateButton.title = "Download"
+            updateButton.isEnabled = true
+        case .failed:
+            updateStatusLabel.stringValue = "Couldn’t reach GitHub. You can try again."
+            updateButton.title = "Try Again"
+            updateButton.isEnabled = true
+        }
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkManually(presenting: window)
     }
 
     @objc private func activePetChanged(_ sender: NSPopUpButton) {
@@ -607,6 +698,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                 autoBehavior: snapshot.autoBehavior,
                 speechBubbles: snapshot.speechBubbles,
                 talkativeness: snapshot.talkativeness,
+                speechBubbleStyle: snapshot.speechBubbleStyle,
                 canChangeAppearance: snapshot.canChangeAppearance,
                 groupPlayEnabled: snapshot.groupPlayEnabled,
                 groupPetIDs: snapshot.groupPetIDs
@@ -688,11 +780,19 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         let enabled = sender.state == .on
         talkativenessSlider.isEnabled = enabled
         previewSpeechButton.isEnabled = enabled
+        speechStylePopup.isEnabled = enabled
         onSpeechBubblesChanged?(enabled)
     }
     @objc private func talkativenessChanged(_ sender: NSSlider) {
         talkativenessValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
         onTalkativenessChanged?(sender.doubleValue)
+    }
+
+    @objc private func speechStyleChanged(_ sender: NSPopUpButton) {
+        guard let rawValue = sender.selectedItem?.representedObject as? String,
+              let style = PetSpeechBubbleStyle(rawValue: rawValue) else { return }
+        onSpeechBubbleStyleChanged?(style)
+        onPreviewSpeech?()
     }
     @objc private func previewSpeech() { onPreviewSpeech?() }
 

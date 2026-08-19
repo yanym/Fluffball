@@ -1,4 +1,4 @@
-# Fluffball Asset Catalog
+# Furball Asset Catalog
 
 Assets are grouped by pet identity first. Every pet owns the same two provenance categories:
 
@@ -10,12 +10,12 @@ Assets/Pets/<PetName>/
 
 The app never reads `UserProvided/` at runtime. Final compiled resources live in the matching runtime Pet Pack under `Sources/Furball2D/Assets/Pets/<PetName>/`.
 
-- `Pets/Nina/` contains Nina's original photos/videos, all generated work, two 2D atlases, and the complete Live Motion clip set.
+- `Pets/Nina/` contains Nina's original photos/videos, the retained Realistic 2D generation work and atlas, and the complete Live Motion clip set.
 - `Pets/Fortune/` contains Fortune's six identity photos and the native-Retina Realistic 2D generation run. Fortune is image-only until Fortune-specific video footage is provided.
 
 Nina's identity references live in `Pets/Nina/UserProvided/SourceImagesForAIVideo/originals/`; see the [reference guide](Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md). Prepared references live separately under `Pets/Nina/Generated/AIReferenceImages/generation-ready/`.
 
-`Pets/Nina/Generated/ImageTurn/normalized/` contains Nina's aligned image views. `Pets/Nina/Generated/SpritePets/` preserves Cute and Realistic generation records and QA. `Pets/Fortune/Generated/SpritePet/` contains Fortune's grounded `$hatch-pet` run, native-HD pose grids, clarity report, and contact atlas.
+`Pets/Nina/Generated/ImageTurn/normalized/` contains Nina's aligned image views. `Pets/Nina/Generated/SpritePets/NinaRealistic/` preserves the retained Realistic 2D generation record and QA. `Pets/Fortune/Generated/SpritePet/` contains Fortune's grounded `$hatch-pet` run, native-HD pose grids, clarity report, and contact atlas.
 
 Sprite-atlas image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what each named pack supports; an image-only pack may omit `Clips/` completely. Nina defaults to video and Fortune defaults to Realistic 2D. Standalone runtime PNG animations are no longer loaded or packaged.
 
@@ -66,6 +66,12 @@ The archived duplicate and `Pets/Nina/UserProvided/SourceVideos/three-quarter-to
 The start clips now begin near their first visible weight shift. On a fresh transition from standing to walking, jogging, or running, runtime translation waits only about 0.12, 0.07, or 0.10 seconds and ramps in over roughly 0.18, 0.13, or 0.10 seconds. This preserves planted-paw contact without making cursor response feel delayed.
 
 `Scripts/build-assets.sh` can rebuild every export. Each locomotion source is keyed using its sampled green-screen color. The first and last frames of every start / loop / stop segment are independently normalized for subject height, alpha center, and ground baseline. Loop segments use matching footfall phases and are never reversed. Corrections are applied smoothly on a 1600×900 transparent work canvas before cropping back to the standard canvas; the pipeline does not apply one fixed scale to an entire source. Every locomotion source also shares one monotonic grading curve across start / loop / stop, matching the black, tan, and white fur anchors from `stand-idle`; all nine image views independently target the same reference during export. Use `Scripts/audit-png-color.swift` to re-audit representative transparent PNG frames. Cut points, port parameters, color references, loop strategies, and canvas metadata are recorded in the script and `Sources/Furball2D/Assets/Pets/Nina/manifest.json`.
+
+## Shared 2D posture state model
+
+Every runtime sprite atlas uses `stateModel: furball-image-state-v1`. Row 5 has the same physical meaning for Nina Realistic, Fortune Realistic, and future imported pets: frame 0 stand, frame 1 lower, frames 2–3 horizontal awake lie, frame 4 head/eye close, and frames 5–7 horizontal closed-eye source poses. `sleep.idle` binds only frame 5; the runtime adds a continuous eight-second micro-breath rather than cycling the source poses. The old Nina Realistic low-head row remains preserved as `generated-hd/drowsy-original-grid-1x8.png`; it is not a sleep source.
+
+The runtime and validators use one exact posture binding map for all 2D appearances and reject non-horizontal lie/sleep silhouettes. MP4 actions remain independently segmented and bound under `Clips/`; do not copy the image frame indices into video manifests.
 
 ## Naming new assets
 

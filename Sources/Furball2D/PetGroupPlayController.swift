@@ -87,10 +87,14 @@ final class PetGroupPlayController {
         }
         guard !pets.isEmpty else { return }
 
-        let clampedScale = min(1.0, max(0.56, scale * 0.82))
-        let size = NSSize(width: 410 * clampedScale, height: 231 * clampedScale)
         let visible = screen.visibleFrame
         for (index, pet) in pets.enumerated() {
+            let displayScale = min(1.0, max(0.56, scale * 0.82))
+            let bodyScale = CGFloat(pet.bodySize) / 60.0
+            let size = NSSize(
+                width: 410 * displayScale * bodyScale,
+                height: 231 * displayScale * bodyScale
+            )
             let fraction = CGFloat(index + 1) / CGFloat(pets.count + 1)
             let x = visible.minX + fraction * visible.width - size.width / 2
             let y = visible.minY + 18 + CGFloat(index % 2) * min(70, visible.height * 0.10)

@@ -9,6 +9,22 @@ enum PetSpeechBubbleMood {
     case active
 }
 
+enum PetSpeechBubbleStyle: String, CaseIterable {
+    case cloud
+    case candy
+    case storybook
+    case starlight
+
+    var title: String {
+        switch self {
+        case .cloud: "Soft Cloud"
+        case .candy: "Candy Pop"
+        case .storybook: "Storybook"
+        case .starlight: "Starlight"
+        }
+    }
+}
+
 @MainActor
 final class PetSpeechBubble {
     private struct Placement {
@@ -97,6 +113,10 @@ final class PetSpeechBubble {
     func updateAppearance(mood: PetSpeechBubbleMood) {
         guard panel.isVisible else { return }
         content.updateMood(mood)
+    }
+
+    func setStyle(_ style: PetSpeechBubbleStyle) {
+        content.updateStyle(style)
     }
 
     func setLevel(_ level: NSWindow.Level) {
@@ -307,6 +327,7 @@ private final class SpeechBubbleView: NSView {
     private let tagIcon = NSImageView()
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private var mood: PetSpeechBubbleMood = .stand
+    private var style: PetSpeechBubbleStyle = .cloud
     private var displayScale: CGFloat = 1
     private(set) var tailEdge: TailEdge = .bottom
     private var tailPosition: CGFloat = 0.5
@@ -397,6 +418,18 @@ private final class SpeechBubbleView: NSView {
         needsDisplay = true
     }
 
+    func updateStyle(_ style: PetSpeechBubbleStyle) {
+        guard self.style != style else { return }
+        self.style = style
+        applyTheme()
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = 0.18
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer?.add(transition, forKey: "speech-style-transition")
+        needsDisplay = true
+    }
+
     func updateTail(edge: TailEdge, position: CGFloat, immediately: Bool) {
         if edge != tailEdge || immediately {
             tailEdge = edge
@@ -438,7 +471,11 @@ private final class SpeechBubbleView: NSView {
         super.draw(dirtyRect)
         let theme = currentTheme(for: mood)
         let body = bodyRect
-        let cornerRadius = min(body.height * 0.38, 22 * displayScale)
+        let cornerRadius: CGFloat = switch style {
+        case .cloud, .candy: min(body.height * 0.42, 24 * displayScale)
+        case .storybook: min(body.height * 0.25, 15 * displayScale)
+        case .starlight: min(body.height * 0.34, 20 * displayScale)
+        }
 
         let path = buildBubblePath(body: body, radius: cornerRadius)
         NSGraphicsContext.saveGraphicsState()
@@ -481,6 +518,8 @@ private final class SpeechBubbleView: NSView {
         ), xRadius: 1.5 * displayScale, yRadius: 1.5 * displayScale)
         theme.accentColor.withAlphaComponent(0.82).setFill()
         accentPill.fill()
+
+        drawStyleDetails(in: body, theme: theme)
     }
 
     func playEntranceAnimation() {
@@ -496,6 +535,7 @@ private final class SpeechBubbleView: NSView {
     func stopAnimations() {
         layer?.removeAnimation(forKey: "speech-pop")
         layer?.removeAnimation(forKey: "speech-theme-transition")
+        layer?.removeAnimation(forKey: "speech-style-transition")
     }
 
     private var measuredMessageWidth: CGFloat {
@@ -623,6 +663,37 @@ private final class SpeechBubbleView: NSView {
     }
 
     private func currentTheme(for mood: PetSpeechBubbleMood) -> Theme {
+        switch style {
+        case .candy:
+            return Theme(
+                gradientTop: NSColor(calibratedRed: 1.00, green: 0.97, blue: 0.99, alpha: 0.99),
+                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.84, blue: 0.91, alpha: 0.98),
+                accentColor: NSColor(calibratedRed: 0.96, green: 0.25, blue: 0.55, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 1.00, green: 0.91, blue: 0.38, alpha: 0.94),
+                textColor: NSColor(calibratedRed: 0.25, green: 0.10, blue: 0.18, alpha: 1),
+                iconName: mood == .sleep ? "moon.stars.fill" : "heart.fill"
+            )
+        case .storybook:
+            return Theme(
+                gradientTop: NSColor(calibratedRed: 1.00, green: 0.98, blue: 0.90, alpha: 0.99),
+                gradientBottom: NSColor(calibratedRed: 0.96, green: 0.88, blue: 0.72, alpha: 0.98),
+                accentColor: NSColor(calibratedRed: 0.48, green: 0.28, blue: 0.16, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 0.91, green: 0.73, blue: 0.42, alpha: 0.88),
+                textColor: NSColor(calibratedRed: 0.22, green: 0.14, blue: 0.09, alpha: 1),
+                iconName: mood == .sleep ? "moon.fill" : "book.closed.fill"
+            )
+        case .starlight:
+            return Theme(
+                gradientTop: NSColor(calibratedRed: 0.17, green: 0.18, blue: 0.34, alpha: 0.98),
+                gradientBottom: NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.20, alpha: 0.98),
+                accentColor: NSColor(calibratedRed: 0.72, green: 0.66, blue: 1.00, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 0.33, green: 0.29, blue: 0.58, alpha: 0.92),
+                textColor: NSColor(calibratedRed: 0.97, green: 0.96, blue: 1.00, alpha: 1),
+                iconName: mood == .active ? "sparkles" : "moon.stars.fill"
+            )
+        case .cloud:
+            break
+        }
         switch mood {
         case .stand:
             return Theme(
@@ -669,6 +740,46 @@ private final class SpeechBubbleView: NSView {
                 textColor: NSColor(calibratedRed: 0.20, green: 0.16, blue: 0.10, alpha: 1),
                 iconName: "sparkles"
             )
+        }
+    }
+
+    private func drawStyleDetails(in body: NSRect, theme: Theme) {
+        switch style {
+        case .cloud:
+            let shine = NSBezierPath(ovalIn: NSRect(
+                x: body.maxX - 31 * displayScale,
+                y: body.maxY - 14 * displayScale,
+                width: 8 * displayScale,
+                height: 3.5 * displayScale
+            ))
+            NSColor.white.withAlphaComponent(0.62).setFill()
+            shine.fill()
+        case .candy:
+            for (index, alpha) in [0.75, 0.48, 0.28].enumerated() {
+                let dot = NSBezierPath(ovalIn: NSRect(
+                    x: body.maxX - CGFloat(20 + index * 9) * displayScale,
+                    y: body.maxY - 10 * displayScale,
+                    width: 4.5 * displayScale,
+                    height: 4.5 * displayScale
+                ))
+                theme.accentColor.withAlphaComponent(alpha).setFill()
+                dot.fill()
+            }
+        case .storybook:
+            let stitch = NSBezierPath(roundedRect: body.insetBy(dx: 4 * displayScale, dy: 4 * displayScale), xRadius: 11 * displayScale, yRadius: 11 * displayScale)
+            theme.accentColor.withAlphaComponent(0.20).setStroke()
+            stitch.lineWidth = 1 * displayScale
+            stitch.setLineDash([3 * displayScale, 3 * displayScale], count: 2, phase: 0)
+            stitch.stroke()
+        case .starlight:
+            for point in [
+                NSPoint(x: body.maxX - 22 * displayScale, y: body.maxY - 10 * displayScale),
+                NSPoint(x: body.maxX - 35 * displayScale, y: body.minY + 11 * displayScale)
+            ] {
+                let star = NSBezierPath(ovalIn: NSRect(x: point.x, y: point.y, width: 3 * displayScale, height: 3 * displayScale))
+                NSColor.white.withAlphaComponent(0.72).setFill()
+                star.fill()
+            }
         }
     }
 }

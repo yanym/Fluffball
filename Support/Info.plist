@@ -9,7 +9,7 @@
 		<string>en</string>
 	</array>
     <key>CFBundleExecutable</key>
-    <string>Furball2D</string>
+    <string>Furball</string>
     <key>CFBundleIdentifier</key>
     <string>com.fluffball.Furball2D</string>
     <key>CFBundleIconFile</key>
@@ -17,17 +17,17 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Furball2D</string>
+    <string>Furball</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.0.1</string>
+    <string>0.0.2</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.entertainment</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 Fluffball. All rights reserved.</string>
+    <string>Copyright © 2026 Furball. All rights reserved.</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
