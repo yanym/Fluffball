@@ -120,6 +120,10 @@ final class PetController: NSObject, NSMenuDelegate {
     private var hoverActionTimer: Timer?
     private var mindTimer: Timer?
     private var desktopInteractionTimer: Timer?
+    private var motionQATimer: Timer?
+    private var motionQATickCount = 0
+    private var motionQAMaximumTickGap: TimeInterval = 0
+    private var motionQALastTickTime: TimeInterval?
     private var startupVisibilityGeneration = 0
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
@@ -136,6 +140,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var locomotionDirection: CGFloat = -1
     private var actionFacing: HorizontalFacing = .left
     private var lastLocomotionChangeTime: TimeInterval = 0
+    private var locomotionModeLockUntil: TimeInterval = 0
     private var pendingLocomotionMode: LocomotionMode?
     private var pendingLocomotionSince: TimeInterval = 0
     private var locomotionTranslationStartTime: TimeInterval = 0
@@ -396,6 +401,12 @@ final class PetController: NSObject, NSMenuDelegate {
                 self?.writeGroupPlayQAReport(to: reportPath)
             }
         }
+        if let reportPath = ProcessInfo.processInfo.environment["FURBALL_LIVE_MOTION_QA_REPORT"],
+           !reportPath.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                self?.startLiveMotionQA(reportPath: reportPath)
+            }
+        }
         if let reportPath = behaviorQAReportPath, !reportPath.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { [weak self] in
                 self?.startTreatBehaviorQA()
@@ -415,28 +426,32 @@ final class PetController: NSObject, NSMenuDelegate {
     ) {
         guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         let appearanceIDs = ["continuous-video", "cute-2d", "realistic-2d"]
+        if step == 0,
+           !Set(appearanceIDs).isSubset(of: Set(PetAssetCatalog.availableAppearances.map(\.id))),
+           let referencePet = PetAssetCatalog.availablePets.first(where: {
+               Set(appearanceIDs).isSubset(of: Set($0.appearances.map(\.id)))
+           }) {
+            if settingsWindowController == nil { showVisualSettings() }
+            guard settingsWindowController?.performPetSelectionForQA(id: referencePet.id) == true else {
+                writeAppearanceSwitchQAReport(
+                    reportPath: reportPath,
+                    results: [["requestedPet": referencePet.id, "pass": false]]
+                )
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+                self?.runAppearanceSwitchQA(reportPath: reportPath, step: 0, results: results)
+            }
+            return
+        }
         guard step < appearanceIDs.count else {
-            let pass = results.count == appearanceIDs.count
-                && results.allSatisfy { ($0["pass"] as? Bool) == true }
-            let report: [String: Any] = [
-                "pass": pass,
-                "petID": PetAssetCatalog.petID,
-                "results": results
-            ]
-            do {
-                let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
-                try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
-            } catch {
-                NSLog("Furball2D appearance switch QA failed: %@", error.localizedDescription)
-            }
-            if ProcessInfo.processInfo.environment["FURBALL_APPEARANCE_SWITCH_QA_EXIT"] == "1" {
-                NSApp.terminate(nil)
-            }
+            writeAppearanceSwitchQAReport(reportPath: reportPath, results: results)
             return
         }
 
         let requestedID = appearanceIDs[step]
-        let changed = switchAppearance(to: requestedID)
+        if settingsWindowController == nil { showVisualSettings() }
+        let clickWasDelivered = settingsWindowController?.performAppearanceClickForQA(id: requestedID) == true
         DispatchQueue.main.asyncAfter(deadline: .now() + (requestedID == "continuous-video" ? 1.15 : 0.35)) { [weak self] in
             guard let self else { return }
             let active = PetAssetCatalog.activeAppearance
@@ -447,12 +462,119 @@ final class PetController: NSObject, NSMenuDelegate {
                 "active": active.id,
                 "mode": self.renderer.visualMode == .video ? "video" : "images",
                 "hasVisibleContent": self.renderer.visibleContentRect() != nil,
-                "pass": changed
+                "clickWasDelivered": clickWasDelivered,
+                "pass": clickWasDelivered
                     && active.id == requestedID
                     && self.renderer.visualMode == expectedMode
                     && self.renderer.visibleContentRect() != nil
             ])
             self.runAppearanceSwitchQA(reportPath: reportPath, step: step + 1, results: nextResults)
+        }
+    }
+
+    private func writeAppearanceSwitchQAReport(reportPath: String, results: [[String: Any]]) {
+        let pass = results.count == 3 && results.allSatisfy { ($0["pass"] as? Bool) == true }
+        let report: [String: Any] = [
+            "pass": pass,
+            "petID": PetAssetCatalog.petID,
+            "results": results
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+        } catch {
+            NSLog("Furball2D appearance switch QA failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_APPEARANCE_SWITCH_QA_EXIT"] == "1" {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func startLiveMotionQA(reportPath: String) {
+        guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
+        if groupPlayEnabled {
+            groupPlayEnabled = false
+            groupPlayController.stop()
+            showPetWindow()
+        }
+        _ = switchAppearance(to: "continuous-video")
+        followCursor = false
+        freeRoamEnabled = false
+        posture = .stand
+        motionQATickCount = 0
+        motionQAMaximumTickGap = 0
+        motionQALastTickTime = nil
+        renderer.beginVideoFrameDiagnostics()
+        setLocomotionMode(.fastRun, direction: 1)
+
+        let timer = Timer(timeInterval: 1.0 / movementRefreshRate, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                let deltaTime = self.motionQALastTickTime
+                    .map { min(1.0 / 20.0, max(1.0 / 120.0, now - $0)) }
+                    ?? 1.0 / self.movementRefreshRate
+                if let previous = self.motionQALastTickTime {
+                    self.motionQAMaximumTickGap = max(self.motionQAMaximumTickGap, now - previous)
+                }
+                self.motionQALastTickTime = now
+                self.motionQATickCount += 1
+                let visible = self.panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? self.panel.frame
+                let targetX = self.locomotionDirection > 0 ? visible.maxX + 400 : visible.minX - 400
+                let target = NSPoint(x: targetX, y: visible.midY)
+                let collision = self.updateMovement(
+                    toward: target,
+                    demand: 900,
+                    deadZone: 1,
+                    now: now,
+                    deltaTime: deltaTime
+                )
+                if collision.horizontalWall != 0 {
+                    self.locomotionDirection = -collision.horizontalWall
+                    self.actionFacing = self.locomotionDirection > 0 ? .right : .left
+                }
+            }
+        }
+        motionQATimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
+            self?.finishLiveMotionQA(reportPath: reportPath)
+        }
+    }
+
+    private func finishLiveMotionQA(reportPath: String) {
+        motionQATimer?.invalidate()
+        motionQATimer = nil
+        let diagnostics = renderer.finishVideoFrameDiagnostics()
+        let expectedFPS = movementRefreshRate
+        let minimumExpectedCallbacks = Int(expectedFPS * 7 * 0.80)
+        let pass = diagnostics.drawCallbacks >= minimumExpectedCallbacks
+            && diagnostics.freshFrameRatio >= 0.88
+            && diagnostics.maximumDrawGap <= 0.050
+            && motionQAMaximumTickGap <= 0.050
+            && renderer.visibleContentRect() != nil
+        let report: [String: Any] = [
+            "pass": pass,
+            "displayFPS": expectedFPS,
+            "drawCallbacks": diagnostics.drawCallbacks,
+            "freshVideoFrames": diagnostics.freshVideoFrames,
+            "freshFrameRatio": diagnostics.freshFrameRatio,
+            "averageDrawGap": diagnostics.averageDrawGap,
+            "maximumDrawGap": diagnostics.maximumDrawGap,
+            "movementTicks": motionQATickCount,
+            "maximumMovementTickGap": motionQAMaximumTickGap,
+            "activeAppearance": PetAssetCatalog.activeAppearance.id,
+            "visibleContent": renderer.visibleContentRect() != nil
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+        } catch {
+            NSLog("Furball2D live motion QA report failed: %@", error.localizedDescription)
+        }
+        if ProcessInfo.processInfo.environment["FURBALL_LIVE_MOTION_QA_EXIT"] == "1" {
+            NSApp.terminate(nil)
         }
     }
 
@@ -1150,6 +1272,14 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func stabilizedVisiblePetFrame(refresh: Bool, reset: Bool = false) -> NSRect {
+        if !refresh, !reset, let localFrame = smoothedSpeechLocalFrame {
+            return NSRect(
+                x: panel.frame.minX + localFrame.minX,
+                y: panel.frame.minY + localFrame.minY,
+                width: localFrame.width,
+                height: localFrame.height
+            )
+        }
         let measured = measuredLocalPetFrame()
         if reset || smoothedSpeechLocalFrame == nil {
             smoothedSpeechLocalFrame = measured
@@ -1971,14 +2101,10 @@ final class PetController: NSObject, NSMenuDelegate {
         cursorMotionReadyTime = lastCursorSampleTime
         smoothedCursorSpeed = 0
 
-        // Moving a transparent NSPanel at 120 Hz competes with two 120 fps
-        // alpha decoders during gait crossfades. Sixty spatial updates remain
-        // display-smooth while leaving the render loop free to present every
-        // available video frame.
-        // Both built-in video and image assets are authored for 120 Hz output.
-        // Keeping window translation on the same cadence prevents a sharp pet
-        // from looking as though it is stepping smoothly inside a 60 Hz box.
-        let movementFPS = 120.0
+        // Synchronize panel movement to the actual display. Driving a 60 Hz
+        // WindowServer at 120 unsynchronised updates steals main-thread time
+        // from HEVC-alpha presentation and produces visible uneven cadence.
+        let movementFPS = movementRefreshRate
         let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateCursorFollowing()
@@ -2090,7 +2216,7 @@ final class PetController: NSObject, NSMenuDelegate {
         guard freeRoamEnabled || immediateDesktopInteractionResume != nil else { return }
         isUsingImageFacing = false
         lastFreeRoamSampleTime = ProcessInfo.processInfo.systemUptime
-        let movementFPS = 120.0
+        let movementFPS = movementRefreshRate
         let timer = Timer(timeInterval: 1.0 / movementFPS, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateFreeRoaming()
@@ -2788,9 +2914,11 @@ final class PetController: NSObject, NSMenuDelegate {
             actionFacing = locomotionDirection > 0 ? .right : .left
         }
 
-        let minimumModeInterval = renderer.visualMode == .video ? 0.52 : 0.32
-        let requiredDwell = renderer.visualMode == .video ? 0.22 : 0.12
+        let minimumModeInterval = renderer.visualMode == .video ? 0.84 : 0.32
+        let requiredDwell = renderer.visualMode == .video ? 0.30 : 0.12
         let canChangeMode = now - lastLocomotionChangeTime >= minimumModeInterval
+            && now >= locomotionModeLockUntil
+            && !renderer.isVideoTransitionActive
             || desiredMode == .none
             || locomotionMode == .none
         if desiredMode == locomotionMode {
@@ -2910,6 +3038,9 @@ final class PetController: NSObject, NSMenuDelegate {
         let generation = locomotionGeneration
         let now = ProcessInfo.processInfo.systemUptime
         lastLocomotionChangeTime = now
+        locomotionModeLockUntil = newMode == .none
+            ? 0
+            : now + (renderer.visualMode == .video ? 0.78 : 0.24)
         if previousMode == .none, newMode != .none {
             locomotionVelocity = .zero
             preciseLocomotionOrigin = panel.frame.origin
@@ -2953,6 +3084,12 @@ final class PetController: NSObject, NSMenuDelegate {
                           self.locomotionMode == newMode else { return }
                     self.playLocomotionLoop(newMode, direction: self.locomotionDirection)
                 }
+                if renderer.visualMode == .video {
+                    // Warm the loop decoder while the authored start footage is
+                    // playing. The held first frame is released only at the
+                    // matching start port, eliminating the old cold-decoder pause.
+                    try renderer.prepareVideo(clips.loop)
+                }
             } else {
                 try renderer.play(clips.loop, fadeDuration: renderer.visualMode == .video ? 0.075 : 0.10)
             }
@@ -2974,6 +3111,13 @@ final class PetController: NSObject, NSMenuDelegate {
             locomotionVelocity = .zero
             present(error)
         }
+    }
+
+    private var movementRefreshRate: Double {
+        let screenFPS = panel.screen?.maximumFramesPerSecond
+            ?? NSScreen.main?.maximumFramesPerSecond
+            ?? 60
+        return Double(min(120, max(60, screenFPS)))
     }
 
     private func requestSleep() {
@@ -3420,6 +3564,7 @@ final class PetController: NSObject, NSMenuDelegate {
         AppearanceSettingsSnapshot(
             appearances: PetAssetCatalog.availableAppearances,
             pets: PetAssetCatalog.availablePets,
+            activePetID: PetAssetCatalog.activePet?.id ?? "",
             selectedAppearanceID: PetAssetCatalog.activeAppearance.id,
             language: appLanguage,
             crossfadeEnabled: renderer.crossfadeEnabled,
@@ -3494,6 +3639,14 @@ final class PetController: NSObject, NSMenuDelegate {
         guard let next = PetAssetCatalog.availableAppearances.first(where: { $0.id == id }),
               PetAssetCatalog.availableAppearances.contains(where: { $0.id == id }) else { return false }
 
+        // A direct appearance choice is authoritative. Group Play has its own
+        // image-only renderers, so leaving it active would hide the selected
+        // Nina representation and make a successful click look like a no-op.
+        if groupPlayEnabled {
+            groupPlayEnabled = false
+            groupPlayController.stop()
+            showPetWindow()
+        }
         let resumeModes = interruptCurrentActivityForProfileSwitch()
         guard PetAssetCatalog.selectAppearance(id: id) else { return false }
 
@@ -3546,6 +3699,13 @@ final class PetController: NSObject, NSMenuDelegate {
         guard previousPet.id != id else { return true }
         let previousAppearance = PetAssetCatalog.activeAppearance
         guard PetAssetCatalog.availablePets.contains(where: { $0.id == id }) else { return false }
+        // An explicit pet selection is authoritative. Group Play renders its
+        // own companions and otherwise hides the primary pet panel.
+        if groupPlayEnabled {
+            groupPlayEnabled = false
+            groupPlayController.stop()
+            showPetWindow()
+        }
         let resumeModes = interruptCurrentActivityForProfileSwitch()
         guard PetAssetCatalog.selectPet(id: id), let nextPet = PetAssetCatalog.activePet else { return false }
         let nextAppearance = PetAssetCatalog.activeAppearance

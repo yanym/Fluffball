@@ -10,6 +10,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let isEmbedded: Bool
     private var pets: [PetLibraryPet] = []
     private var selectedPetID: String?
+    private var isRestoringSelection = false
     private var selectedPhotos: [URL] = []
 
     private let segmented = NSSegmentedControl(labels: ["", ""], trackingMode: .selectOne, target: nil, action: nil)
@@ -87,15 +88,17 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     func refresh(language: AppLanguage) {
         self.language = language
         pets = PetAssetCatalog.availablePets
-        selectedPetID = selectedPetID.flatMap { id in pets.contains(where: { $0.id == id }) ? id : nil }
-            ?? PetAssetCatalog.activePet?.id
+        selectedPetID = PetAssetCatalog.activePet?.id
+            ?? selectedPetID.flatMap { id in pets.contains(where: { $0.id == id }) ? id : nil }
             ?? pets.first?.id
         applyLanguage()
         tableView.reloadData()
+        isRestoringSelection = true
         if let selectedPetID, let row = pets.firstIndex(where: { $0.id == selectedPetID }) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             tableView.scrollRowToVisible(row)
         }
+        isRestoringSelection = false
         updateDetails()
     }
 
@@ -213,6 +216,14 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(scroll)
 
+        importButton.bezelStyle = .rounded
+        importButton.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
+        importButton.imagePosition = .imageLeading
+        importButton.target = self
+        importButton.action = #selector(importPack)
+        importButton.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(importButton)
+
         let details = NSView()
         details.wantsLayer = true
         details.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
@@ -233,7 +244,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         useButton.keyEquivalent = "\r"
         useButton.target = self
         useButton.action = #selector(useSelectedPet)
-        let readOnlyBadge = NSTextField(labelWithString: "Read-only library · Furball never changes your files")
+        let readOnlyBadge = NSTextField(labelWithString: "Validated Pet Packs only")
         readOnlyBadge.font = .systemFont(ofSize: 11, weight: .medium)
         readOnlyBadge.textColor = .secondaryLabelColor
         let buttonRow = NSStackView(views: [useButton, readOnlyBadge, NSView()])
@@ -281,7 +292,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             scroll.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 8),
             scroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
             scroll.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 8),
-            scroll.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -8),
+            scroll.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -10),
+            importButton.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
+            importButton.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -14),
+            importButton.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -18),
             details.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             details.trailingAnchor.constraint(equalTo: libraryPage.trailingAnchor),
             details.topAnchor.constraint(equalTo: libraryPage.topAnchor),
@@ -458,6 +472,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         stateHeading.stringValue = language.currentStateHeading
         memoryHeading.stringValue = language.shortMemoryHeading
         clearMemoriesButton.title = language.clearMemoriesButton
+        importButton.title = language.importPetPackButton
         for trait in PetPersonalityTrait.allCases {
             (libraryPage.viewWithIdentifier("trait-title-\(trait.rawValue)") as? NSTextField)?.stringValue = language.personalityTraitTitle(trait)
         }
@@ -526,8 +541,17 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tableView.selectedRow
         guard pets.indices.contains(row) else { return }
-        selectedPetID = pets[row].id
+        let pet = pets[row]
+        selectedPetID = pet.id
         updateDetails()
+        guard !isRestoringSelection, pet.id != PetAssetCatalog.activePet?.id else { return }
+        // Pet rows are commands, not a separate preview state. Requiring a
+        // hidden second click on “Use Pet” left Appearance bound to the old pet
+        // and made Nina's three cards appear broken while Fortune was active.
+        if onSelectPet?(pet.id) != true {
+            selectedPetID = PetAssetCatalog.activePet?.id
+            refresh(language: language)
+        }
     }
 
     private func updateDetails() {

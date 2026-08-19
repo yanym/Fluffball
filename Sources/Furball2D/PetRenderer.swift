@@ -17,9 +17,12 @@ private final class PetVideoChannel: @unchecked Sendable {
     private var endObserver: NSObjectProtocol?
     private var loopTimeObserver: Any?
     private var invalidated = false
+    private var holdsFirstFrame = false
+    private var firstFrameIsReady = false
 
-    init(clip: PetClip) throws {
+    init(clip: PetClip, prepareOnly: Bool = false) throws {
         self.clip = clip
+        holdsFirstFrame = prepareOnly
         player.actionAtItemEnd = .advance
         player.isMuted = true
         player.automaticallyWaitsToMinimizeStalling = false
@@ -78,6 +81,11 @@ private final class PetVideoChannel: @unchecked Sendable {
         player.playImmediately(atRate: 1)
     }
 
+    func activatePreparedPlayback() {
+        holdsFirstFrame = false
+        player.playImmediately(atRate: 1)
+    }
+
     func pause() {
         player.pause()
     }
@@ -93,6 +101,10 @@ private final class PetVideoChannel: @unchecked Sendable {
             if output.hasNewPixelBuffer(forItemTime: itemTime),
                let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
                 lastPixelBuffer = buffer
+                if holdsFirstFrame, !firstFrameIsReady {
+                    firstFrameIsReady = true
+                    player.pause()
+                }
                 return (buffer, true)
             }
         }
@@ -177,6 +189,18 @@ private final class SubmittedFrameResources: @unchecked Sendable {
     }
 }
 
+struct PetVideoFrameDiagnostics {
+    let drawCallbacks: Int
+    let freshVideoFrames: Int
+    let maximumDrawGap: TimeInterval
+    let averageDrawGap: TimeInterval
+
+    var freshFrameRatio: Double {
+        guard drawCallbacks > 0 else { return 0 }
+        return Double(freshVideoFrames) / Double(drawCallbacks)
+    }
+}
+
 @MainActor
 final class PetRenderer: NSObject, MTKViewDelegate {
     let view: PetMetalView
@@ -188,6 +212,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
             return UserDefaults.standard.bool(forKey: "crossfadeEnabled")
         }
         set { UserDefaults.standard.set(newValue, forKey: "crossfadeEnabled") }
+    }
+
+    var isVideoTransitionActive: Bool {
+        channelLock.lock()
+        defer { channelLock.unlock() }
+        return secondaryChannel != nil || crossfadeState != nil
     }
 
     private struct CrossfadeState {
@@ -212,6 +242,7 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     private let channelLock = NSLock()
     private var primaryChannel: PetVideoChannel?
     private var secondaryChannel: PetVideoChannel?
+    private var preparedChannel: PetVideoChannel?
     private var crossfadeState: CrossfadeState?
     private var pendingFadeDuration: TimeInterval = 0.14
     private var currentBlendWeight: Float = 0
@@ -224,6 +255,12 @@ final class PetRenderer: NSObject, MTKViewDelegate {
     private var isMirrored = false
     private var lastPlayRequest: PlayRequest?
     private var lastDrawCallbackTime: CFTimeInterval = 0
+    private var diagnosticsEnabled = false
+    private var diagnosticDrawCallbacks = 0
+    private var diagnosticFreshVideoFrames = 0
+    private var diagnosticGapTotal: TimeInterval = 0
+    private var diagnosticMaximumGap: TimeInterval = 0
+    private var diagnosticLastDrawTime: CFTimeInterval?
 
     private static let shaderSource = """
     #include <metal_stdlib>
@@ -339,9 +376,10 @@ final class PetRenderer: NSObject, MTKViewDelegate {
 
     deinit {
         channelLock.lock()
-        let channels = [primaryChannel, secondaryChannel].compactMap { $0 }
+        let channels = [primaryChannel, secondaryChannel, preparedChannel].compactMap { $0 }
         primaryChannel = nil
         secondaryChannel = nil
+        preparedChannel = nil
         channelLock.unlock()
         channels.forEach { $0.invalidate() }
     }
@@ -357,6 +395,48 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         case .images:
             try playImages(clip, fadeDuration: fadeDuration, completion: completion)
         }
+    }
+
+    /// Decode and hold the first frame of an upcoming video clip. Locomotion
+    /// uses this while the start clip is still playing so the start→loop handoff
+    /// never waits on a cold HEVC-with-alpha decoder.
+    func prepareVideo(_ clip: PetClip) throws {
+        guard visualMode == .video else { return }
+        channelLock.lock()
+        if preparedChannel?.clip.id == clip.id {
+            channelLock.unlock()
+            return
+        }
+        let discarded = preparedChannel
+        preparedChannel = nil
+        channelLock.unlock()
+        discarded?.invalidate()
+
+        let channel = try PetVideoChannel(clip: clip, prepareOnly: true)
+        channel.start()
+        channelLock.lock()
+        preparedChannel = channel
+        channelLock.unlock()
+    }
+
+    func beginVideoFrameDiagnostics() {
+        diagnosticsEnabled = true
+        diagnosticDrawCallbacks = 0
+        diagnosticFreshVideoFrames = 0
+        diagnosticGapTotal = 0
+        diagnosticMaximumGap = 0
+        diagnosticLastDrawTime = nil
+    }
+
+    func finishVideoFrameDiagnostics() -> PetVideoFrameDiagnostics {
+        diagnosticsEnabled = false
+        let measuredGaps = max(0, diagnosticDrawCallbacks - 1)
+        return PetVideoFrameDiagnostics(
+            drawCallbacks: diagnosticDrawCallbacks,
+            freshVideoFrames: diagnosticFreshVideoFrames,
+            maximumDrawGap: diagnosticMaximumGap,
+            averageDrawGap: measuredGaps > 0 ? diagnosticGapTotal / Double(measuredGaps) : 0
+        )
     }
 
     func playImageAnimation(
@@ -406,11 +486,23 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         completion: (() -> Void)?
     ) throws {
         imageAnimator.stop()
-        let channel = try PetVideoChannel(clip: clip)
+        channelLock.lock()
+        let prepared = preparedChannel
+        preparedChannel = nil
+        channelLock.unlock()
+
+        let channel: PetVideoChannel
+        if let prepared, prepared.clip.id == clip.id {
+            channel = prepared
+            channel.activatePreparedPlayback()
+        } else {
+            prepared?.invalidate()
+            channel = try PetVideoChannel(clip: clip)
+            channel.start()
+        }
         channel.onClipFinished = {
             DispatchQueue.main.async { completion?() }
         }
-        channel.start()
 
         channelLock.lock()
         if primaryChannel == nil {
@@ -462,6 +554,15 @@ final class PetRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
+        if diagnosticsEnabled {
+            diagnosticDrawCallbacks += 1
+            if let previous = diagnosticLastDrawTime {
+                let gap = now - previous
+                diagnosticGapTotal += gap
+                diagnosticMaximumGap = max(diagnosticMaximumGap, gap)
+            }
+            diagnosticLastDrawTime = now
+        }
         lastDrawCallbackTime = now
         if visualMode == .images {
             drawImage(in: view, at: now)
@@ -471,14 +572,22 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         channelLock.lock()
         let primary = primaryChannel
         let secondary = secondaryChannel
+        let prepared = preparedChannel
         var fade = crossfadeState
         let requestedDuration = pendingFadeDuration
         channelLock.unlock()
+
+        // Pull once per display callback until a prepared channel captures and
+        // pauses on its first decoded frame. It never enters the render blend.
+        _ = prepared?.updatePixelBuffer(hostTime: now)
 
         let primaryFrame: (buffer: CVPixelBuffer?, isNew: Bool) =
             primary?.updatePixelBuffer(hostTime: now) ?? (buffer: nil, isNew: false)
         let secondaryFrame: (buffer: CVPixelBuffer?, isNew: Bool) =
             secondary?.updatePixelBuffer(hostTime: now) ?? (buffer: nil, isNew: false)
+        if diagnosticsEnabled, primaryFrame.isNew || secondaryFrame.isNew {
+            diagnosticFreshVideoFrames += 1
+        }
 
         var blendWeight: Float = 0
         var fadeIsActive = false
@@ -638,18 +747,23 @@ final class PetRenderer: NSObject, MTKViewDelegate {
                 .intersection(view.bounds)
         }
 
-        // Visibility checks run even before MTKView receives its first display
-        // callback. Pull once here so startup recovery measures the decoder's
-        // real state rather than mistaking a late display link for missing media.
-        let now = CACurrentMediaTime()
         channelLock.lock()
         let primary = primaryChannel
         let secondary = secondaryChannel
         channelLock.unlock()
-        let buffers = [
-            primary?.updatePixelBuffer(hostTime: now).buffer,
-            secondary?.updatePixelBuffer(hostTime: now).buffer
-        ].compactMap { $0 }
+        var buffers = [primary?.latestPixelBuffer(), secondary?.latestPixelBuffer()].compactMap { $0 }
+        if buffers.isEmpty {
+            // Startup recovery may run before the first MTKView callback. Pull
+            // only in that exceptional empty-cache case. Repeated silhouette
+            // queries must never consume AVPlayerItemVideoOutput frames ahead
+            // of the Metal display loop; doing so reduced visible motion to
+            // roughly 20 fps while the panel was moving.
+            let now = CACurrentMediaTime()
+            buffers = [
+                primary?.updatePixelBuffer(hostTime: now).buffer,
+                secondary?.updatePixelBuffer(hostTime: now).buffer
+            ].compactMap { $0 }
+        }
 
         let rects = buffers.compactMap { visibleRect(in: $0, alphaThreshold: alphaThreshold) }
         guard var result = rects.first else { return nil }
@@ -721,9 +835,10 @@ final class PetRenderer: NSObject, MTKViewDelegate {
 
     private func clearVideoChannels() {
         channelLock.lock()
-        let channels = [primaryChannel, secondaryChannel].compactMap { $0 }
+        let channels = [primaryChannel, secondaryChannel, preparedChannel].compactMap { $0 }
         primaryChannel = nil
         secondaryChannel = nil
+        preparedChannel = nil
         crossfadeState = nil
         currentBlendWeight = 0
         channelLock.unlock()

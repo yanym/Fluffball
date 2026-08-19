@@ -56,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        // Opening a file with Furball must never install, copy, move, or delete
-        // it. Pet packs are bundled by the developer-side packaging workflow.
+        // Imports require the explicit in-app picker and validation flow. Do not
+        // install a Finder-opened package without the same user-facing review.
         sender.reply(toOpenOrPrint: .failure)
     }
 }

@@ -65,7 +65,10 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         didSet { appearanceController.onPreviewSpeech = onPreviewSpeech }
     }
     var onSelectPet: ((String) -> Bool)? {
-        didSet { libraryController.onSelectPet = onSelectPet }
+        didSet {
+            libraryController.onSelectPet = onSelectPet
+            appearanceController.onPetSelected = onSelectPet
+        }
     }
     var onLibraryChanged: (() -> Void)? {
         didSet { libraryController.onLibraryChanged = onLibraryChanged }
@@ -129,6 +132,20 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         VisualQACapture.schedule(view: window?.contentView, name: "settings-\(section.rawValue)")
     }
 
+    @discardableResult
+    func performAppearanceClickForQA(id: String) -> Bool {
+        select(.appearance)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        return appearanceController.performAppearanceClickForQA(id: id)
+    }
+
+    @discardableResult
+    func performPetSelectionForQA(id: String) -> Bool {
+        select(.appearance)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        return appearanceController.performPetSelectionForQA(id: id)
+    }
+
     private func buildInterface() {
         guard let window else { return }
         let root = NSVisualEffectView()
@@ -160,7 +177,6 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
         configureSidebarButton(speechButton, symbol: "bubble.left.and.bubble.right", action: #selector(showSpeech))
         configureSidebarButton(libraryButton, symbol: "square.grid.2x2", action: #selector(showLibrary))
         configureSidebarButton(creatorButton, symbol: "wand.and.stars", action: #selector(showCreator))
-        creatorButton.isHidden = true
         let companionLabel = sidebarSectionLabel("COMPANION")
         let collectionLabel = sidebarSectionLabel("COLLECTION")
         let navigation = NSStackView(views: [

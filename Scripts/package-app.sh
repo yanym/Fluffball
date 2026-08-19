@@ -99,6 +99,8 @@ cp "$PROJECT_DIR/Support/AppIcon.icns" "$STAGE_APP/Contents/Resources/AppIcon.ic
 cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/Assets" "$STAGE_APP/Contents/Resources/Assets"
 cp -R "$BUILD_DIR/Furball2D_Furball2D.bundle/CreatorSkill" "$STAGE_APP/Contents/Resources/CreatorSkill"
 find "$STAGE_APP" -type f -name '.DS_Store' -delete
+find "$STAGE_APP/Contents/Resources/CreatorSkill" -type d -name '__pycache__' -prune -exec rm -rf {} +
+find "$STAGE_APP/Contents/Resources/CreatorSkill" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 # Desktop may be managed by File Provider and can add FinderInfo to a new app. Sign and verify
 # in a clean /tmp staging area, then create a ZIP without extended attributes.

@@ -3,6 +3,7 @@ import AppKit
 struct AppearanceSettingsSnapshot {
     let appearances: [PetAppearanceOption]
     let pets: [PetLibraryPet]
+    let activePetID: String
     let selectedAppearanceID: String
     let language: AppLanguage
     let crossfadeEnabled: Bool
@@ -33,6 +34,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     }
 
     var onAppearanceSelected: ((String) -> Bool)?
+    var onPetSelected: ((String) -> Bool)?
     var onCrossfadeChanged: ((Bool) -> Void)?
     var onFollowCursorChanged: ((Bool) -> Void)?
     var onFreeRoamChanged: ((Bool) -> Void)?
@@ -54,6 +56,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private var pages: [Page: NSView] = [:]
     private var selectedPage: Page = .general
     private let imageModeNote = NSTextField(wrappingLabelWithString: "")
+    private let petPopup = NSPopUpButton()
+    private let appearancePopup = NSPopUpButton()
     private let appearanceStack = NSStackView()
     private let crossfadeSwitch = NSSwitch()
     private weak var crossfadeRow: NSView?
@@ -104,6 +108,28 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     func update(snapshot: AppearanceSettingsSnapshot) {
         self.snapshot = snapshot
         applySnapshot()
+    }
+
+    /// Exercises the same NSButton target/action path as a real user click.
+    /// This intentionally avoids calling the controller callback directly so
+    /// regression QA catches broken hit targets and disconnected card actions.
+    @discardableResult
+    func performAppearanceClickForQA(id: String) -> Bool {
+        guard let card = appearanceStack.arrangedSubviews
+            .compactMap({ $0 as? AppearanceCardView })
+            .first(where: { $0.identifier?.rawValue == "appearance-card-\(id)" }) else { return false }
+        card.activateForQA()
+        return true
+    }
+
+    @discardableResult
+    func performPetSelectionForQA(id: String) -> Bool {
+        guard let item = petPopup.itemArray.first(where: { ($0.representedObject as? String) == id }) else {
+            return false
+        }
+        petPopup.select(item)
+        activePetChanged(petPopup)
+        return true
     }
 
     func present() {
@@ -235,6 +261,10 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     }
 
     private func makeAppearanceContent(language: AppLanguage) -> NSView {
+        petPopup.target = self
+        petPopup.action = #selector(activePetChanged(_:))
+        appearancePopup.target = self
+        appearancePopup.action = #selector(activeAppearanceChanged(_:))
         appearanceStack.orientation = .horizontal
         appearanceStack.alignment = .top
         appearanceStack.distribution = .fillEqually
@@ -244,12 +274,16 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         imageModeNote.maximumNumberOfLines = 2
         let crossfadeRow = makeToggleRow(title: language.crossfadeMenu, toggle: crossfadeSwitch, action: #selector(crossfadeChanged(_:)))
         self.crossfadeRow = crossfadeRow
-        let stack = NSStackView(views: [appearanceStack, crossfadeRow, imageModeNote])
+        let petRow = makeValueRow(title: "Pet", control: petPopup)
+        let modeRow = makeValueRow(title: "Appearance Mode", control: appearancePopup)
+        let stack = NSStackView(views: [petRow, modeRow, appearanceStack, crossfadeRow, imageModeNote])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
         appearanceStack.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         appearanceStack.heightAnchor.constraint(equalToConstant: 140).isActive = true
+        petRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        modeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         crossfadeRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
@@ -459,6 +493,25 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         guard isWindowLoaded else { return }
         let language = snapshot.language
         imageModeNote.stringValue = language.videoOptionsUnavailable
+        petPopup.removeAllItems()
+        for pet in snapshot.pets {
+            petPopup.addItem(withTitle: pet.name)
+            petPopup.lastItem?.representedObject = pet.id
+        }
+        if let index = petPopup.itemArray.firstIndex(where: { ($0.representedObject as? String) == snapshot.activePetID }) {
+            petPopup.selectItem(at: index)
+        }
+        appearancePopup.removeAllItems()
+        for appearance in snapshot.appearances {
+            appearancePopup.addItem(withTitle: appearance.title(for: language))
+            appearancePopup.lastItem?.representedObject = appearance.id
+        }
+        appearancePopup.isEnabled = snapshot.canChangeAppearance && snapshot.appearances.count > 1
+        if let index = appearancePopup.itemArray.firstIndex(where: {
+            ($0.representedObject as? String) == snapshot.selectedAppearanceID
+        }) {
+            appearancePopup.selectItem(at: index)
+        }
         appearanceStack.arrangedSubviews.forEach {
             appearanceStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -470,30 +523,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                 isSelected: option.id == snapshot.selectedAppearanceID,
                 isEnabled: snapshot.canChangeAppearance
             ) { [weak self] id in
-                guard let self else { return }
-                if self.onAppearanceSelected?(id) == true {
-                    self.snapshot = AppearanceSettingsSnapshot(
-                        appearances: self.snapshot.appearances,
-                        pets: self.snapshot.pets,
-                        selectedAppearanceID: id,
-                        language: self.snapshot.language,
-                        crossfadeEnabled: self.snapshot.crossfadeEnabled,
-                        followCursor: self.snapshot.followCursor,
-                        freeRoam: self.snapshot.freeRoam,
-                        directionalLook: self.snapshot.directionalLook,
-                        desktopInteractions: self.snapshot.desktopInteractions,
-                        alwaysOnTop: self.snapshot.alwaysOnTop,
-                        petScale: self.snapshot.petScale,
-                        fullPassThrough: self.snapshot.fullPassThrough,
-                        autoBehavior: self.snapshot.autoBehavior,
-                        speechBubbles: self.snapshot.speechBubbles,
-                        talkativeness: self.snapshot.talkativeness,
-                        canChangeAppearance: self.snapshot.canChangeAppearance,
-                        groupPlayEnabled: self.snapshot.groupPlayEnabled,
-                        groupPetIDs: self.snapshot.groupPetIDs
-                    )
-                    self.applySnapshot()
-                }
+                self?.selectAppearance(id)
             }
             appearanceStack.addArrangedSubview(card)
         }
@@ -531,6 +561,58 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         })?.kind == .continuousVideo
         crossfadeRow?.isHidden = !isVideo
         imageModeNote.isHidden = isVideo
+    }
+
+    @objc private func activePetChanged(_ sender: NSPopUpButton) {
+        guard let petID = sender.selectedItem?.representedObject as? String,
+              petID != snapshot.activePetID else { return }
+        if onPetSelected?(petID) != true,
+           let previous = sender.itemArray.firstIndex(where: { ($0.representedObject as? String) == snapshot.activePetID }) {
+            sender.selectItem(at: previous)
+        }
+    }
+
+    @objc private func activeAppearanceChanged(_ sender: NSPopUpButton) {
+        guard let appearanceID = sender.selectedItem?.representedObject as? String else { return }
+        selectAppearance(appearanceID)
+    }
+
+    private func selectAppearance(_ id: String) {
+        guard id != snapshot.selectedAppearanceID else { return }
+        guard onAppearanceSelected?(id) == true else {
+            if let previous = appearancePopup.itemArray.firstIndex(where: {
+                ($0.representedObject as? String) == snapshot.selectedAppearanceID
+            }) {
+                appearancePopup.selectItem(at: previous)
+            }
+            return
+        }
+        // The callback synchronously refreshes the complete Settings snapshot.
+        // Reapply only if a standalone host did not provide that refresh.
+        if snapshot.selectedAppearanceID != id {
+            snapshot = AppearanceSettingsSnapshot(
+                appearances: snapshot.appearances,
+                pets: snapshot.pets,
+                activePetID: snapshot.activePetID,
+                selectedAppearanceID: id,
+                language: snapshot.language,
+                crossfadeEnabled: snapshot.crossfadeEnabled,
+                followCursor: snapshot.followCursor,
+                freeRoam: snapshot.freeRoam,
+                directionalLook: snapshot.directionalLook,
+                desktopInteractions: snapshot.desktopInteractions,
+                alwaysOnTop: snapshot.alwaysOnTop,
+                petScale: snapshot.petScale,
+                fullPassThrough: snapshot.fullPassThrough,
+                autoBehavior: snapshot.autoBehavior,
+                speechBubbles: snapshot.speechBubbles,
+                talkativeness: snapshot.talkativeness,
+                canChangeAppearance: snapshot.canChangeAppearance,
+                groupPlayEnabled: snapshot.groupPlayEnabled,
+                groupPetIDs: snapshot.groupPetIDs
+            )
+            applySnapshot()
+        }
     }
 
     @objc private func crossfadeChanged(_ sender: NSSwitch) {
@@ -617,10 +699,11 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 }
 
 @MainActor
-final class AppearanceCardView: NSControl {
+final class AppearanceCardView: NSView {
     private let optionID: String
     private let onSelect: (String) -> Void
     private let selected: Bool
+    private let cardIsEnabled: Bool
     private var trackingAreaToken: NSTrackingArea?
     private var hovering = false
 
@@ -634,10 +717,12 @@ final class AppearanceCardView: NSControl {
         optionID = option.id
         self.onSelect = onSelect
         selected = isSelected
+        cardIsEnabled = isEnabled
         super.init(frame: .zero)
-        self.isEnabled = isEnabled
-        target = self
-        action = #selector(selectCard)
+        identifier = NSUserInterfaceItemIdentifier("appearance-card-\(option.id)")
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(option.title(for: language))
+        setAccessibilityEnabled(isEnabled)
         wantsLayer = true
         layer?.cornerRadius = 15
         layer?.borderWidth = isSelected ? 1.5 : 1
@@ -697,6 +782,24 @@ final class AppearanceCardView: NSControl {
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3),
             subtitle.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -10)
         ])
+
+        // A native button sits above all decorative labels and icons. The
+        // previous card used its content views as hit targets, so AppKit sent
+        // real clicks to a static text field instead of the selection action.
+        let clickOverlay = NSButton(title: "", target: self, action: #selector(cardClicked))
+        clickOverlay.isBordered = false
+        clickOverlay.focusRingType = .none
+        clickOverlay.setButtonType(.momentaryChange)
+        clickOverlay.isEnabled = isEnabled
+        clickOverlay.setAccessibilityLabel(option.title(for: language))
+        clickOverlay.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(clickOverlay)
+        NSLayoutConstraint.activate([
+            clickOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
+            clickOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
+            clickOverlay.topAnchor.constraint(equalTo: topAnchor),
+            clickOverlay.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -726,16 +829,27 @@ final class AppearanceCardView: NSControl {
         updateCardAppearance()
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isEnabled, bounds.contains(point) else { return nil }
-        // Treat the icon, labels, and radio indicator as one card-sized target.
-        // Otherwise AppKit may deliver the click to a label subview and make
-        // appearance selection seem intermittent.
-        return self
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    @objc private func cardClicked() {
+        guard cardIsEnabled else { return }
+        // Do not rebuild this card while AppKit is still finishing its mouse
+        // tracking callback. Deferring one run-loop turn keeps consecutive
+        // physical clicks alive after the first appearance change.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onSelect(self.optionID)
+        }
     }
 
-    @objc private func selectCard() {
-        guard isEnabled else { return }
+    override func accessibilityPerformPress() -> Bool {
+        guard cardIsEnabled else { return false }
+        onSelect(optionID)
+        return true
+    }
+
+    func activateForQA() {
+        guard cardIsEnabled else { return }
         onSelect(optionID)
     }
 
