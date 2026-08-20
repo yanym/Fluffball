@@ -187,11 +187,17 @@ private final class TreatView: NSView {
 @MainActor
 final class TreatPlacementOverlay {
     private var panels: [NSPanel] = []
+    private var localMouseMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var selectionHandler: ((NSPoint) -> Void)?
+    private var cancellationHandler: (() -> Void)?
 
-    var isActive: Bool { !panels.isEmpty }
+    var isActive: Bool { selectionHandler != nil }
 
     func begin(level: NSWindow.Level, onSelect: @escaping (NSPoint) -> Void, onCancel: @escaping () -> Void) {
         cancel()
+        selectionHandler = onSelect
+        cancellationHandler = onCancel
         let image = TreatView.loadTreatImage()?.resized(to: NSSize(width: 42, height: 42))
         let cursor = image.map { NSCursor(image: $0, hotSpot: NSPoint(x: 21, y: 21)) } ?? .crosshair
         for screen in NSScreen.screens {
@@ -199,26 +205,112 @@ final class TreatPlacementOverlay {
             let view = TreatPlacementView(frame: NSRect(origin: .zero, size: screen.frame.size), cursor: cursor)
             view.onSelect = { [weak self] localPoint in
                 let point = NSPoint(x: screen.frame.minX + localPoint.x, y: screen.frame.minY + localPoint.y)
-                self?.cancel()
-                onSelect(point)
+                self?.select(at: point)
             }
-            view.onCancel = { [weak self] in self?.cancel(); onCancel() }
+            view.onCancel = { [weak self] in self?.cancelSelection() }
             panel.contentView = view
             panel.isOpaque = false
-            panel.backgroundColor = .clear
+            // Fully transparent nonactivating windows can be excluded from
+            // WindowServer hit testing. A visually imperceptible backing color
+            // keeps the entire desktop surface clickable without dimming it.
+            panel.backgroundColor = NSColor.black.withAlphaComponent(0.001)
             panel.hasShadow = false
+            panel.ignoresMouseEvents = false
+            panel.acceptsMouseMovedEvents = true
             panel.level = NSWindow.Level(rawValue: level.rawValue + 3)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
-            panel.orderFrontRegardless()
             panels.append(panel)
+            panel.orderFrontRegardless()
+            panel.invalidateCursorRects(for: view)
         }
+        installMouseMonitorFallbacks()
+        cursor.set()
     }
 
     func cancel() {
+        removeMouseMonitorFallbacks()
         panels.forEach { $0.orderOut(nil) }
         panels.removeAll()
+        selectionHandler = nil
+        cancellationHandler = nil
+        NSCursor.arrow.set()
+    }
+
+    /// Packaging QA drives the exact same selection path after the overlay is
+    /// installed. This catches regressions where the menu command creates an
+    /// overlay but never connects it to the throw/chase flow.
+    @discardableResult
+    func selectForQA(at point: NSPoint) -> Bool {
+        guard isActive else { return false }
+        select(at: point)
+        return true
+    }
+
+    private func select(at point: NSPoint) {
+        guard let handler = selectionHandler else { return }
+        tearDown()
+        handler(point)
+    }
+
+    private func cancelSelection() {
+        guard let handler = cancellationHandler else {
+            cancel()
+            return
+        }
+        tearDown()
+        handler()
+    }
+
+    private func tearDown() {
+        removeMouseMonitorFallbacks()
+        panels.forEach { $0.orderOut(nil) }
+        panels.removeAll()
+        selectionHandler = nil
+        cancellationHandler = nil
+        NSCursor.arrow.set()
+    }
+
+    private func installMouseMonitorFallbacks() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            let eventType = event.type
+            let mouseLocation = NSEvent.mouseLocation
+            let consumed = MainActor.assumeIsolated {
+                guard let self, self.isActive else { return false }
+                if eventType == .rightMouseDown {
+                    self.cancelSelection()
+                } else {
+                    self.select(at: mouseLocation)
+                }
+                return true
+            }
+            return consumed ? nil : event
+        }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            let eventType = event.type
+            let mouseLocation = NSEvent.mouseLocation
+            DispatchQueue.main.async {
+                guard let self, self.isActive else { return }
+                if eventType == .rightMouseDown {
+                    self.cancelSelection()
+                } else {
+                    self.select(at: mouseLocation)
+                }
+            }
+        }
+    }
+
+    private func removeMouseMonitorFallbacks() {
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
     }
 }
 

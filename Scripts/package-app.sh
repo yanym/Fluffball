@@ -85,6 +85,12 @@ done
 # explicitly opt out after running an equivalent UI test stage.
 if [[ "${FURBALL_SKIP_BEHAVIOR_QA:-0}" != "1" ]]; then
   "$SCRIPT_DIR/behavior-qa.sh"
+  if [[ "$video_mode_enabled" == true ]]; then
+    FURBALL_BEHAVIOR_QA_APPEARANCE=continuous-video "$SCRIPT_DIR/behavior-qa.sh"
+  fi
+fi
+if [[ "$video_mode_enabled" == true && "${FURBALL_SKIP_LIVE_MOTION_QA:-0}" != "1" ]]; then
+  "$SCRIPT_DIR/live-motion-qa.sh"
 fi
 
 swift build -c release

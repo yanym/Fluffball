@@ -130,6 +130,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private var motionQATickCount = 0
     private var motionQAMaximumTickGap: TimeInterval = 0
     private var motionQALastTickTime: TimeInterval?
+    private var motionQAReachedFastRun = false
     private var startupVisibilityGeneration = 0
     private var smoothedSpeechLocalFrame: NSRect?
     private var behaviorEpoch = 0
@@ -569,8 +570,9 @@ final class PetController: NSObject, NSMenuDelegate {
         motionQATickCount = 0
         motionQAMaximumTickGap = 0
         motionQALastTickTime = nil
+        motionQAReachedFastRun = false
         renderer.beginVideoFrameDiagnostics()
-        setLocomotionMode(.fastRun, direction: 1)
+        setLocomotionMode(.none, direction: 1)
 
         let timer = Timer(timeInterval: 1.0 / movementRefreshRate, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -592,8 +594,10 @@ final class PetController: NSObject, NSMenuDelegate {
                     demand: 900,
                     deadZone: 1,
                     now: now,
-                    deltaTime: deltaTime
+                    deltaTime: deltaTime,
+                    ignoresEnergyLimit: true
                 )
+                if self.locomotionMode == .fastRun { self.motionQAReachedFastRun = true }
                 if collision.horizontalWall != 0 {
                     self.locomotionDirection = -collision.horizontalWall
                     self.actionFacing = self.locomotionDirection > 0 ? .right : .left
@@ -618,6 +622,7 @@ final class PetController: NSObject, NSMenuDelegate {
             && diagnostics.freshFrameRatio >= 0.88
             && diagnostics.maximumDrawGap <= 0.050
             && motionQAMaximumTickGap <= 0.050
+            && motionQAReachedFastRun
             && renderer.visibleContentRect() != nil
         let report: [String: Any] = [
             "pass": pass,
@@ -629,6 +634,7 @@ final class PetController: NSObject, NSMenuDelegate {
             "maximumDrawGap": diagnostics.maximumDrawGap,
             "movementTicks": motionQATickCount,
             "maximumMovementTickGap": motionQAMaximumTickGap,
+            "reachedFastRun": motionQAReachedFastRun,
             "activeAppearance": PetAssetCatalog.activeAppearance.id,
             "visibleContent": renderer.visibleContentRect() != nil
         ]
@@ -787,10 +793,14 @@ final class PetController: NSObject, NSMenuDelegate {
             x: min(visibleFrame.maxX - 36, max(visibleFrame.minX + 36, panel.frame.midX + horizontalOffset)),
             y: min(visibleFrame.maxY - 44, max(visibleFrame.minY + 44, panel.frame.midY + 46))
         )
-        guard beginTreatChase(at: target) else {
-            behaviorQAOutcome = "could-not-start"
-            writeBehaviorQAReport(to: reportPath)
-            return
+        throwTreatFromMenu()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+            guard let self else { return }
+            guard self.treatPlacementOverlay.selectForQA(at: target) else {
+                self.behaviorQAOutcome = "placement-overlay-not-active"
+                self.writeBehaviorQAReport(to: reportPath)
+                return
+            }
         }
     }
 
@@ -805,6 +815,7 @@ final class PetController: NSObject, NSMenuDelegate {
             && treatTarget == nil
             && treatChaseTimer == nil
             && !desktopTreat.isVisible
+            && !treatPlacementOverlay.isActive
             && locomotionMode == .none
             && panel.isVisible
             && contentRect != nil
@@ -812,7 +823,7 @@ final class PetController: NSObject, NSMenuDelegate {
             && treatMemoryRecorded
         let report: [String: Any] = [
             "pass": passed,
-            "scenario": "throw-treat-reach-consume-stop",
+            "scenario": "menu-place-throw-reach-consume-stop",
             "outcome": behaviorQAOutcome ?? "unknown",
             "elapsedSeconds": elapsed,
             "petPanelVisible": panel.isVisible,
@@ -820,6 +831,7 @@ final class PetController: NSObject, NSMenuDelegate {
             "statusItemAvailable": statusItem?.button != nil,
             "treatTargetCleared": treatTarget == nil,
             "treatWindowHidden": !desktopTreat.isVisible,
+            "placementOverlayClosed": !treatPlacementOverlay.isActive,
             "treatTimerStopped": treatChaseTimer == nil,
             "locomotionStopped": locomotionMode == .none,
             "treatMemoryRecorded": treatMemoryRecorded
@@ -1024,9 +1036,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let actions = NSMenu(title: appLanguage.actionsMenu)
         actions.addItem(makeMenuItem(title: appLanguage.interactMenu, symbol: "hand.point.up.left.fill", action: #selector(interactFromMenu)))
         actions.addItem(makeMenuItem(title: appLanguage.speakMenu, symbol: "bubble.left.fill", action: #selector(speakFromMenu)))
-        if renderer.visualMode == .images {
-            actions.addItem(makeMenuItem(title: appLanguage.throwTreatMenu, symbol: "bone.fill", action: #selector(throwTreatFromMenu)))
-        }
+        actions.addItem(makeMenuItem(title: appLanguage.throwTreatMenu, symbol: "bone.fill", action: #selector(throwTreatFromMenu)))
         if !PetAssetCatalog.imageActions.isEmpty {
             actions.addItem(makeCuteActionsMenuItem())
         }
@@ -2323,7 +2333,8 @@ final class PetController: NSObject, NSMenuDelegate {
             demand: demand,
             deadZone: deadZone,
             now: now,
-            deltaTime: deltaTime
+            deltaTime: deltaTime,
+            ignoresEnergyLimit: true
         )
     }
 
@@ -2873,9 +2884,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @discardableResult
     private func beginTreatChase(at requestedPoint: NSPoint? = nil, treatAlreadyVisible: Bool = false) -> Bool {
-        guard renderer.visualMode == .images,
-              panel.isVisible,
-              !isTransitioning,
+        guard panel.isVisible,
               treatTarget == nil,
               !alwaysSleepEnabled else { return false }
         registerUserActivity()
@@ -2948,7 +2957,8 @@ final class PetController: NSObject, NSMenuDelegate {
             demand: max(180, centerDistance * 1.15),
             deadZone: 8 * petScale,
             now: now,
-            deltaTime: deltaTime
+            deltaTime: deltaTime,
+            ignoresEnergyLimit: true
         )
     }
 
@@ -3016,7 +3026,8 @@ final class PetController: NSObject, NSMenuDelegate {
         let completion: () -> Void = { [weak self] in
             self?.resumeAfterTreatChase()
         }
-        if let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.sniff" }) {
+        if renderer.visualMode == .images,
+           let action = PetAssetCatalog.imageActions.first(where: { $0.id == "gesture.sniff" }) {
             performImageAction(action, completion: completion)
         } else {
             completion()
@@ -3086,12 +3097,18 @@ final class PetController: NSObject, NSMenuDelegate {
         demand: CGFloat,
         deadZone: CGFloat,
         now: TimeInterval,
-        deltaTime: TimeInterval
+        deltaTime: TimeInterval,
+        ignoresEnergyLimit: Bool = false
     ) -> MovementBoundaryCollision {
         let deltaX = target.x - panel.frame.midX
         let deltaY = target.y - panel.frame.midY
         let distance = hypot(deltaX, deltaY)
-        let desiredMode = desiredLocomotionMode(distance: distance, demand: demand, deadZone: deadZone)
+        let desiredMode = desiredLocomotionMode(
+            distance: distance,
+            demand: demand,
+            deadZone: deadZone,
+            ignoresEnergyLimit: ignoresEnergyLimit
+        )
 
         if distance > deadZone + 18, abs(deltaX) > 18 * petScale {
             locomotionDirection = deltaX >= 0 ? 1 : -1
@@ -3106,13 +3123,18 @@ final class PetController: NSObject, NSMenuDelegate {
             || desiredMode == .none
             || locomotionMode == .none
         if desiredMode == locomotionMode {
+            if pendingLocomotionMode != nil { renderer.discardPreparedVideo() }
             pendingLocomotionMode = nil
         } else if desiredMode == .none || locomotionMode == .none {
+            if desiredMode == .none { renderer.discardPreparedVideo() }
             pendingLocomotionMode = nil
             setLocomotionMode(desiredMode, direction: locomotionDirection)
         } else if pendingLocomotionMode != desiredMode {
             pendingLocomotionMode = desiredMode
             pendingLocomotionSince = now
+            if renderer.visualMode == .video, let loop = desiredMode.clips?.loop {
+                try? renderer.prepareVideo(loop)
+            }
         } else if canChangeMode, now - pendingLocomotionSince >= requiredDwell {
             pendingLocomotionMode = nil
             setLocomotionMode(desiredMode, direction: locomotionDirection)
@@ -3185,7 +3207,8 @@ final class PetController: NSObject, NSMenuDelegate {
     private func desiredLocomotionMode(
         distance: CGFloat,
         demand: CGFloat,
-        deadZone: CGFloat
+        deadZone: CGFloat,
+        ignoresEnergyLimit: Bool
     ) -> LocomotionMode {
         guard distance > deadZone else { return .none }
 
@@ -3207,8 +3230,8 @@ final class PetController: NSObject, NSMenuDelegate {
             desired = demand < 430 && distance < 390 * petScale ? .slowRun : .fastRun
         }
 
-        if petMind.state.energy < 0.18 { return .walk }
-        if petMind.state.energy < 0.38, desired == .fastRun { return .slowRun }
+        if !ignoresEnergyLimit, petMind.state.energy < 0.18 { return .walk }
+        if !ignoresEnergyLimit, petMind.state.energy < 0.38, desired == .fastRun { return .slowRun }
         return desired
     }
 
@@ -3571,7 +3594,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     @objc private func throwTreatFromMenu() {
         panel.orderFrontRegardless()
-        guard renderer.visualMode == .images, !alwaysSleepEnabled, !treatPlacementOverlay.isActive else { return }
+        guard !alwaysSleepEnabled, !treatPlacementOverlay.isActive else { return }
         let throwOrigin = NSEvent.mouseLocation
         showSpeech(appLanguage.treatPlacementHint)
         DispatchQueue.main.async { [weak self] in

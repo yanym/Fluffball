@@ -11,6 +11,7 @@ This file is mandatory guidance for any Agent working on Furball. When a user pr
 5. An “idle video” is not automatically loopable. If the first and last poses differ, a direct loop will jump every few seconds.
 6. Fix quality problems in offline assets first. Do not hide bad cut points with a long runtime crossfade; realistic pets develop double heads, paws, and fur trails.
 7. The shipping app must remain read-only toward user files, folders, and Finder layout. Desktop interaction may read names and system icons and must use app-owned visual proxies. Never add AppleScript, Finder icon movement, or runtime create/copy/move/rename/trash/delete paths. `Scripts/audit-runtime-safety.sh` is mandatory before packaging.
+8. Every package containing Live Motion must pass `Scripts/live-motion-qa.sh`, including a real stand-to-fast-run transition and sustained decoded-frame diagnostics. Every package must also pass `Scripts/behavior-qa.sh` through the menu-driven two-click treat placement flow; direct controller calls do not qualify as interaction QA. Public DMG releases must use `FURBALL_CODESIGN_IDENTITY` and `FURBALL_NOTARY_PROFILE` so both the embedded app and final DMG are signed, notarized, stapled, and validated before upload.
 
 ## 1.1 Identity references for new AI videos
 

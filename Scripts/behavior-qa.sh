@@ -5,13 +5,18 @@ SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
 REPORT_PATH="$(mktemp /tmp/furball-behavior-qa.XXXXXX.json)"
 LOG_PATH="$(mktemp /tmp/furball-behavior-qa.XXXXXX.log)"
+PREFS_DIR="$(mktemp -d /tmp/furball-behavior-qa-prefs.XXXXXX)"
 APP_PID=""
+QA_APPEARANCE="${FURBALL_BEHAVIOR_QA_APPEARANCE:-realistic-2d}"
 
 cleanup() {
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
     kill "$APP_PID" 2>/dev/null || true
   fi
   rm -f "$REPORT_PATH" "$LOG_PATH"
+  if [[ "$PREFS_DIR" == /tmp/furball-behavior-qa-prefs.* && -d "$PREFS_DIR" ]]; then
+    rm -rf "$PREFS_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -20,7 +25,8 @@ swift build >/dev/null
 BIN_PATH="$(swift build --show-bin-path)/Furball"
 
 env \
-  FURBALL_APPEARANCE=realistic-2d \
+  CFFIXED_USER_HOME="$PREFS_DIR" \
+  FURBALL_APPEARANCE="$QA_APPEARANCE" \
   FURBALL_BEHAVIOR_QA_REPORT="$REPORT_PATH" \
   FURBALL_BEHAVIOR_QA_EXIT=1 \
   FURBALL_DESKTOP_INTERACTION_DRY_RUN=1 \
@@ -49,4 +55,4 @@ if ! grep -Eq '"pass"[[:space:]]*:[[:space:]]*true' "$REPORT_PATH"; then
   exit 1
 fi
 
-print "Behavior QA passed: the pet reached the treat, consumed it, stopped moving, and remained visible."
+print "Behavior QA passed ($QA_APPEARANCE): the pet reached the treat, consumed it, stopped moving, and remained visible."

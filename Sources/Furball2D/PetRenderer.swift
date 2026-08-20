@@ -7,6 +7,7 @@ import QuartzCore
 /// One independent decoder/player lane. Every channel filters end notifications
 /// to its own AVPlayerItems, so two live channels cannot trigger each other.
 private final class PetVideoChannel: @unchecked Sendable {
+    private static let loopQueueDepth = 3
     let id = UUID()
     let clip: PetClip
     let player = AVQueuePlayer()
@@ -32,12 +33,11 @@ private final class PetVideoChannel: @unchecked Sendable {
         first.preferredForwardBufferDuration = clip.loops ? 2.5 : 0.8
         player.insert(first, after: nil)
         // Short gait loops can end before the periodic observer gets enough
-        // main-run-loop time while the window is moving. Queue the first repeat
-        // up front so fast-run playback never has to recover from an empty queue.
+        // main-run-loop time while the window is moving. Keep two decoded
+        // successors queued so a transient main-thread stall cannot expose an
+        // empty AVQueuePlayer at the loop seam.
         if clip.loops {
-            let next = try makeItem()
-            next.preferredForwardBufferDuration = 2.5
-            player.insert(next, after: first)
+            try fillLoopQueue()
         }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -154,16 +154,14 @@ private final class PetVideoChannel: @unchecked Sendable {
     }
 
     private func primeNextLoopItem(currentTime: CMTime) {
-        guard !invalidated, clip.loops, player.items().count == 1,
+        guard !invalidated, clip.loops, player.items().count < Self.loopQueueDepth,
               let currentItem = player.currentItem else { return }
         let duration = currentItem.duration.seconds
         let elapsed = currentTime.seconds
         guard duration.isFinite, elapsed.isFinite, duration - elapsed <= 0.85 else { return }
 
         do {
-            let next = try makeItem()
-            next.preferredForwardBufferDuration = 2.5
-            player.insert(next, after: player.items().last)
+            try fillLoopQueue()
         } catch {
             NSLog("Furball loop prequeue failed: %@", error.localizedDescription)
         }
@@ -171,15 +169,21 @@ private final class PetVideoChannel: @unchecked Sendable {
 
     private func ensureLoopContinuesAfterEnd() {
         guard !invalidated, clip.loops else { return }
-        if player.items().isEmpty {
-            do {
-                player.insert(try makeItem(), after: nil)
-            } catch {
-                NSLog("Furball loop recovery failed: %@", error.localizedDescription)
-                return
-            }
+        do {
+            try fillLoopQueue()
+        } catch {
+            NSLog("Furball loop recovery failed: %@", error.localizedDescription)
+            return
         }
         if player.rate == 0 { player.playImmediately(atRate: playbackRate) }
+    }
+
+    private func fillLoopQueue() throws {
+        while player.items().count < Self.loopQueueDepth {
+            let next = try makeItem()
+            next.preferredForwardBufferDuration = 2.5
+            player.insert(next, after: player.items().last)
+        }
     }
 }
 
@@ -455,6 +459,14 @@ final class PetRenderer: NSObject, MTKViewDelegate {
         channelLock.lock()
         preparedChannel = channel
         channelLock.unlock()
+    }
+
+    func discardPreparedVideo() {
+        channelLock.lock()
+        let discarded = preparedChannel
+        preparedChannel = nil
+        channelLock.unlock()
+        discarded?.invalidate()
     }
 
     func beginVideoFrameDiagnostics() {
