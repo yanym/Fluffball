@@ -3,18 +3,20 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-REPORT_PATH="$(mktemp /tmp/furball-live-motion-qa.XXXXXX.json)"
-LOG_PATH="$(mktemp /tmp/furball-live-motion-qa.XXXXXX.log)"
-PREFS_DIR="$(mktemp -d /tmp/furball-live-motion-qa-prefs.XXXXXX)"
+QA_DIR="$(mktemp -d /tmp/furball-live-motion-qa.XXXXXX)"
+REPORT_PATH="$QA_DIR/report.json"
+LOG_PATH="$QA_DIR/run.log"
+PREFS_DIR="$QA_DIR/preferences"
 APP_PID=""
+
+mkdir -p "$PREFS_DIR"
 
 cleanup() {
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
     kill "$APP_PID" 2>/dev/null || true
   fi
-  rm -f "$REPORT_PATH" "$LOG_PATH"
-  if [[ "$PREFS_DIR" == /tmp/furball-live-motion-qa-prefs.* && -d "$PREFS_DIR" ]]; then
-    rm -rf "$PREFS_DIR"
+  if [[ "$QA_DIR" == /tmp/furball-live-motion-qa.* && -d "$QA_DIR" ]]; then
+    rm -rf "$QA_DIR"
   fi
 }
 trap cleanup EXIT
