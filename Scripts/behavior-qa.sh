@@ -21,7 +21,7 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$PROJECT_DIR"
-swift build >/dev/null
+swift build -j 1 >/dev/null
 BIN_PATH="$(swift build --show-bin-path)/Furball"
 
 env \
