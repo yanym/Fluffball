@@ -1,12 +1,13 @@
 import AppKit
 
-/// Runs several independent, image-backed pets without changing the global pet
+/// Runs several independently rendered pets without changing the global pet
 /// picker. The coordinator owns only transparent app windows; it never touches
 /// Finder, the desktop directory, or any user file.
 @MainActor
 final class PetGroupPlayController {
     struct Snapshot {
         let petIDs: [String]
+        let appearanceIDs: [String: String]
         let visibleCount: Int
         let movingCount: Int
         let socialInteractionCount: Int
@@ -17,6 +18,8 @@ final class PetGroupPlayController {
         let name: String
         let panel: PetPanel
         let renderer: PetRenderer
+        let appearance: PetAppearanceOption
+        let videoNativeFacingIsRight: Bool
         var target: NSPoint
         var preciseOrigin: NSPoint
         var velocity = NSPoint.zero
@@ -32,9 +35,11 @@ final class PetGroupPlayController {
         ) throws {
             petID = pet.id
             name = pet.name
+            appearance = try PetAssetCatalog.groupAppearance(petID: pet.id)
+            videoNativeFacingIsRight = PetAssetCatalog.groupVideoNativeFacingIsRight(petID: pet.id)
             preciseOrigin = origin
             target = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
-            renderer = try PetRenderer(frame: NSRect(origin: .zero, size: size), visualMode: .images)
+            renderer = try PetRenderer(frame: NSRect(origin: .zero, size: size), visualMode: appearance.kind.visualMode)
             renderer.setAnimationSpeed(animationSpeed)
             panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
             panel.level = level
@@ -45,12 +50,21 @@ final class PetGroupPlayController {
         }
 
         func play(_ semanticID: String, fade: TimeInterval = 0.10, completion: (() -> Void)? = nil) throws {
-            let animation = try PetAssetCatalog.groupImageAnimation(petID: petID, id: semanticID)
-            try renderer.playImageAnimation(animation, fadeDuration: fade, completion: completion)
+            switch appearance.kind {
+            case .spriteAtlas:
+                let animation = try PetAssetCatalog.groupImageAnimation(petID: petID, id: semanticID)
+                try renderer.playImageAnimation(animation, fadeDuration: fade, completion: completion)
+            case .continuousVideo:
+                let clip = try PetAssetCatalog.groupVideoClip(petID: petID, id: semanticID)
+                try renderer.play(clip, fadeDuration: fade, completion: completion)
+            }
         }
 
         func setFacing(right: Bool) {
-            renderer.setMirrored(right)
+            let mirrored = appearance.kind == .continuousVideo
+                ? (videoNativeFacingIsRight ? !right : right)
+                : right
+            renderer.setMirrored(mirrored)
         }
 
         func stop() {
@@ -66,6 +80,7 @@ final class PetGroupPlayController {
     private var socialInteractionCount = 0
     private var lastTick = ProcessInfo.processInfo.systemUptime
     private var animationSpeed = 1.0
+    private var opacity: CGFloat = 1.0
 
     var isRunning: Bool { !companions.isEmpty }
     var hasVisibleCompanions: Bool { companions.contains(where: { $0.panel.isVisible }) }
@@ -82,9 +97,15 @@ final class PetGroupPlayController {
         companions.forEach { $0.renderer.setAnimationSpeed(animationSpeed) }
     }
 
+    func setOpacity(_ value: CGFloat) {
+        opacity = min(1, max(0.2, value))
+        companions.forEach { $0.panel.alphaValue = opacity }
+    }
+
     func snapshot() -> Snapshot {
         Snapshot(
             petIDs: companions.map(\.petID),
+            appearanceIDs: Dictionary(uniqueKeysWithValues: companions.map { ($0.petID, $0.appearance.id) }),
             visibleCount: companions.filter { $0.panel.isVisible && $0.renderer.visibleContentRect() != nil }.count,
             movingCount: companions.filter(\.isMoving).count,
             socialInteractionCount: socialInteractionCount
@@ -102,7 +123,7 @@ final class PetGroupPlayController {
         socialInteractionCount = 0
         guard let screen = NSScreen.main else { return }
         let pets = PetAssetCatalog.availablePets.filter {
-            petIDs.contains($0.id) && PetAssetCatalog.imageCapablePetIDs.contains($0.id)
+            petIDs.contains($0.id) && PetAssetCatalog.groupPlayablePetIDs.contains($0.id)
         }
         guard !pets.isEmpty else { return }
 
@@ -124,6 +145,7 @@ final class PetGroupPlayController {
                 animationSpeed: self.animationSpeed,
                 level: level
             )
+            companion.panel.alphaValue = opacity
             companions.append(companion)
             chooseRoamTarget(for: companion, visible: visible)
         }
@@ -183,6 +205,15 @@ final class PetGroupPlayController {
             var repelX: CGFloat = 0
             var repelY: CGFloat = 0
             for (otherIndex, other) in companions.enumerated() where otherIndex != index {
+                // The selected social pair is intentionally approaching its
+                // meeting ports. Applying normal collision separation to that
+                // same pair can create an equilibrium just outside the arrival
+                // threshold—both pets walk forever without ever greeting.
+                if let socialPair,
+                   (index == socialPair.0 && otherIndex == socialPair.1
+                    || index == socialPair.1 && otherIndex == socialPair.0) {
+                    continue
+                }
                 let otherCenter = NSPoint(x: other.panel.frame.midX, y: other.panel.frame.midY)
                 let sx = center.x - otherCenter.x
                 let sy = center.y - otherCenter.y

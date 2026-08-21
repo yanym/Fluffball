@@ -111,6 +111,7 @@ private struct Manifest: Decodable {
     let spriteAtlas: SpriteAtlas?
     let appearances: [Appearance]?
     let clips: [Clip]?
+    let videoNativeFacing: String?
 }
 
 private enum ValidationError: LocalizedError {
@@ -693,6 +694,9 @@ private func validate(packURL: URL) async throws {
     }
 
     if supportsVideo {
+        guard ["left", "right"].contains(manifest.videoNativeFacing ?? "left") else {
+            try fail("videoNativeFacing must be left or right")
+        }
         let missing = requiredClipIDs.subtracting(clipsByID.keys)
         guard missing.isEmpty else { try fail("Video mode is missing required actions: \(missing.sorted().joined(separator: ", "))") }
 

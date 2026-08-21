@@ -1,0 +1,9 @@
+interface:
+  display_name: "Furball Live Motion Creator"
+  short_description: "Turn pet action videos into smooth Live Motion"
+  brand_color: "#D88945"
+  default_prompt: "Use $furball-live-motion-creator to turn my pet action videos into a validated Furball Live Motion appearance."
+
+policy:
+  allow_implicit_invocation: true
+

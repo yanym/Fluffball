@@ -6,6 +6,7 @@ enum PetPackLibraryError: LocalizedError {
     case petAlreadyExists(String)
     case bundledPetConflict(String)
     case missingCreatorSkill
+    case missingLiveMotionSkill
     case operationFailed(String)
     case readOnlyRuntime
 
@@ -15,6 +16,7 @@ enum PetPackLibraryError: LocalizedError {
         case .petAlreadyExists(let name): "\(name) is already in the library."
         case .bundledPetConflict(let id): "The imported ID (\(id)) conflicts with a built-in pet."
         case .missingCreatorSkill: "The pet creator Skill is missing from the app bundle."
+        case .missingLiveMotionSkill: "The Live Motion creator Skill is missing from the app bundle."
         case .operationFailed(let reason): "The operation failed: \(reason)"
         case .readOnlyRuntime: "Furball runs in read-only safety mode and cannot create, change, move, or delete files or folders."
         }
@@ -153,6 +155,10 @@ enum PetPackLibraryManager {
             }
         }
         if videoMode {
+            let nativeFacing = (json["videoNativeFacing"] as? String) ?? "left"
+            guard ["left", "right"].contains(nativeFacing) else {
+                throw PetPackLibraryError.invalidPack("videoNativeFacing must be left or right")
+            }
             guard let clips = json["clips"] as? [[String: Any]], !clips.isEmpty else {
                 throw PetPackLibraryError.invalidPack("videoMode=true requires clips")
             }
@@ -222,6 +228,20 @@ enum PetPackLibraryManager {
         let destination = destinationDirectory.appendingPathComponent("furball-pet-creator", isDirectory: true)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             throw PetPackLibraryError.operationFailed("furball-pet-creator already exists")
+        }
+        do {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return destination
+        } catch {
+            throw PetPackLibraryError.operationFailed(error.localizedDescription)
+        }
+    }
+
+    static func exportLiveMotionSkill(to destinationDirectory: URL) throws -> URL {
+        guard let source = liveMotionSkillURL() else { throw PetPackLibraryError.missingLiveMotionSkill }
+        let destination = destinationDirectory.appendingPathComponent("furball-live-motion-creator", isDirectory: true)
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw PetPackLibraryError.operationFailed("furball-live-motion-creator already exists")
         }
         do {
             try FileManager.default.copyItem(at: source, to: destination)
@@ -601,5 +621,12 @@ enum PetPackLibraryManager {
             return bundled
         }
         return Bundle.main.resourceURL?.appendingPathComponent("CreatorSkill", isDirectory: true)
+    }
+
+    private static func liveMotionSkillURL() -> URL? {
+        if let bundled = Bundle.module.url(forResource: "VideoCreatorSkill", withExtension: nil) {
+            return bundled
+        }
+        return Bundle.main.resourceURL?.appendingPathComponent("VideoCreatorSkill", isDirectory: true)
     }
 }

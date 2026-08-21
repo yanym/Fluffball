@@ -263,14 +263,22 @@ extension PetMindSnapshot {
         var messages: [String] = []
         if state.energy < 0.28 {
             messages.append("My battery is a little low. Can I rest near you?")
+            messages.append("Could we recharge together for a minute?")
+            messages.append("I’m running on cuddles and one tiny yawn.")
         } else if state.energy > 0.82, traits.vitality > 0.62 {
             messages.append("I have so much energy right now. Want to play?")
+            messages.append("My paws are full of zoomies today!")
+            messages.append("Ready when you are—my tail already started!")
         }
         if state.curiosityNeed > 0.74 {
             messages.append("Is there something new on the desktop?")
+            messages.append("What’s that over there? Can we investigate?")
+            messages.append("My curious nose has detected a mystery.")
         }
         if state.affinity > 0.72 {
             messages.append("I like staying close to you more and more.")
+            messages.append("You’re my favorite part of this whole desktop.")
+            messages.append("I picked you. Excellent choice, me.")
         }
         if let memory = memories.first, Date().timeIntervalSince(memory.date) < 4 * 60 * 60 {
             messages.append("I still remember: \(memory.text)")

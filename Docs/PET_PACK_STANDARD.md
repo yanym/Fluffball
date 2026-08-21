@@ -26,6 +26,7 @@ Green screen is an implementation detail, not a user requirement. A provider may
 ### Pet Pack v2 runtime contract
 
 - `capabilities.imageMode` and `capabilities.videoMode` declare available representations; at least one is true.
+- A video-capable pack declares top-level `videoNativeFacing` as `left` or `right`. The runtime derives horizontal mirroring from this value; source footage does not need to imitate a particular bundled pet's direction.
 - Every enabled representation covers the same 27 semantic slots: 17 posture/locomotion actions, nine standing views, and one complete look-around demonstration.
 - An image representation uses one `spriteAtlas`; standalone PNG animation descriptors and hybrid fallback paths are not supported.
 - Every image representation declares `spriteAtlas.stateModel: furball-image-state-v1`. This one contract fixes the standard rows and posture-stage bindings for every Realistic 2D pet. Continuous-video clips do not use it and retain independently measured video entry/exit ports.

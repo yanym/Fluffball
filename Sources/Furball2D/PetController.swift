@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 @MainActor
 final class PetController: NSObject, NSMenuDelegate {
@@ -10,6 +11,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private enum PreferenceKey {
         static let petScale = "petScale"
+        static let petOpacity = "petOpacity"
         static let animationSpeed = "animationSpeed"
         static let fullPassThrough = "fullPassThrough"
         static let autoBehavior = "autoBehavior"
@@ -146,6 +148,12 @@ final class PetController: NSObject, NSMenuDelegate {
     private var locomotionGeneration = 0
     private var locomotionDirection: CGFloat = -1
     private var actionFacing: HorizontalFacing = .left
+    private var actionFacingIsMirrored: Bool {
+        guard videoAnimationsEnabled else { return actionFacing.isMirrored }
+        return PetAssetCatalog.videoNativeFacingIsRight
+            ? actionFacing == .left
+            : actionFacing == .right
+    }
     private var lastLocomotionChangeTime: TimeInterval = 0
     private var locomotionModeLockUntil: TimeInterval = 0
     private var pendingLocomotionMode: LocomotionMode?
@@ -195,6 +203,10 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private var petScale: CGFloat {
         didSet { UserDefaults.standard.set(petScale, forKey: PreferenceKey.petScale) }
+    }
+
+    private var petOpacity: CGFloat {
+        didSet { UserDefaults.standard.set(petOpacity, forKey: PreferenceKey.petOpacity) }
     }
 
     private var animationSpeed: Double {
@@ -286,6 +298,10 @@ final class PetController: NSObject, NSMenuDelegate {
         let savedScale = CGFloat(defaults.double(forKey: PreferenceKey.petScale))
         let initialScale = min(Self.maximumScale, max(Self.minimumScale, savedScale == 0 ? 1 : savedScale))
         petScale = initialScale
+        let savedOpacity = defaults.object(forKey: PreferenceKey.petOpacity) == nil
+            ? 1.0
+            : defaults.double(forKey: PreferenceKey.petOpacity)
+        petOpacity = min(1, max(0.2, CGFloat(savedOpacity)))
         let savedAnimationSpeed = defaults.object(forKey: PreferenceKey.animationSpeed) == nil
             ? 0.82
             : defaults.double(forKey: PreferenceKey.animationSpeed)
@@ -314,11 +330,15 @@ final class PetController: NSObject, NSMenuDelegate {
             : defaults.double(forKey: PreferenceKey.talkativeness)
         talkativeness = min(1, max(0, savedTalkativeness))
         speechBubbleStyle = defaults.string(forKey: PreferenceKey.speechBubbleStyle)
-            .flatMap(PetSpeechBubbleStyle.init(rawValue:)) ?? .cloud
+            .flatMap(PetSpeechBubbleStyle.init(rawValue:)) ?? .candy
+        if let previewStyle = ProcessInfo.processInfo.environment["FURBALL_SPEECH_STYLE"],
+           let style = PetSpeechBubbleStyle(rawValue: previewStyle) {
+            speechBubbleStyle = style
+        }
         groupPlayEnabled = defaults.bool(forKey: PreferenceKey.groupPlay)
         alwaysSleepEnabled = defaults.bool(forKey: PreferenceKey.alwaysSleep)
         if alwaysSleepEnabled { groupPlayEnabled = false }
-        let imageCapableIDs = PetAssetCatalog.imageCapablePetIDs
+        let imageCapableIDs = PetAssetCatalog.groupPlayablePetIDs
         let savedGroupIDs = Set(defaults.stringArray(forKey: PreferenceKey.groupPetIDs) ?? [])
         let validSavedGroupIDs = savedGroupIDs.intersection(imageCapableIDs)
         groupPetIDs = validSavedGroupIDs.isEmpty ? imageCapableIDs : validSavedGroupIDs
@@ -344,11 +364,13 @@ final class PetController: NSObject, NSMenuDelegate {
         )
         renderer.setAnimationSpeed(animationSpeed)
         panel = PetPanel(contentRect: NSRect(origin: origin, size: size))
+        panel.alphaValue = petOpacity
         let alwaysOnTop = defaults.object(forKey: PreferenceKey.alwaysOnTop) == nil
             ? true
             : defaults.bool(forKey: PreferenceKey.alwaysOnTop)
         panel.level = alwaysOnTop ? .floating : .normal
         super.init()
+        groupPlayController.setOpacity(petOpacity)
 
         posture = startingPosture
         mindPetID = PetAssetCatalog.petID
@@ -702,16 +724,21 @@ final class PetController: NSObject, NSMenuDelegate {
     private func writeGroupPlayQAReport(to path: String) {
         guard RuntimeSafetyPolicy.permitsDeveloperQAFileWrites else { return }
         let snapshot = groupPlayController.snapshot()
-        let expected = groupPetIDs.intersection(PetAssetCatalog.imageCapablePetIDs)
+        let expected = groupPetIDs.intersection(PetAssetCatalog.groupPlayablePetIDs)
+        let expectedAppearances = Dictionary(uniqueKeysWithValues: expected.compactMap { petID in
+            try? (petID, PetAssetCatalog.groupAppearance(petID: petID).id)
+        })
         let report: [String: Any] = [
             "pass": groupPlayEnabled
                 && Set(snapshot.petIDs) == expected
+                && snapshot.appearanceIDs == expectedAppearances
                 && snapshot.visibleCount == expected.count
                 && (snapshot.movingCount > 0 || snapshot.socialInteractionCount > 0)
                 && snapshot.socialInteractionCount > 0
                 && !panel.isVisible,
             "selectedPetIDs": expected.sorted(),
             "runningPetIDs": snapshot.petIDs,
+            "appearanceIDs": snapshot.appearanceIDs,
             "visibleCount": snapshot.visibleCount,
             "movingCount": snapshot.movingCount,
             "socialInteractionCount": snapshot.socialInteractionCount,
@@ -849,7 +876,7 @@ final class PetController: NSObject, NSMenuDelegate {
     }
 
     private func showPetWindow() {
-        panel.alphaValue = 1
+        panel.alphaValue = petOpacity
         panel.setFrameOrigin(clampedOrigin(panel.frame.origin))
         panel.orderFrontRegardless()
     }
@@ -992,10 +1019,11 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func rebuildMenu() {
         menu.removeAllItems()
-        menu.minimumWidth = 286
+        menu.minimumWidth = 310
         menu.addItem(makeMenuHeaderItem())
         menu.addItem(.separator())
         if groupPlayEnabled {
+            menu.addItem(makeMenuSectionTitle("GROUP PLAY"))
             menu.addItem(makeMenuItem(
                 title: appLanguage.visibilityMenu(isVisible: groupPlayController.hasVisibleCompanions),
                 symbol: groupPlayController.hasVisibleCompanions ? "eye.slash.fill" : "eye.fill",
@@ -1009,6 +1037,7 @@ final class PetController: NSObject, NSMenuDelegate {
             for item in menu.items where item.action != nil { item.target = self }
             return
         }
+        menu.addItem(makeMenuSectionTitle("PLAY & CARE"))
         menu.addItem(makeQuickActionsMenuItem())
         let alwaysSleepItem = makeMenuItem(
             title: appLanguage.alwaysSleepMenu,
@@ -1023,6 +1052,7 @@ final class PetController: NSObject, NSMenuDelegate {
             action: #selector(toggleVisibility)
         ))
         menu.addItem(.separator())
+        menu.addItem(makeMenuSectionTitle("FURBALL"))
         menu.addItem(makeMenuItem(title: appLanguage.settingsMenu, symbol: "slider.horizontal.3", action: #selector(showVisualSettings), keyEquivalent: ","))
         menu.addItem(makeUpdateMenuItem())
         menu.addItem(.separator())
@@ -1052,41 +1082,86 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func makeMenuHeaderItem() -> NSMenuItem {
         let item = NSMenuItem()
-        let card = NSView(frame: NSRect(x: 0, y: 0, width: 286, height: 62))
+        let card = NSView(frame: NSRect(x: 0, y: 0, width: 310, height: 76))
         card.wantsLayer = true
-        card.layer?.cornerRadius = 13
-        card.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.11).cgColor
+        card.layer?.cornerRadius = 16
+        card.layer?.masksToBounds = true
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.20).cgColor
+        let gradient = CAGradientLayer()
+        gradient.frame = card.bounds
+        gradient.cornerRadius = 16
+        gradient.colors = [
+            NSColor.controlAccentColor.withAlphaComponent(0.20).cgColor,
+            NSColor.systemPink.withAlphaComponent(0.10).cgColor,
+            NSColor.systemOrange.withAlphaComponent(0.07).cgColor
+        ]
+        gradient.startPoint = CGPoint(x: 0, y: 1)
+        gradient.endPoint = CGPoint(x: 1, y: 0)
+        card.layer?.addSublayer(gradient)
 
+        let iconBadge = NSView()
+        iconBadge.wantsLayer = true
+        iconBadge.layer?.cornerRadius = 19
+        iconBadge.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.72).cgColor
         let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "pawprint.circle.fill", accessibilityDescription: nil)
+        icon.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)
         icon.contentTintColor = .controlAccentColor
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
-        let title = NSTextField(labelWithString: "Furball · \(PetAssetCatalog.activePet?.name ?? "Pet")")
-        title.font = .systemFont(ofSize: 14, weight: .bold)
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .bold)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        iconBadge.addSubview(icon)
+        let title = NSTextField(labelWithString: groupPlayEnabled
+            ? "Furball · Group Play"
+            : "Furball · \(PetAssetCatalog.activePet?.name ?? "Pet")")
+        title.font = .systemFont(ofSize: 15, weight: .bold)
         let subtitleText = groupPlayEnabled
             ? "Group Play · \(groupPetIDs.count) companions"
             : "\(PetAssetCatalog.activeAppearance.title(for: appLanguage)) · \(menuPostureTitle)"
         let subtitle = NSTextField(labelWithString: subtitleText)
-        subtitle.font = .systemFont(ofSize: 10.5, weight: .medium)
+        subtitle.font = .systemFont(ofSize: 10.5, weight: .semibold)
         subtitle.textColor = .secondaryLabelColor
         let labels = NSStackView(views: [title, subtitle])
         labels.orientation = .vertical
         labels.alignment = .leading
         labels.spacing = 2
-        let row = NSStackView(views: [icon, labels])
+        let sparkle = NSImageView()
+        sparkle.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        sparkle.contentTintColor = .systemPink
+        sparkle.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+        let row = NSStackView(views: [iconBadge, labels, NSView(), sparkle])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(row)
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -12),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 34),
-            icon.heightAnchor.constraint(equalToConstant: 34)
+            iconBadge.widthAnchor.constraint(equalToConstant: 38),
+            iconBadge.heightAnchor.constraint(equalToConstant: 38),
+            icon.centerXAnchor.constraint(equalTo: iconBadge.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: iconBadge.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.heightAnchor.constraint(equalToConstant: 24),
+            sparkle.widthAnchor.constraint(equalToConstant: 18),
+            sparkle.heightAnchor.constraint(equalToConstant: 18)
         ])
         item.view = card
+        return item
+    }
+
+    private func makeMenuSectionTitle(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem()
+        item.attributedTitle = NSAttributedString(
+            string: "  \(title)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 9.5, weight: .bold),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+                .kern: 0.7
+            ]
+        )
+        item.isEnabled = false
         return item
     }
 
@@ -1928,7 +2003,7 @@ final class PetController: NSObject, NSMenuDelegate {
         isUsingImageFacing = false
         isTransitioning = true
         let profileGeneration = profileSwitchGeneration
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
         speechBubble.updateAppearance(mood: speechMood)
         do {
             let transitionFade: TimeInterval = renderer.visualMode == .images ? 0.22 : 0.14
@@ -1955,7 +2030,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private func playIdle(_ newPosture: PetPosture) {
         posture = newPosture
         isTransitioning = false
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
         speechBubble.updateAppearance(mood: speechMood)
 
         if newPosture == .stand,
@@ -2106,7 +2181,7 @@ final class PetController: NSObject, NSMenuDelegate {
             playLookDirection(actionProfileLookDirection, fadeDuration: 0.065)
         } else {
             isUsingImageFacing = false
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             do {
                 try renderer.play(PetClips.standIdle, fadeDuration: 0.09)
             } catch {
@@ -2157,7 +2232,7 @@ final class PetController: NSObject, NSMenuDelegate {
             : PetClips.walkIdle.isImageAvailable
         if walkAssetIsAvailable {
             isUsingImageFacing = false
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             do {
                 try renderer.play(PetClips.walkIdle)
             } catch {
@@ -2204,7 +2279,7 @@ final class PetController: NSObject, NSMenuDelegate {
         if origin.x <= leftLimit || origin.x >= rightLimit {
             patrolDirection *= -1
             actionFacing = patrolDirection > 0 ? .right : .left
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             origin.x = min(rightLimit, max(leftLimit, origin.x))
         }
         panel.setFrameOrigin(origin)
@@ -2507,7 +2582,7 @@ final class PetController: NSObject, NSMenuDelegate {
             locomotionVelocity.x = -collision.horizontalWall * max(42, abs(locomotionVelocity.x) * 0.45)
             locomotionDirection = -collision.horizontalWall
             actionFacing = locomotionDirection > 0 ? .right : .left
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
         }
         if collision.verticalWall != 0 {
             target.y = center.y - collision.verticalWall * verticalRebound
@@ -2643,7 +2718,7 @@ final class PetController: NSObject, NSMenuDelegate {
         let direction: CGFloat = horizontalRoomRight >= horizontalRoomLeft ? 1 : -1
         actionFacing = direction > 0 ? .right : .left
         locomotionDirection = direction
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
 
         let travel = min(150 * petScale, max(78 * petScale, max(horizontalRoomRight, horizontalRoomLeft) * 0.34))
         let proposedEnd = NSPoint(
@@ -2773,7 +2848,7 @@ final class PetController: NSObject, NSMenuDelegate {
         pendingDesktopInteraction = destination
         freeRoamTarget = reachablePanelCenterTarget(for: destination.point)
         freeRoamPauseUntil = 0
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
         do {
             try renderer.play(PetClips.standIdle, fadeDuration: 0.05)
         } catch {
@@ -3140,7 +3215,7 @@ final class PetController: NSObject, NSMenuDelegate {
             setLocomotionMode(desiredMode, direction: locomotionDirection)
         }
         if locomotionMode != .none {
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
         }
 
         let translationProgress: CGFloat
@@ -3215,7 +3290,14 @@ final class PetController: NSObject, NSMenuDelegate {
         let desired: LocomotionMode
         switch locomotionMode {
         case .none:
-            if demand > 650 || distance > 520 * petScale { desired = .fastRun }
+            // Fortune's generated run starts on a suspended gait pose. Entering
+            // it directly from stand reads as a planted dog sliding over the
+            // desktop. Always establish a walking contact phase first; the
+            // normal dwell/hysteresis can promote it to jog or run immediately
+            // afterwards when the pointer is still far away.
+            if renderer.visualMode == .video, PetAssetCatalog.petID == "fortune" {
+                desired = .walk
+            } else if demand > 650 || distance > 520 * petScale { desired = .fastRun }
             else if demand > 260 || distance > 270 * petScale { desired = .slowRun }
             else { desired = .walk }
         case .walk:
@@ -3252,7 +3334,9 @@ final class PetController: NSObject, NSMenuDelegate {
         if previousMode == .none, newMode != .none {
             locomotionVelocity = .zero
             preciseLocomotionOrigin = panel.frame.origin
-            let translationDelay = renderer.visualMode == .video ? newMode.startTranslationDelay : 0
+            let translationDelay = renderer.visualMode == .video
+                ? (PetAssetCatalog.petID == "fortune" ? 0 : newMode.startTranslationDelay)
+                : 0
             locomotionTranslationStartTime = now + translationDelay / animationSpeed
         } else if newMode == .none {
             locomotionTranslationStartTime = 0
@@ -3285,7 +3369,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
             guard let clips = newMode.clips else { return }
             actionFacing = direction > 0 ? .right : .left
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             if previousMode == .none {
                 try renderer.play(clips.start, fadeDuration: 0.12) { [weak self] in
                     guard let self, self.locomotionGeneration == generation,
@@ -3311,7 +3395,7 @@ final class PetController: NSObject, NSMenuDelegate {
     private func playLocomotionLoop(_ mode: LocomotionMode, direction: CGFloat) {
         guard let loopClip = mode.clips?.loop else { return }
         actionFacing = direction > 0 ? .right : .left
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
         do {
             try renderer.play(loopClip, fadeDuration: 0.12)
         } catch {
@@ -3464,7 +3548,7 @@ final class PetController: NSObject, NSMenuDelegate {
         facingView = actionFacing.profileView
         lookDirection = actionProfileLookDirection
         pendingFacingView = nil
-        renderer.setMirrored(actionFacing.isMirrored)
+        renderer.setMirrored(actionFacingIsMirrored)
         do {
             try renderer.play(PetClips.standIdle, fadeDuration: 0.08)
         } catch {
@@ -3787,7 +3871,7 @@ final class PetController: NSObject, NSMenuDelegate {
             }
             controller.onGroupPetSelectionChanged = { [weak self] ids in
                 guard let self else { return }
-                self.groupPetIDs = ids.intersection(PetAssetCatalog.imageCapablePetIDs)
+                self.groupPetIDs = ids.intersection(PetAssetCatalog.groupPlayablePetIDs)
                 if self.groupPlayEnabled { self.activateGroupPlay() }
                 self.refreshAppearanceSettings()
             }
@@ -3801,6 +3885,13 @@ final class PetController: NSObject, NSMenuDelegate {
             controller.onPetScaleChanged = { [weak self] scale in
                 self?.setScale(scale)
                 self?.refreshAppearanceSettings()
+            }
+            controller.onPetOpacityChanged = { [weak self] opacity in
+                guard let self else { return }
+                self.petOpacity = min(1, max(0.2, opacity))
+                self.panel.alphaValue = self.petOpacity
+                self.groupPlayController.setOpacity(self.petOpacity)
+                self.refreshAppearanceSettings()
             }
             controller.onPassThroughChanged = { [weak self] enabled in
                 guard let self else { return }
@@ -3892,6 +3983,7 @@ final class PetController: NSObject, NSMenuDelegate {
             desktopInteractions: desktopInteractionsEnabled,
             alwaysOnTop: panel.level == .floating,
             petScale: petScale,
+            petOpacity: petOpacity,
             fullPassThrough: fullPassThrough,
             autoBehavior: autoBehavior,
             speechBubbles: speechBubblesEnabled,
@@ -3917,7 +4009,7 @@ final class PetController: NSObject, NSMenuDelegate {
 
     private func activateGroupPlay() {
         guard groupPlayEnabled else { return }
-        let validIDs = groupPetIDs.intersection(PetAssetCatalog.imageCapablePetIDs)
+        let validIDs = groupPetIDs.intersection(PetAssetCatalog.groupPlayablePetIDs)
         guard !validIDs.isEmpty else {
             groupPlayEnabled = false
             refreshAppearanceSettings()
@@ -3963,14 +4055,8 @@ final class PetController: NSObject, NSMenuDelegate {
         guard let next = PetAssetCatalog.availableAppearances.first(where: { $0.id == id }),
               PetAssetCatalog.availableAppearances.contains(where: { $0.id == id }) else { return false }
 
-        // A direct appearance choice is authoritative. Group Play has its own
-        // image-only renderers, so leaving it active would hide the selected
-        // Nina representation and make a successful click look like a no-op.
-        if groupPlayEnabled {
-            groupPlayEnabled = false
-            groupPlayController.stop()
-            showPetWindow()
-        }
+        let groupWasEnabled = groupPlayEnabled
+        if groupWasEnabled { groupPlayController.stop() }
         let resumeModes = interruptCurrentActivityForProfileSwitch()
         guard PetAssetCatalog.selectAppearance(id: id) else { return false }
 
@@ -3981,16 +4067,7 @@ final class PetController: NSObject, NSMenuDelegate {
                 replaying: PetClips.standIdle,
                 forceReload: true
             )
-            if groupPlayEnabled {
-                try groupPlayController.start(
-                    petIDs: groupPetIDs,
-                    scale: petScale,
-                    animationSpeed: animationSpeed,
-                    level: panel.level
-                )
-                panel.orderOut(nil)
-            }
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             repositionSpeechBubble(resetSilhouette: true)
             remember(
                 .appearance,
@@ -4000,7 +4077,8 @@ final class PetController: NSObject, NSMenuDelegate {
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(next.title(for: appLanguage)))
-            resumeAfterProfileSwitch(resumeModes)
+            if groupWasEnabled { activateGroupPlay() }
+            else { resumeAfterProfileSwitch(resumeModes) }
             return true
         } catch {
             _ = PetAssetCatalog.selectAppearance(id: previous.id)
@@ -4012,7 +4090,8 @@ final class PetController: NSObject, NSMenuDelegate {
             )
             rebuildMenu()
             refreshAppearanceSettings()
-            resumeAfterProfileSwitch(resumeModes)
+            if groupWasEnabled { activateGroupPlay() }
+            else { resumeAfterProfileSwitch(resumeModes) }
             present(error)
             return false
         }
@@ -4024,13 +4103,8 @@ final class PetController: NSObject, NSMenuDelegate {
         guard previousPet.id != id else { return true }
         let previousAppearance = PetAssetCatalog.activeAppearance
         guard PetAssetCatalog.availablePets.contains(where: { $0.id == id }) else { return false }
-        // An explicit pet selection is authoritative. Group Play renders its
-        // own companions and otherwise hides the primary pet panel.
-        if groupPlayEnabled {
-            groupPlayEnabled = false
-            groupPlayController.stop()
-            showPetWindow()
-        }
+        let groupWasEnabled = groupPlayEnabled
+        if groupWasEnabled { groupPlayController.stop() }
         let resumeModes = interruptCurrentActivityForProfileSwitch()
         guard PetAssetCatalog.selectPet(id: id), let nextPet = PetAssetCatalog.activePet else { return false }
         let nextAppearance = PetAssetCatalog.activeAppearance
@@ -4042,14 +4116,15 @@ final class PetController: NSObject, NSMenuDelegate {
                 replaying: PetClips.standIdle,
                 forceReload: true
             )
-            renderer.setMirrored(actionFacing.isMirrored)
+            renderer.setMirrored(actionFacingIsMirrored)
             resizeForActivePet()
             mindPetID = nextPet.id
             petMind = PetMindStore.load(petID: mindPetID)
             rebuildMenu()
             refreshAppearanceSettings()
             showSpeech(appLanguage.appearanceChanged(nextPet.name))
-            resumeAfterProfileSwitch(resumeModes)
+            if groupWasEnabled { activateGroupPlay() }
+            else { resumeAfterProfileSwitch(resumeModes) }
             return true
         } catch {
             _ = PetAssetCatalog.selectPet(id: previousPet.id)
@@ -4065,7 +4140,8 @@ final class PetController: NSObject, NSMenuDelegate {
             resizeForActivePet()
             rebuildMenu()
             refreshAppearanceSettings()
-            resumeAfterProfileSwitch(resumeModes)
+            if groupWasEnabled { activateGroupPlay() }
+            else { resumeAfterProfileSwitch(resumeModes) }
             present(error)
             return false
         }

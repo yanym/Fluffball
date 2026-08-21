@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
+PET_ID="${FURBALL_PET_ID:-furball-demo-dog}"
 QA_DIR="$(mktemp -d /tmp/furball-live-motion-qa.XXXXXX)"
 REPORT_PATH="$QA_DIR/report.json"
 LOG_PATH="$QA_DIR/run.log"
@@ -27,6 +28,7 @@ BIN_PATH="$(swift build --show-bin-path)/Furball"
 
 env \
   CFFIXED_USER_HOME="$PREFS_DIR" \
+  FURBALL_PET_ID="$PET_ID" \
   FURBALL_APPEARANCE=continuous-video \
   FURBALL_LIVE_MOTION_QA_REPORT="$REPORT_PATH" \
   FURBALL_LIVE_MOTION_QA_EXIT=1 \
@@ -55,4 +57,4 @@ if ! grep -Eq '"pass"[[:space:]]*:[[:space:]]*true' "$REPORT_PATH"; then
   exit 1
 fi
 
-print "Live Motion QA passed: Nina reached fast run and sustained smooth decoded motion while crossing the desktop."
+print "Live Motion QA passed: $PET_ID reached fast run and sustained smooth decoded motion while crossing the desktop."

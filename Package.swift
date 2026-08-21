@@ -14,7 +14,8 @@ let package = Package(
             path: "Sources/Furball2D",
             resources: [
                 .copy("Assets"),
-                .copy("CreatorSkill")
+                .copy("CreatorSkill"),
+                .copy("VideoCreatorSkill")
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),

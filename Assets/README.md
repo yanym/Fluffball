@@ -11,13 +11,13 @@ Assets/Pets/<PetName>/
 The app never reads `UserProvided/` at runtime. Final compiled resources live in the matching runtime Pet Pack under `Sources/Furball2D/Assets/Pets/<PetName>/`.
 
 - `Pets/Nina/` contains Nina's original photos/videos, the retained Realistic 2D generation work and atlas, and the complete Live Motion clip set.
-- `Pets/Fortune/` contains Fortune's six identity photos and the native-Retina Realistic 2D generation run. Fortune is image-only until Fortune-specific video footage is provided.
+- `Pets/Fortune/` contains Fortune's six identity photos, nine archived right-profile Gemini source videos, the native-Retina Realistic 2D generation run, and its Live Motion rebuild documentation.
 
 Nina's identity references live in `Pets/Nina/UserProvided/SourceImagesForAIVideo/originals/`; see the [reference guide](Pets/Nina/UserProvided/SourceImagesForAIVideo/README.md). Prepared references live separately under `Pets/Nina/Generated/AIReferenceImages/generation-ready/`.
 
 `Pets/Nina/Generated/ImageTurn/normalized/` contains Nina's aligned image views. `Pets/Nina/Generated/SpritePets/NinaRealistic/` preserves the retained Realistic 2D generation record and QA. `Pets/Fortune/Generated/SpritePet/` contains Fortune's grounded `$hatch-pet` run, native-HD pose grids, clarity report, and contact atlas.
 
-Sprite-atlas image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what each named pack supports; an image-only pack may omit `Clips/` completely. Nina defaults to video and Fortune defaults to Realistic 2D. Standalone runtime PNG animations are no longer loaded or packaged.
+Sprite-atlas image representation and video representation are parallel. `capabilities.imageMode` and `capabilities.videoMode` declare what each named pack supports; an image-only pack may omit `Clips/` completely. Nina and Fortune now both supply Live Motion and Realistic 2D. Standalone runtime PNG animations are no longer loaded or packaged.
 
 ## Original video mapping
 

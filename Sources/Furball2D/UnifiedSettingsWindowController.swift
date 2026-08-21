@@ -61,6 +61,9 @@ final class UnifiedSettingsWindowController: NSWindowController, NSWindowDelegat
     var onPetScaleChanged: ((CGFloat) -> Void)? {
         didSet { appearanceController.onPetScaleChanged = onPetScaleChanged }
     }
+    var onPetOpacityChanged: ((CGFloat) -> Void)? {
+        didSet { appearanceController.onPetOpacityChanged = onPetOpacityChanged }
+    }
     var onPassThroughChanged: ((Bool) -> Void)? {
         didSet { appearanceController.onPassThroughChanged = onPassThroughChanged }
     }

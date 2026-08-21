@@ -70,7 +70,7 @@ enum AppLanguage: String, Sendable {
     var clearMemoriesButton: String { "Clear Memories" }
     var noMemoriesLabel: String { "No special memories yet. Spend a little time together." }
     var creatorIntro: String {
-        "Choose 6–12 real photos. A signed-in local Codex can generate one maintainable Realistic 2D pet, validate it, and import it in one flow. Image generation only—no expensive video."
+        "Choose 6–12 real photos to build a maintainable Realistic 2D pet. For lifelike continuous footage, download the separate Live Motion Skill and process one source video per action."
     }
     var oneClickCodexButton: String { "Build & Import with Codex" }
     var cancelCodexCreationButton: String { "Cancel Generation" }
@@ -97,7 +97,8 @@ enum AppLanguage: String, Sendable {
         count == 0 ? "No photos selected" : "\(count) photos selected"
     }
     var exportCreationRequestButton: String { "Export Creation Request…" }
-    var downloadSkillButton: String { "Download Creator Skill…" }
+    var downloadSkillButton: String { "Download 2D Creator Skill…" }
+    var downloadLiveMotionSkillButton: String { "Download Live Motion Skill…" }
     var importSuccessTitle: String { "Pet Imported" }
     func importedPetMessage(_ name: String) -> String {
         "\(name) passed validation and was added to your library."
@@ -167,7 +168,15 @@ enum AppLanguage: String, Sendable {
                 "One fresh delivery of puppy encouragement.",
                 "Want me to guard this window for you?",
                 "My tail work is very professional today.",
-                "Take one deep breath. I’m right here."
+                "Take one deep breath. I’m right here.",
+                "Tiny paws, enormous moral support.",
+                "I brought you an invisible bouquet! 🌼",
+                "Your screen looked lonely, so I came over.",
+                "I vote that you deserve a snack break.",
+                "If you smile, I’ll wag twice as hard.",
+                "I’m your pocket-sized cheering section.",
+                "Boop delivery! Please sign with one smile.",
+                "We make a pretty great little team."
             ]
         case .sit:
             [
@@ -189,7 +198,15 @@ enum AppLanguage: String, Sendable {
                 "Sitting quietly is a puppy superpower.",
                 "I saved my best profile for you.",
                 "Say the word—I’m listening.",
-                "Coordinates locked: right beside you."
+                "Coordinates locked: right beside you.",
+                "This is my extra-polite treat pose.",
+                "I can hear a cuddle from three windows away.",
+                "My ears are holding a meeting about snacks.",
+                "I saved you the coziest seat beside me.",
+                "One sit, two bright eyes, zero complaints.",
+                "I’m practicing my ‘too cute to ignore’ face.",
+                "Your next idea has my full attention.",
+                "I’ll be your tiny meeting assistant today."
             ]
         case .lie:
             [
@@ -211,7 +228,15 @@ enum AppLanguage: String, Sendable {
                 "Tail tucked in. I won’t interrupt.",
                 "It’s genuinely okay to lie down for a bit.",
                 "Not paused—gently loading.",
-                "My quiet mode likes you too."
+                "My quiet mode likes you too.",
+                "Cozy level: maximum fluff.",
+                "I flattened myself into a little cloud.",
+                "Come borrow some of my calm.",
+                "The floor and I are best friends now.",
+                "I’m keeping this warm spot safe for you.",
+                "Soft paws, soft thoughts, soft afternoon.",
+                "This is a strategic cuddle position.",
+                "I’m resting, but my love is still awake."
             ]
         case .sleep:
             [
@@ -233,7 +258,15 @@ enum AppLanguage: String, Sendable {
                 "I’m having a very good dream about you.",
                 "Quiet now… happiness is falling asleep.",
                 "Finding you is task one when I wake up.",
-                "Goodnight is just another way to stay close."
+                "Goodnight is just another way to stay close.",
+                "Zzz… chasing marshmallows through the clouds.",
+                "My dream has room for you too.",
+                "Please hold all boops until morning.",
+                "One tiny snore means I’m extra cozy.",
+                "Dreaming in warm blankets and biscuits.",
+                "I tucked today safely under my paws.",
+                "Sleep mode: round, warm, and happy.",
+                "Meet me by the treat tree in my dream."
             ]
         }
     }

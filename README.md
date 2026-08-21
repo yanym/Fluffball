@@ -4,7 +4,7 @@
 
 ## English
 
-Furball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. Nina ships with Live Motion and Realistic 2D; Fortune is the second bundled profile and ships with a photo-grounded Realistic 2D appearance. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so a new pet no longer needs an expensive generated-video set.
+Furball is a multi-pet desktop companion for Apple Silicon Macs running macOS 14 or later. Nina and Fortune both ship with Live Motion and photo-grounded Realistic 2D. One behavior engine renders HEVC-with-alpha footage through AVFoundation/VideoToolbox or Codex-compatible transparent WebP atlases through Metal, so each profile may provide either representation or both.
 
 ### Features
 
@@ -71,7 +71,7 @@ Assets/
 Sources/Furball2D/Assets/
 └── Pets/
     ├── Nina/{manifest.json,Clips,Sprites}/       # Image + Live Motion
-    └── Fortune/{manifest.json,Sprites}/         # Image-only
+    └── Fortune/{manifest.json,Clips,Sprites}/   # Image + Live Motion
 ```
 
 The source action chain uses a consistent `left-profile` view; right-facing actions are produced by runtime mirroring. Preprocessed assets are 1280×720 at 120 fps in HEVC with Alpha. Stand, sit, and lie idles use endpoint-deduplicated forward/reverse loops. Sleep uses only a low-motion breathing window. Transition and locomotion clips are smoothly corrected on a transparent work canvas for subject scale, alpha center, and ground anchor.
@@ -84,11 +84,12 @@ See [Assets/README.md](Assets/README.md) for legacy filename mappings, alternate
 - Drag the dog: reposition the desktop pet.
 - Right-click the dog or click the menu-bar paw: open settings.
 - “Display Scale”: continuously magnify the profile-defined body size from 60% to 140%.
+- “Pet Opacity”: adjust the pet window from 20% to 100%; the default is fully opaque.
 - “Appearance”: choose the active pet directly on this page, then switch among the representations it supplies: Live Motion and Realistic 2D. Selecting a row in My Pets also activates that pet immediately; there is no second confirmation step.
 - “Overall Animation Speed”: scales image animation, Live Motion playback, and synchronized desktop translation from 50% to 150%. The initial default is 82% so it can be tuned without rebuilding pet assets.
 - “Settings”: the sidebar directly manages General, Appearance, Behavior, Desktop Interaction, Group Play, Dialogue, Pet Library, and Create Pet. Display scale and window level live here instead of in the menu-bar item; video blending appears only for Live Motion.
 - “Pet Library”: import a validated `.furballpet` package, select a pet, and inspect its profile.
-- “Create Pet”: choose 6–12 photos and create one maintainable Realistic 2D pack through local Codex, or export the standardized request and bundled Creator Skill.
+- “Create Pet”: choose 6–12 photos and create one maintainable Realistic 2D pack through local Codex, or download the separate bundled Realistic 2D and Live Motion Creator Skills.
 - “Group Play”: enable several checked pets at once. They roam independently, preserve each profile's body size, avoid overlap, stop when they arrive, turn away from walls, and meet for paired social actions.
 - “Pet Profile”: each pet keeps adjustable Vitality, Curiosity, Affection, and Composure traits plus dynamic Energy, Wonder, and Bond. The three newest short-term memories are visible and can be cleared at any time.
 - “Cute Actions”: shows pack-provided image actions in image mode and disables itself in video mode, while moving, or during a transition.
@@ -120,7 +121,7 @@ The walk, jog, and run sources are stored as `stand-to-walk-to-stand.mp4`, `stan
 
 ## 中文
 
-Furball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣。Nina 内置真实连续动画和写实 2D；Fortune 是第二个内置宠物 profile，带有基于真实照片制作的写实 2D 外观。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行。
+Furball 是一个仅面向 Apple Silicon、macOS 14 及以上版本的多宠物桌面伴侣。Nina 与 Fortune 都内置真实连续动画和基于照片制作的写实 2D。同一行为引擎既能通过 AVFoundation/VideoToolbox 播放带 Alpha 的写实视频，也能用 Codex 兼容的透明 WebP 图集与 Metal 运行。
 
 ### 功能
 
@@ -187,7 +188,7 @@ Assets/
 Sources/Furball2D/Assets/
 └── Pets/
     ├── Nina/{manifest.json,Clips,Sprites}/       # 图片 + 真实连续动画
-    └── Fortune/{manifest.json,Sprites}/         # 仅图片
+    └── Fortune/{manifest.json,Clips,Sprites}/   # 图片 + Live Motion
 ```
 
 源动作链统一使用 `left-profile` 视角，右向动作由运行时镜像得到。素材预处理输出为 1280×720、120 fps、HEVC with Alpha。站立、坐姿和趴卧待机使用首尾去重的正放/倒放循环；睡眠只截取低动作呼吸窗口；过渡和移动片段会在透明工作画布上平滑校正主体尺度、Alpha 中心与脚底锚点。
@@ -204,7 +205,7 @@ Sources/Furball2D/Assets/
 - “整体动画速度”：以 50%–150% 同步调节图片动画、真实连续动画和桌面位移；初始默认值为 82%，无需重新制作素材即可继续微调。
 - “设置”：左侧栏直接管理通用、外观、行为、桌面互动、Group Play、对话、宠物素材库和创建宠物；显示缩放与始终置顶也只在这里设置，仅真实连续动画显示视频混合设置。
 - “宠物素材库”：导入经过验证的 `.furballpet` 素材包、切换宠物并查看档案。
-- “创建宠物”：选择 6–12 张照片，通过本机 Codex 创建一套便于长期维护的写实 2D 外观，也可导出标准请求和 Creator Skill。
+- “创建宠物”：选择 6–12 张照片，通过本机 Codex 创建写实 2D 外观，也可分别下载写实 2D 与 Live Motion Creator Skill。
 - “宠物群”：勾选需要同时出现的宠物；它们会分别漫游、避让、停步、撞墙反向，并进行成对互动。
 - “宠物档案”：每只宠物保存可调的活力、好奇心、亲人和沉稳性格，以及会随休息、移动和互动变化的精力、探索欲与亲密度。最近三条短期记忆可见并可随时清除。
 - “可爱动作”：图片模式下显示素材包自带动作；视频模式、移动中或过渡中自动置灰。

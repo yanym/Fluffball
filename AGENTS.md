@@ -45,7 +45,9 @@ If the task replaces the complete animal rather than adding one action, read `Do
 
 Preserve the original video. Do not immediately overwrite `Sources/Furball2D/Assets/Pets/Nina/Clips`. Archive sources under `Assets/Pets/Nina/UserProvided/SourceVideos/<view>/<action>.mp4`, then complete these checks:
 
-View directories use lowercase kebab-case, such as `left-profile`, `right-profile`, `front`, and `three-quarter-left`. If the view changes during the clip, use a directional name such as `three-quarter-to-front`. Action filenames also use kebab-case, such as `stand-idle.mp4` and `stand-to-sit.mp4`. Exports go under the matching `Sources/Furball2D/Assets/Pets/Nina/Clips/<view>/` directory; never mix views in one folder.
+View directories use lowercase kebab-case, such as `left-profile`, `right-profile`, `front`, and `three-quarter-left`. If the view changes during the clip, use a directional name such as `three-quarter-to-front`. Action filenames also use kebab-case, such as `stand-idle.mp4` and `stand-to-sit.mp4`. Exports go under the matching `Sources/Furball2D/Assets/Pets/<PetName>/Clips/<view>/` directory; never mix views in one folder.
+
+Declare the retained source direction as top-level `videoNativeFacing: "left"` or `"right"` in the Pet Pack manifest. Runtime mirroring is derived from this pack value; never flip source files solely to imitate Nina and never add a pet-specific facing branch in Swift. Reject direction-changing portions of a nominally fixed-profile gait. If only the middle loop is clean, a compatible same-pet/same-facing source may supply start or stop, but document that substitution in the manifest and QA report.
 
 - Use `ffprobe` to record resolution, frame rate, duration, color format, and whether frame rate is constant.
 - Generate a contact sheet at 0.25–0.5-second intervals and inspect the complete action timeline.

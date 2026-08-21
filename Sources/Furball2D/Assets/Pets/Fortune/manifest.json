@@ -4,13 +4,14 @@
     "id": "fortune",
     "name": "Fortune",
     "species": "dog",
-    "assetVersion": 4,
+    "assetVersion": 5,
     "bodySize": 40
   },
   "capabilities": {
     "imageMode": true,
-    "videoMode": false
+    "videoMode": true
   },
+  "videoNativeFacing": "right",
   "formatVersion": 11,
   "canvas": { "width": 1280, "height": 720, "fps": 120 },
   "spriteAtlas": {
@@ -117,13 +118,21 @@
   },
   "appearances": [
     {
+      "id": "continuous-video",
+      "kind": "continuous-video",
+      "title": { "en": "Live Motion" },
+      "subtitle": { "en": "Lifelike continuous motion made from Fortune's videos" },
+      "systemImage": "film.stack.fill",
+      "isDefault": true
+    },
+    {
       "id": "realistic-2d",
       "kind": "sprite-atlas",
       "title": { "en": "Fortune Realistic 2D" },
       "subtitle": { "en": "Native-Retina animation made from Fortune's photos" },
       "systemImage": "camera.macro",
       "atlasFile": "Sprites/Fortune/realistic/spritesheet.webp",
-      "isDefault": true
+      "isDefault": false
     }
   ],
   "normalization": {
@@ -132,12 +141,40 @@
     "curve": "smoothstep"
   },
   "colorNormalization": {
-    "reference": "stand-idle / left-profile",
+    "reference": "stand-idle / right-profile",
     "sampleBuckets": ["blackFur", "tanFur", "whiteFur"],
     "curve": "monotonic-pchip",
     "application": "after chromakey and despill, before final scale",
     "locomotionPolicy": "one curve per source shared by start-loop-stop",
     "imageViewPolicy": "one curve per view targeting the shared reference"
   },
-  "clips": []
+  "clips": [
+    { "id": "stand.idle", "view": "right-profile", "file": "Clips/right-profile/stand-idle.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-idle.mp4" },
+    { "id": "stand.look.images", "view": "multi-angle", "file": "Clips/right-profile/look-around-images.mov", "loop": false, "generation": "sprite-atlas-keyframes", "source": "Sprites/Fortune/realistic/spritesheet.webp" },
+    { "id": "stand.facing.left-profile", "view": "left-profile", "file": "Clips/image-views/left-profile.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-near-profile-left", "view": "front-near-profile-left", "file": "Clips/image-views/front-near-profile-left.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-three-quarter-left", "view": "front-three-quarter-left", "file": "Clips/image-views/front-three-quarter-left.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-near-center-left", "view": "front-near-center-left", "file": "Clips/image-views/front-near-center-left.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front", "view": "front", "file": "Clips/image-views/front.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-near-center-right", "view": "front-near-center-right", "file": "Clips/image-views/front-near-center-right.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-three-quarter-right", "view": "front-three-quarter-right", "file": "Clips/image-views/front-three-quarter-right.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.front-near-profile-right", "view": "front-near-profile-right", "file": "Clips/image-views/front-near-profile-right.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.facing.right-profile", "view": "right-profile", "file": "Clips/image-views/right-profile.mov", "loop": true, "generation": "sprite-atlas-keyframe" },
+    { "id": "stand.to.sit", "view": "right-profile", "file": "Clips/right-profile/stand-to-sit.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-sit.mp4" },
+    { "id": "sit.idle", "view": "right-profile", "file": "Clips/right-profile/sit-idle.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/sit-to-lie.mp4" },
+    { "id": "sit.to.lie", "view": "right-profile", "file": "Clips/right-profile/sit-to-lie.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/sit-to-lie.mp4" },
+    { "id": "lie.idle", "view": "right-profile", "file": "Clips/right-profile/lie-idle.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/lie-to-sleep.mp4" },
+    { "id": "lie.to.sleep", "view": "right-profile", "file": "Clips/right-profile/lie-to-sleep.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/lie-to-sleep.mp4" },
+    { "id": "sleep.idle", "view": "right-profile", "file": "Clips/right-profile/sleep-idle.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/sleep-idle.mp4" },
+    { "id": "sleep.to.stand", "view": "right-profile", "file": "Clips/right-profile/sleep-to-stand.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/sleep-to-stand.mp4" },
+    { "id": "walk.start", "view": "right-profile", "file": "Clips/right-profile/walk-start.mov", "loop": false, "translationDelay": 0.12, "translationRamp": 0.18, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "walk.loop", "view": "right-profile", "file": "Clips/right-profile/walk-loop.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "walk.stop", "view": "right-profile", "file": "Clips/right-profile/walk-stop.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-walk-to-stand.mp4" },
+    { "id": "slow-run.start", "view": "right-profile", "file": "Clips/right-profile/slow-run-start.mov", "loop": false, "translationDelay": 0.07, "translationRamp": 0.13, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "slow-run.loop", "view": "right-profile", "file": "Clips/right-profile/slow-run-loop.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "slow-run.stop", "view": "right-profile", "file": "Clips/right-profile/slow-run-stop.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-slow-run-to-stand.mp4" },
+    { "id": "fast-run.start", "view": "right-profile", "file": "Clips/right-profile/fast-run-start.mov", "loop": false, "translationDelay": 0.10, "translationRamp": 0.10, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-slow-run-to-stand.mp4", "note": "Compatible clean start substituted because the fast-run source turns direction before accelerating" },
+    { "id": "fast-run.loop", "view": "right-profile", "file": "Clips/right-profile/fast-run-loop.mov", "loop": true, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-fast-run-to-stand.mp4" },
+    { "id": "fast-run.stop", "view": "right-profile", "file": "Clips/right-profile/fast-run-stop.mov", "loop": false, "source": "Assets/Pets/Fortune/UserProvided/SourceVideos/right-profile/stand-to-slow-run-to-stand.mp4", "note": "Compatible clean stop substituted because the fast-run source turns direction before stopping" }
+  ]
 }

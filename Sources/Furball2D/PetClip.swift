@@ -104,6 +104,7 @@ private struct PetAssetManifest: Decodable {
     let clips: [ClipDescriptor]?
     let spriteAtlas: SpriteAtlasDescriptor?
     let appearances: [AppearanceDescriptor]?
+    let videoNativeFacing: String?
 }
 
 enum PetAppearanceKind: String, Decodable {
@@ -273,6 +274,7 @@ enum PetAssetCatalog {
         let isBundled: Bool
         let clipsByID: [String: PetAssetManifest.ClipDescriptor]
         let appearances: [(option: PetAppearanceOption, spriteAtlas: ResolvedSpriteAtlas?)]
+        let videoNativeFacingIsRight: Bool
     }
 
     private static func loadCatalog(at rootURL: URL) -> LoadedCatalog? {
@@ -408,7 +410,8 @@ enum PetAssetCatalog {
                 bodySize: min(100, max(1, manifest.pet?.bodySize ?? 60)),
                 isBundled: isBundledAssetRoot(rootURL),
                 clipsByID: clipsByID,
-                appearances: appearances
+                appearances: appearances,
+                videoNativeFacingIsRight: manifest.videoNativeFacing == "right"
             )
     }
 
@@ -555,6 +558,7 @@ enum PetAssetCatalog {
     }
     static var intrinsicBodyScale: CGFloat { CGFloat(bodySize) / 60.0 }
     static var imageActions: [PetImageAction] { selectedAppearance?.spriteAtlas?.actions ?? [] }
+    static var videoNativeFacingIsRight: Bool { loaded?.videoNativeFacingIsRight ?? false }
 
     static func loops(for id: String, fallback: Bool) -> Bool {
         loaded?.clipsByID[id]?.loop ?? fallback
@@ -621,9 +625,55 @@ enum PetAssetCatalog {
         return try spriteAnimation(for: binding, in: atlas)
     }
 
+    /// Resolves the appearance selected in a pet's own profile without changing
+    /// the global picker. Group Play uses this so Nina and Fortune can each keep
+    /// an independent Live Motion / Realistic 2D choice.
+    static func groupAppearance(petID: String) throws -> PetAppearanceOption {
+        guard let catalog = loadedCatalogs.first(where: { $0.petID == petID }) else {
+            throw PetAppError.missingAsset("pet: \(petID)")
+        }
+        let selectedID = explicitlySelectedAppearanceByPet[petID]
+            ?? UserDefaults.standard.string(forKey: "selectedAppearance.\(petID)")
+        if let selectedID,
+           let selected = catalog.appearances.first(where: { $0.option.id == selectedID }) {
+            return selected.option
+        }
+        return catalog.appearances.first(where: { $0.option.isDefault })?.option
+            ?? catalog.appearances[0].option
+    }
+
+    static func groupVideoNativeFacingIsRight(petID: String) -> Bool {
+        loadedCatalogs.first(where: { $0.petID == petID })?.videoNativeFacingIsRight ?? false
+    }
+
+    static func groupVideoClip(petID: String, id: String) throws -> PetClip {
+        guard let catalog = loadedCatalogs.first(where: { $0.petID == petID }),
+              let descriptor = catalog.clipsByID[id] else {
+            throw PetAppError.missingAsset("group video: \(petID)/\(id)")
+        }
+        let url = try safeAssetURL(descriptor.file, in: catalog.rootURL)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw PetAppError.missingAsset(descriptor.file)
+        }
+        return PetClip(
+            id: descriptor.id,
+            fallbackFileName: descriptor.file,
+            fallbackLoops: descriptor.loop,
+            resultingPosture: .stand,
+            resolvedURL: url,
+            resolvedLoops: descriptor.loop
+        )
+    }
+
     static var imageCapablePetIDs: Set<String> {
         Set(loadedCatalogs.compactMap { catalog in
             catalog.appearances.contains(where: { $0.spriteAtlas != nil }) ? catalog.petID : nil
+        })
+    }
+
+    static var groupPlayablePetIDs: Set<String> {
+        Set(loadedCatalogs.compactMap { catalog in
+            catalog.appearances.isEmpty ? nil : catalog.petID
         })
     }
 
@@ -888,12 +938,31 @@ struct PetClip {
     let fallbackFileName: String
     let fallbackLoops: Bool
     let resultingPosture: PetPosture
+    private let resolvedURL: URL?
+    private let resolvedLoops: Bool?
 
-    var loops: Bool { PetAssetCatalog.loops(for: id, fallback: fallbackLoops) }
+    init(
+        id: String,
+        fallbackFileName: String,
+        fallbackLoops: Bool,
+        resultingPosture: PetPosture,
+        resolvedURL: URL? = nil,
+        resolvedLoops: Bool? = nil
+    ) {
+        self.id = id
+        self.fallbackFileName = fallbackFileName
+        self.fallbackLoops = fallbackLoops
+        self.resultingPosture = resultingPosture
+        self.resolvedURL = resolvedURL
+        self.resolvedLoops = resolvedLoops
+    }
+
+    var loops: Bool { resolvedLoops ?? PetAssetCatalog.loops(for: id, fallback: fallbackLoops) }
 
     var url: URL {
         get throws {
-            try PetAssetCatalog.url(for: id, fallbackFileName: fallbackFileName)
+            if let resolvedURL { return resolvedURL }
+            return try PetAssetCatalog.url(for: id, fallbackFileName: fallbackFileName)
         }
     }
 

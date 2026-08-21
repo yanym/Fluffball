@@ -15,6 +15,7 @@ struct AppearanceSettingsSnapshot {
     let desktopInteractions: Bool
     let alwaysOnTop: Bool
     let petScale: CGFloat
+    let petOpacity: CGFloat
     let fullPassThrough: Bool
     let autoBehavior: Bool
     let speechBubbles: Bool
@@ -49,6 +50,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     var onGroupPetSelectionChanged: ((Set<String>) -> Void)?
     var onAlwaysOnTopChanged: ((Bool) -> Void)?
     var onPetScaleChanged: ((CGFloat) -> Void)?
+    var onPetOpacityChanged: ((CGFloat) -> Void)?
     var onPassThroughChanged: ((Bool) -> Void)?
     var onAutoBehaviorChanged: ((Bool) -> Void)?
     var onSpeechBubblesChanged: ((Bool) -> Void)?
@@ -84,6 +86,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     private let speechBubblesSwitch = NSSwitch()
     private let petSizeSlider = NSSlider()
     private let petSizeValue = NSTextField(labelWithString: "")
+    private let petOpacitySlider = NSSlider()
+    private let petOpacityValue = NSTextField(labelWithString: "")
     private let talkativenessSlider = NSSlider()
     private let talkativenessValue = NSTextField(labelWithString: "")
     private let previewSpeechButton = NSButton()
@@ -263,8 +267,15 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         petSizeSlider.isContinuous = true
         petSizeSlider.target = self
         petSizeSlider.action = #selector(petSizeChanged(_:))
+        petOpacitySlider.minValue = 0.2
+        petOpacitySlider.maxValue = 1.0
+        petOpacitySlider.isContinuous = true
+        petOpacitySlider.target = self
+        petOpacitySlider.action = #selector(petOpacityChanged(_:))
         let rows = NSStackView(views: [
             makeSliderRow(title: "Display Scale", slider: petSizeSlider, value: petSizeValue),
+            separator(),
+            makeSliderRow(title: "Pet Opacity", slider: petOpacitySlider, value: petOpacityValue),
             separator(),
             makeToggleRow(title: "Always on Top", toggle: alwaysOnTopSwitch, action: #selector(alwaysOnTopChanged(_:))),
             separator(),
@@ -461,7 +472,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         groupPetStack.orientation = .vertical
         groupPetStack.alignment = .leading
         groupPetStack.spacing = 9
-        let note = NSTextField(wrappingLabelWithString: "Choose the companions that appear together. Group Play uses each pet’s validated image atlas so they can roam and react independently.")
+        let note = NSTextField(wrappingLabelWithString: "Choose the companions that appear together. Each pet follows the Appearance selected in its own profile—Live Motion or Realistic 2D.")
         note.font = .systemFont(ofSize: 12)
         note.textColor = .secondaryLabelColor
         note.maximumNumberOfLines = 3
@@ -581,7 +592,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
 
     private func pageSubtitle(_ page: Page, language: AppLanguage) -> String {
         switch page {
-        case .general: "Adjust interface display scale and window behavior. Pet profiles define relative body size."
+        case .general: "Adjust display scale, opacity, and window behavior. Pet profiles define relative body size."
         case .appearance: "Choose an asset appearance and tune the overall pace of image and video animation."
         case .behavior: "Movement, desktop play, and speech live together here. Real files and Finder layout always remain untouched."
         case .group: "Let several selected pets roam together and respond to one another."
@@ -642,6 +653,8 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         speechBubblesSwitch.state = snapshot.speechBubbles ? .on : .off
         petSizeSlider.doubleValue = Double(snapshot.petScale)
         petSizeValue.stringValue = "\(Int((snapshot.petScale * 100).rounded()))%"
+        petOpacitySlider.doubleValue = Double(snapshot.petOpacity)
+        petOpacityValue.stringValue = "\(Int((snapshot.petOpacity * 100).rounded()))%"
         talkativenessSlider.doubleValue = snapshot.talkativeness
         talkativenessValue.stringValue = "\(Int((snapshot.talkativeness * 100).rounded()))%"
         talkativenessSlider.isEnabled = snapshot.speechBubbles
@@ -749,6 +762,7 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
                 desktopInteractions: snapshot.desktopInteractions,
                 alwaysOnTop: snapshot.alwaysOnTop,
                 petScale: snapshot.petScale,
+                petOpacity: snapshot.petOpacity,
                 fullPassThrough: snapshot.fullPassThrough,
                 autoBehavior: snapshot.autoBehavior,
                 speechBubbles: snapshot.speechBubbles,
@@ -821,9 +835,9 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
         }
         groupPetCheckboxes.removeAll()
         for pet in snapshot.pets {
-            let supported = PetAssetCatalog.imageCapablePetIDs.contains(pet.id)
+            let supported = PetAssetCatalog.groupPlayablePetIDs.contains(pet.id)
             let button = NSButton(
-                checkboxWithTitle: "\(pet.name)  ·  \(supported ? "Ready" : "No image atlas")",
+                checkboxWithTitle: "\(pet.name)  ·  \(supported ? "Uses profile appearance" : "No playable appearance")",
                 target: self,
                 action: #selector(groupPetChanged(_:))
             )
@@ -841,6 +855,10 @@ final class AppearanceSettingsWindowController: NSWindowController, NSWindowDele
     @objc private func petSizeChanged(_ sender: NSSlider) {
         petSizeValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
         onPetScaleChanged?(CGFloat(sender.doubleValue))
+    }
+    @objc private func petOpacityChanged(_ sender: NSSlider) {
+        petOpacityValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
+        onPetOpacityChanged?(CGFloat(sender.doubleValue))
     }
     @objc private func speechBubblesChanged(_ sender: NSSwitch) {
         let enabled = sender.state == .on

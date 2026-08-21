@@ -25,8 +25,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let petMeta = NSTextField(labelWithString: "")
     private let builtInBadge = NSTextField(labelWithString: "")
     private let appearanceHeading = NSTextField(labelWithString: "")
+    private let appearanceIntro = NSTextField(wrappingLabelWithString: "")
     private let appearanceStack = NSStackView()
-    private let profileAppearancePopup = NSPopUpButton()
     private let profileAnimationSpeedSlider = NSSlider(value: 0.82, minValue: 0.5, maxValue: 1.5, target: nil, action: nil)
     private let profileAnimationSpeedValue = NSTextField(labelWithString: "82%")
     private let profileBodySizeSlider = NSSlider(value: 60, minValue: 1, maxValue: 100, target: nil, action: nil)
@@ -58,6 +58,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
     private let oneClickCodexButton = NSButton()
     private let createRequestButton = NSButton()
     private let downloadSkillButton = NSButton()
+    private let downloadLiveMotionSkillButton = NSButton()
     private let creationProgress = NSProgressIndicator()
     private let creationStatus = NSTextField(wrappingLabelWithString: "")
     private var codexCreationJob: CodexPetCreationJob?
@@ -281,9 +282,12 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         builtInBadge.textColor = .systemOrange
         appearanceHeading.font = .systemFont(ofSize: 11, weight: .semibold)
         appearanceHeading.textColor = .secondaryLabelColor
+        appearanceIntro.font = .systemFont(ofSize: 12.5, weight: .medium)
+        appearanceIntro.textColor = .secondaryLabelColor
+        appearanceIntro.maximumNumberOfLines = 2
         appearanceStack.orientation = .vertical
-        appearanceStack.spacing = 8
-        appearanceStack.alignment = .leading
+        appearanceStack.spacing = 11
+        appearanceStack.alignment = .width
         configureProfileSection()
 
         useButton.bezelStyle = .rounded
@@ -374,8 +378,6 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         personalitySummary.textColor = .labelColor
         personalitySummary.maximumNumberOfLines = 2
 
-        profileAppearancePopup.target = self
-        profileAppearancePopup.action = #selector(profileAppearanceChanged(_:))
         profileBodySizeSlider.isContinuous = true
         profileBodySizeSlider.target = self
         profileBodySizeSlider.action = #selector(profileBodySizeChanged(_:))
@@ -476,6 +478,9 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         downloadSkillButton.bezelStyle = .rounded
         downloadSkillButton.target = self
         downloadSkillButton.action = #selector(downloadCreatorSkill)
+        downloadLiveMotionSkillButton.bezelStyle = .rounded
+        downloadLiveMotionSkillButton.target = self
+        downloadLiveMotionSkillButton.action = #selector(downloadLiveMotionSkill)
         photosLabel.textColor = .secondaryLabelColor
         creationProgress.style = .spinning
         creationProgress.controlSize = .small
@@ -497,14 +502,17 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         form.column(at: 1).xPlacement = .fill
         form.column(at: 1).width = 380
 
-        let buttons = NSStackView(views: [oneClickCodexButton, createRequestButton, downloadSkillButton, NSView()])
+        let buttons = NSStackView(views: [oneClickCodexButton, createRequestButton, NSView()])
         buttons.orientation = .horizontal
         buttons.spacing = 8
+        let skillButtons = NSStackView(views: [downloadSkillButton, downloadLiveMotionSkillButton, NSView()])
+        skillButtons.orientation = .horizontal
+        skillButtons.spacing = 8
         let statusRow = NSStackView(views: [creationProgress, creationStatus, NSView()])
         statusRow.orientation = .horizontal
         statusRow.alignment = .centerY
         statusRow.spacing = 8
-        let stack = NSStackView(views: [creatorTitle, creatorIntro, form, buttons, statusRow])
+        let stack = NSStackView(views: [creatorTitle, creatorIntro, form, buttons, skillButtons, statusRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 18
@@ -517,7 +525,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             stack.trailingAnchor.constraint(equalTo: creatorPage.trailingAnchor, constant: -52),
             stack.topAnchor.constraint(equalTo: creatorPage.topAnchor, constant: 34),
             creatorIntro.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            skillButtons.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
     }
 
@@ -533,7 +542,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         segmented.setLabel(language.libraryTab, forSegment: 0)
         segmented.setLabel(language.creatorTab, forSegment: 1)
         window?.title = language.petLibraryTitle
-        appearanceHeading.stringValue = language.appearanceCountLabel
+        appearanceHeading.stringValue = "APPEARANCE · PICK YOUR PET'S LOOK"
+        appearanceIntro.stringValue = "Switch styles any time. Live Motion uses cinematic video; Realistic 2D uses a lightweight illustrated sprite pack."
         personalityHeading.stringValue = language.personalityHeading
         stateHeading.stringValue = language.currentStateHeading
         memoryHeading.stringValue = language.shortMemoryHeading
@@ -555,6 +565,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             : language.cancelCodexCreationButton
         createRequestButton.title = language.exportCreationRequestButton
         downloadSkillButton.title = language.downloadSkillButton
+        downloadLiveMotionSkillButton.title = language.downloadLiveMotionSkillButton
         if codexCreationJob == nil {
             oneClickCodexButton.isEnabled = PetPackLibraryManager.codexExecutableURL != nil
             creationStatus.stringValue = PetPackLibraryManager.codexExecutableURL == nil
@@ -632,25 +643,39 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             appearanceStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
-        profileAppearancePopup.removeAllItems()
-        for appearance in pet.appearances {
-            profileAppearancePopup.addItem(withTitle: appearance.title(for: language))
-            profileAppearancePopup.lastItem?.representedObject = appearance.id
-            profileAppearancePopup.lastItem?.image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)
-        }
         let selectedAppearanceID = pet.id == PetAssetCatalog.activePet?.id
             ? PetAssetCatalog.activeAppearance.id
             : UserDefaults.standard.string(forKey: "selectedAppearance.\(pet.id)")
-        if let selectedAppearanceID,
-           let item = profileAppearancePopup.itemArray.first(where: { ($0.representedObject as? String) == selectedAppearanceID }) {
-            profileAppearancePopup.select(item)
-        }
+                ?? pet.appearances.first(where: \.isDefault)?.id
+                ?? pet.appearances.first?.id
         profileBodySizeSlider.doubleValue = Double(pet.bodySize)
         profileBodySizeValue.stringValue = "\(pet.bodySize) / 100"
-        let appearanceRow = profileControlRow(title: "Appearance", control: profileAppearancePopup, value: nil)
+
+        appearanceStack.addArrangedSubview(appearanceIntro)
+        appearanceIntro.widthAnchor.constraint(equalTo: appearanceStack.widthAnchor).isActive = true
+        let cards = NSStackView()
+        cards.orientation = .horizontal
+        cards.alignment = .top
+        cards.distribution = .fillEqually
+        cards.spacing = 12
+        for appearance in pet.appearances {
+            let card = AppearanceCardView(
+                option: appearance,
+                language: language,
+                isSelected: appearance.id == selectedAppearanceID,
+                isEnabled: true
+            ) { [weak self] id in
+                self?.selectProfileAppearance(id)
+            }
+            cards.addArrangedSubview(card)
+            card.heightAnchor.constraint(equalToConstant: 126).isActive = true
+        }
+        appearanceStack.addArrangedSubview(cards)
+        cards.widthAnchor.constraint(equalTo: appearanceStack.widthAnchor).isActive = true
+
         let bodySizeRow = profileControlRow(title: "Body Size", control: profileBodySizeSlider, value: profileBodySizeValue)
         let speedRow = profileControlRow(title: "Animation Speed", control: profileAnimationSpeedSlider, value: profileAnimationSpeedValue)
-        [appearanceRow, bodySizeRow, speedRow].forEach {
+        [bodySizeRow, speedRow].forEach {
             appearanceStack.addArrangedSubview($0)
             $0.widthAnchor.constraint(equalTo: appearanceStack.widthAnchor).isActive = true
         }
@@ -664,7 +689,10 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 12.5, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 112).isActive = true
-        if control is NSSlider { control.widthAnchor.constraint(equalToConstant: 190).isActive = true }
+        if control is NSSlider {
+            control.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
         let views = value.map { [label, control, $0] } ?? [label, control, NSView()]
         let row = NSStackView(views: views)
         row.orientation = .horizontal
@@ -679,9 +707,8 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         return pet.id == PetAssetCatalog.activePet?.id || onSelectPet?(pet.id) == true
     }
 
-    @objc private func profileAppearanceChanged(_ sender: NSPopUpButton) {
+    private func selectProfileAppearance(_ id: String) {
         guard activateSelectedPetIfNeeded(),
-              let id = sender.selectedItem?.representedObject as? String,
               onAppearanceSelected?(id) == true else {
             refresh(language: language)
             return
@@ -928,6 +955,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
             oneClickCodexButton.title = language.cancelCodexCreationButton
             createRequestButton.isEnabled = false
             downloadSkillButton.isEnabled = false
+            downloadLiveMotionSkillButton.isEnabled = false
             job.process.terminationHandler = { [weak self, weak job] _ in
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
@@ -952,6 +980,7 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         oneClickCodexButton.isEnabled = PetPackLibraryManager.codexExecutableURL != nil
         createRequestButton.isEnabled = true
         downloadSkillButton.isEnabled = true
+        downloadLiveMotionSkillButton.isEnabled = true
         if codexCreationWasCancelled {
             try? job.logHandle.close()
             creationStatus.stringValue = language.codexCreationCancelledLabel
@@ -988,6 +1017,19 @@ final class PetLibraryWindowController: NSWindowController, NSWindowDelegate, NS
         guard panel.runModal() == .OK, let directory = panel.url else { return }
         do {
             let output = try PetPackLibraryManager.exportCreatorSkill(to: directory)
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } catch { show(error) }
+    }
+
+    @objc private func downloadLiveMotionSkill() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Download Here"
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        do {
+            let output = try PetPackLibraryManager.exportLiveMotionSkill(to: directory)
             NSWorkspace.shared.activateFileViewerSelecting([output])
         } catch { show(error) }
     }

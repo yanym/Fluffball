@@ -12,14 +12,18 @@ enum PetSpeechBubbleMood {
 enum PetSpeechBubbleStyle: String, CaseIterable {
     case cloud
     case candy
+    case mochi
     case storybook
+    case postcard
     case starlight
 
     var title: String {
         switch self {
         case .cloud: "Soft Cloud"
         case .candy: "Candy Pop"
+        case .mochi: "Peach Mochi"
         case .storybook: "Storybook"
+        case .postcard: "Paw Postcard"
         case .starlight: "Starlight"
         }
     }
@@ -327,7 +331,7 @@ private final class SpeechBubbleView: NSView {
     private let tagIcon = NSImageView()
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private var mood: PetSpeechBubbleMood = .stand
-    private var style: PetSpeechBubbleStyle = .cloud
+    private var style: PetSpeechBubbleStyle = .candy
     private var displayScale: CGFloat = 1
     private(set) var tailEdge: TailEdge = .bottom
     private var tailPosition: CGFloat = 0.5
@@ -445,15 +449,18 @@ private final class SpeechBubbleView: NSView {
         super.layout()
         let body = bodyRect
 
-        let padX = 15 * displayScale
-        let iconSize = 14 * displayScale
-        let tagIconY = body.midY - iconSize / 2
+        // Give the image view the exact badge bounds. SF Symbols have optical
+        // padding inside their image, so centering a smaller frame by hand put
+        // every glyph about three points left of the painted circle.
+        let badgeSize = 30 * displayScale
         tagIcon.frame = NSRect(
-            x: body.minX + padX,
-            y: tagIconY,
-            width: iconSize,
-            height: iconSize
+            x: body.minX + 10 * displayScale,
+            y: body.midY - badgeSize / 2,
+            width: badgeSize,
+            height: badgeSize
         )
+        tagIcon.imageAlignment = .alignCenter
+        tagIcon.imageScaling = .scaleNone
 
         let msgX = body.minX + 51 * displayScale
         let msgW = max(40, body.maxX - msgX - 17 * displayScale)
@@ -473,22 +480,28 @@ private final class SpeechBubbleView: NSView {
         let body = bodyRect
         let cornerRadius: CGFloat = switch style {
         case .cloud, .candy: min(body.height * 0.42, 24 * displayScale)
+        case .mochi: min(body.height * 0.49, 31 * displayScale)
         case .storybook: min(body.height * 0.25, 15 * displayScale)
+        case .postcard: min(body.height * 0.16, 10 * displayScale)
         case .starlight: min(body.height * 0.34, 20 * displayScale)
         }
 
         let path = buildBubblePath(body: body, radius: cornerRadius)
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.19)
-        shadow.shadowBlurRadius = 18 * displayScale
-        shadow.shadowOffset = NSSize(width: 0, height: -5 * displayScale)
+        shadow.shadowColor = style == .mochi
+            ? theme.accentColor.withAlphaComponent(0.22)
+            : NSColor.black.withAlphaComponent(style == .postcard ? 0.14 : 0.19)
+        shadow.shadowBlurRadius = (style == .mochi ? 23 : 18) * displayScale
+        shadow.shadowOffset = NSSize(width: 0, height: (style == .postcard ? -3 : -5) * displayScale)
         shadow.set()
         let gradient = NSGradient(starting: theme.gradientTop, ending: theme.gradientBottom)
         gradient?.draw(in: path, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
         NSGraphicsContext.saveGraphicsState()
-        NSColor.white.withAlphaComponent(0.72).setStroke()
+        (style == .postcard
+            ? theme.accentColor.withAlphaComponent(0.34)
+            : NSColor.white.withAlphaComponent(0.72)).setStroke()
         path.lineWidth = 1.25 * displayScale
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
@@ -673,6 +686,15 @@ private final class SpeechBubbleView: NSView {
                 textColor: NSColor(calibratedRed: 0.25, green: 0.10, blue: 0.18, alpha: 1),
                 iconName: mood == .sleep ? "moon.stars.fill" : "heart.fill"
             )
+        case .mochi:
+            return Theme(
+                gradientTop: NSColor(calibratedRed: 1.00, green: 0.98, blue: 0.95, alpha: 0.995),
+                gradientBottom: NSColor(calibratedRed: 1.00, green: 0.79, blue: 0.72, alpha: 0.985),
+                accentColor: NSColor(calibratedRed: 0.96, green: 0.34, blue: 0.38, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 1.00, green: 0.91, blue: 0.76, alpha: 0.96),
+                textColor: NSColor(calibratedRed: 0.28, green: 0.10, blue: 0.11, alpha: 1),
+                iconName: mood == .sleep ? "moon.fill" : "pawprint.fill"
+            )
         case .storybook:
             return Theme(
                 gradientTop: NSColor(calibratedRed: 1.00, green: 0.98, blue: 0.90, alpha: 0.99),
@@ -681,6 +703,15 @@ private final class SpeechBubbleView: NSView {
                 badgeBackground: NSColor(calibratedRed: 0.91, green: 0.73, blue: 0.42, alpha: 0.88),
                 textColor: NSColor(calibratedRed: 0.22, green: 0.14, blue: 0.09, alpha: 1),
                 iconName: mood == .sleep ? "moon.fill" : "book.closed.fill"
+            )
+        case .postcard:
+            return Theme(
+                gradientTop: NSColor(calibratedRed: 1.00, green: 0.99, blue: 0.94, alpha: 0.995),
+                gradientBottom: NSColor(calibratedRed: 0.96, green: 0.93, blue: 0.82, alpha: 0.99),
+                accentColor: NSColor(calibratedRed: 0.22, green: 0.48, blue: 0.55, alpha: 1),
+                badgeBackground: NSColor(calibratedRed: 0.82, green: 0.94, blue: 0.92, alpha: 0.94),
+                textColor: NSColor(calibratedRed: 0.17, green: 0.18, blue: 0.16, alpha: 1),
+                iconName: mood == .sleep ? "moon.zzz.fill" : "envelope.fill"
             )
         case .starlight:
             return Theme(
@@ -765,12 +796,47 @@ private final class SpeechBubbleView: NSView {
                 theme.accentColor.withAlphaComponent(alpha).setFill()
                 dot.fill()
             }
+        case .mochi:
+            // Blush and tiny ears give this bubble its own soft mascot shape,
+            // rather than being another recolored rounded rectangle.
+            for x in [body.minX + 45 * displayScale, body.maxX - 24 * displayScale] {
+                let blush = NSBezierPath(ovalIn: NSRect(
+                    x: x, y: body.minY + 10 * displayScale,
+                    width: 11 * displayScale, height: 5 * displayScale
+                ))
+                theme.accentColor.withAlphaComponent(0.20).setFill()
+                blush.fill()
+            }
+            for x in [body.minX + 24 * displayScale, body.maxX - 36 * displayScale] {
+                let ear = NSBezierPath()
+                ear.move(to: NSPoint(x: x, y: body.maxY - 2 * displayScale))
+                ear.line(to: NSPoint(x: x + 6 * displayScale, y: body.maxY + 7 * displayScale))
+                ear.line(to: NSPoint(x: x + 12 * displayScale, y: body.maxY - 2 * displayScale))
+                ear.close()
+                theme.accentColor.withAlphaComponent(0.28).setFill()
+                ear.fill()
+            }
         case .storybook:
             let stitch = NSBezierPath(roundedRect: body.insetBy(dx: 4 * displayScale, dy: 4 * displayScale), xRadius: 11 * displayScale, yRadius: 11 * displayScale)
             theme.accentColor.withAlphaComponent(0.20).setStroke()
             stitch.lineWidth = 1 * displayScale
             stitch.setLineDash([3 * displayScale, 3 * displayScale], count: 2, phase: 0)
             stitch.stroke()
+        case .postcard:
+            let divider = NSBezierPath()
+            divider.move(to: NSPoint(x: body.maxX - 50 * displayScale, y: body.minY + 8 * displayScale))
+            divider.line(to: NSPoint(x: body.maxX - 50 * displayScale, y: body.maxY - 8 * displayScale))
+            theme.accentColor.withAlphaComponent(0.13).setStroke()
+            divider.lineWidth = 1 * displayScale
+            divider.stroke()
+            let stamp = NSBezierPath(roundedRect: NSRect(
+                x: body.maxX - 31 * displayScale,
+                y: body.maxY - 22 * displayScale,
+                width: 18 * displayScale,
+                height: 13 * displayScale
+            ), xRadius: 2 * displayScale, yRadius: 2 * displayScale)
+            theme.accentColor.withAlphaComponent(0.13).setFill()
+            stamp.fill()
         case .starlight:
             for point in [
                 NSPoint(x: body.maxX - 22 * displayScale, y: body.maxY - 10 * displayScale),
